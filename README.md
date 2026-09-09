@@ -1,56 +1,97 @@
-# Welcome to your Expo app 👋
+# GymBroFitness
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo/React Native fitness app focused on science-informed hypertrophy programming. The current codebase contains an Expo configuration plus a framework-free TypeScript domain layer for exercise selection, program generation, workout analytics, readiness checks, and progression decisions.
 
-## Get started
+## Features
 
-1. Install dependencies
+- Exercise catalog grouped by muscle, movement pattern, equipment, difficulty, and tracking type.
+- Program generator that builds full-body, upper/lower, upper/lower/full-body, and push/pull/legs splits from user preferences.
+- Preference-aware exercise selection for equipment, experience level, muscle priorities, preferred exercises, disliked exercises, exclusions, and discomfort flags.
+- Session time budgeting that trims optional exercise slots before core movements.
+- Double-progression engine using rep ranges, RIR, load increments, deload signals, and pain/readiness guardrails.
+- Workout analytics for working sets, volume load, estimated one-rep max, muscle set distribution, and personal records.
+- Optional Supabase configuration for backend persistence when the app shell uses it.
 
-   ```bash
-   npm install
-   ```
+## Tech Stack
 
-2. Start the app
+- Expo 57 and React Native 0.86
+- React 19 and Expo Router
+- TypeScript
+- Supabase client
+- TanStack Query
+- Zustand
+- Zod and React Hook Form
+- Jest and Testing Library for React Native
 
-   ```bash
-   npx expo start
-   ```
+## Project Structure
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```text
+src/domain/exercises/       Exercise definitions, catalog, seed data, and replacements
+src/domain/programs/        Split templates, program generation, and programming defaults
+src/domain/progression/     Progression constraints, engine, and explanations
+src/domain/workouts/        Readiness checks and workout analytics
+src/types/                  Shared app/domain types
+src/utils/                  IDs, dates, and unit helpers
+src/theme/                  Design tokens
+assets/                     Expo icons, splash images, and app assets
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Requirements
 
-### Other setup steps
+- Node.js
+- npm
+- Expo tooling through the package scripts
+- iOS Simulator, Android Emulator, Expo Go, or a physical device
+- Optional Supabase project
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Environment Setup
 
-## Learn more
+The app can run in demo mode without Supabase credentials. To connect Supabase, copy the example file:
 
-To learn more about developing your project with Expo, look at the following resources:
+```sh
+cp .env.example .env
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Then fill:
 
-## Join the community
+```text
+EXPO_PUBLIC_SUPABASE_URL=
+EXPO_PUBLIC_SUPABASE_ANON_KEY=
+```
 
-Join our community of developers creating universal apps.
+Only use public Expo variables for client-safe values. Do not place service-role keys or private backend secrets in the mobile app environment.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Install
+
+```sh
+npm install
+```
+
+## Run
+
+```sh
+npm start
+```
+
+Platform-specific commands:
+
+```sh
+npm run ios
+npm run android
+npm run web
+```
+
+## Quality Checks
+
+```sh
+npm run typecheck
+npm run lint
+npm test
+npm run format:check
+```
+
+## Current Development Notes
+
+- The domain engine is the main implemented area in this checkout.
+- The previous sample Expo screens are removed in the current working tree, so app startup depends on the active UI shell being present or restored.
+- Programming logic is deterministic where possible so generated plans and progression decisions are explainable and testable.
