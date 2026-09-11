@@ -4,34 +4,36 @@
  */
 
 export const palette = {
-  // Neutral scale
+  // Neutral scale — cool, blue-tinted (midnight), not flat gray
   gray0: '#FFFFFF',
-  gray50: '#F6F7F9',
-  gray100: '#ECEEF1',
-  gray200: '#DDE1E6',
-  gray300: '#C2C8D0',
-  gray400: '#9AA2AE',
-  gray500: '#6E7681',
-  gray600: '#4B525C',
-  gray700: '#343A43',
-  gray800: '#22272E',
-  gray850: '#1B2027',
-  gray900: '#14181D',
-  gray950: '#0D1014',
+  gray50: '#F5F7FB',
+  gray100: '#E9EDF5',
+  gray200: '#D7DEEA',
+  gray300: '#B9C3D6',
+  gray400: '#8B96AD',
+  gray500: '#626E88',
+  gray600: '#454F66',
+  gray700: '#2E3549',
+  gray800: '#1C2233',
+  gray850: '#151A28',
+  gray900: '#0F1320',
+  gray950: '#090C15',
 
-  // Brand — deep teal-green, deliberately not "AI purple"
-  brand300: '#5ED4B0',
-  brand400: '#2FBF94',
-  brand500: '#17A87C',
-  brand600: '#0F8A66',
-  brand700: '#0B6B50',
+  // Brand — electric blue, deliberately not "AI purple"
+  brand300: '#7DA2FF',
+  brand400: '#4C7EFF',
+  brand500: '#2F5FEF',
+  brand600: '#2449C4',
+  brand700: '#1B3796',
 
   amber400: '#F5B942',
   amber600: '#B37E12',
   red400: '#F0655A',
   red600: '#C93D33',
-  blue400: '#4D9DE0',
-  blue600: '#2C6FAF',
+  blue400: '#63B3F0',
+  blue600: '#2C7FC7',
+  green400: '#3ECF8E',
+  green600: '#1F9D68',
 } as const;
 
 export type SemanticColors = {
@@ -57,6 +59,8 @@ export type SemanticColors = {
   dangerSoft: string;
   info: string;
   infoSoft: string;
+  brandGradientStart: string;
+  brandGradientEnd: string;
 };
 
 export const lightColors: SemanticColors = {
@@ -73,15 +77,17 @@ export const lightColors: SemanticColors = {
   accent: palette.brand600,
   accentPressed: palette.brand700,
   onAccent: palette.gray0,
-  accentSoft: '#E2F5EE',
-  success: palette.brand600,
-  successSoft: '#E2F5EE',
+  accentSoft: '#E5EBFC',
+  success: palette.green600,
+  successSoft: '#E1F7EC',
   warning: palette.amber600,
   warningSoft: '#FBF0D9',
   danger: palette.red600,
   dangerSoft: '#FBE4E2',
   info: palette.blue600,
   infoSoft: '#E3EEF8',
+  brandGradientStart: palette.brand500,
+  brandGradientEnd: palette.brand700,
 };
 
 export const darkColors: SemanticColors = {
@@ -98,8 +104,8 @@ export const darkColors: SemanticColors = {
   accent: palette.brand400,
   accentPressed: palette.brand300,
   onAccent: palette.gray950,
-  accentSoft: '#12332A',
-  success: palette.brand400,
+  accentSoft: '#16224A',
+  success: palette.green400,
   successSoft: '#12332A',
   warning: palette.amber400,
   warningSoft: '#332A12',
@@ -107,6 +113,8 @@ export const darkColors: SemanticColors = {
   dangerSoft: '#361A18',
   info: palette.blue400,
   infoSoft: '#132638',
+  brandGradientStart: palette.brand400,
+  brandGradientEnd: palette.brand700,
 };
 
 export const spacing = {

@@ -20,9 +20,12 @@ export type Theme = {
   isDark: boolean;
 };
 
+/** GymBroFitness ships dark-first; a settings toggle can override this later. */
+const FORCE_DARK = true;
+
 export function useTheme(): Theme {
   const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
+  const isDark = FORCE_DARK || scheme === 'dark';
   return {
     colors: isDark ? darkColors : lightColors,
     spacing,
