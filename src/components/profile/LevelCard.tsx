@@ -1,31 +1,45 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
+import { Avatar, Card, ProgressBar } from 'react-native-paper';
 
 import type { LevelProgress } from '@/domain/workouts/gamification';
-import { useTheme } from '@/theme';
+import { useTheme, type Theme } from '@/theme';
 
 type LevelCardProps = {
   level: LevelProgress;
   totalWorkouts: number;
 };
 
+function tierBadge(tierName: string, colors: Theme['colors']) {
+  switch (tierName) {
+    case 'Rookie':
+      return { icon: 'account-outline', color: colors.textMuted };
+    case 'Grinder':
+      return { icon: 'arm-flex', color: colors.success };
+    case 'Beast':
+      return { icon: 'paw', color: colors.warning };
+    case 'Titan':
+      return { icon: 'shield-star', color: colors.danger };
+    default:
+      return { icon: 'crown', color: colors.accent };
+  }
+}
+
 export function LevelCard({ level, totalWorkouts }: LevelCardProps) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const { tier, nextTier, progress } = level;
+  const badge = tierBadge(tier.name, colors);
 
   return (
-    <View
-      style={[
-        styles.card,
-        { backgroundColor: colors.surfaceRaised, borderRadius: radius.xl, borderColor: colors.border },
-      ]}
-    >
-      <View style={{ padding: spacing.lg, gap: spacing.sm }}>
+    <Card mode="outlined">
+      <Card.Content style={{ gap: spacing.sm }}>
         <View style={styles.headerRow}>
           <View style={styles.titleRow}>
-            <View style={[styles.iconBadge, { backgroundColor: colors.surfacePressed }]}>
-              <Ionicons name="shield-checkmark" size={16} color={colors.accent} />
-            </View>
+            <Avatar.Icon
+              icon={badge.icon}
+              size={36}
+              style={{ backgroundColor: `${badge.color}26` }}
+              color={badge.color}
+            />
             <Text style={[typography.heading, { color: colors.textPrimary }]}>{tier.name}</Text>
           </View>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
@@ -33,40 +47,20 @@ export function LevelCard({ level, totalWorkouts }: LevelCardProps) {
           </Text>
         </View>
 
-        <View style={[styles.track, { backgroundColor: colors.surfacePressed, borderRadius: radius.pill }]}>
-          <View
-            style={[
-              styles.fill,
-              {
-                width: `${Math.round(progress * 100)}%`,
-                backgroundColor: colors.accent,
-                borderRadius: radius.pill,
-              },
-            ]}
-          />
-        </View>
+        <ProgressBar progress={progress} color={badge.color} style={styles.track} />
 
         <Text style={[typography.caption, { color: colors.textSecondary }]}>
           {nextTier
             ? `${nextTier.minWorkouts - totalWorkouts} workouts to ${nextTier.name}`
             : 'Max level reached'}
         </Text>
-      </View>
-    </View>
+      </Card.Content>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  iconBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  track: { height: 8, overflow: 'hidden' },
-  fill: { height: '100%' },
+  track: { height: 8, borderRadius: 4 },
 });

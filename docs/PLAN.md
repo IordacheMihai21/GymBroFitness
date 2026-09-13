@@ -146,6 +146,72 @@ Rebuilt Home around the user's ASCII wireframe: greeting + quote, Pre-Fuel card,
 
 Verified live on the Android dev client: Home, day-swap, Analytics, Profile, and Settings modal all confirmed working, no crashes. 27/27 tests passing.
 
+## Component library: react-native-paper + Moti (2026-09-11)
+
+Per instruction to stop hand-building widgets and use pre-existing ones: attempted **gluestack-ui** first (the user's original ask alongside anime.js/21st.dev), but its installer is labeled "v5 alpha" by its own CLI output and failed to actually install its required packages (`@gluestack-ui/core`, `nativewind`) despite reporting success — left a broken scaffold that didn't typecheck. Reverted cleanly (`git checkout` + fresh `npm install`), verified back to a healthy state, then swapped to **react-native-paper** (stable, v5.15.3, pure StyleSheet — no Tailwind/NativeWind conflict with the existing reanimated 4.5.0 setup) plus **Moti** (already installed, now actually wired into [Reveal.tsx](../src/components/ui/Reveal.tsx) instead of raw reanimated primitives).
+
+Rebuilt every screen on real Paper widgets in place of hand-rolled ones: `Button`, `Card`, `Chip`, `ProgressBar`, `Avatar.Text`/`Avatar.Icon`, `List.Item`, `TextInput`, `IconButton`, `TouchableRipple`, `Icon`, `Snackbar`, `Divider`. Deleted the now-dead hand-built `PrimaryButton`, `FilterChip`, and the unused glass `Card` component. A theme bridge ([paperTheme.ts](../src/theme/paperTheme.ts)) maps our existing semantic tokens onto Paper's MD3 theme contract, so Paper components pick up our blue/dark branding automatically via `PaperProvider` in the root layout.
+
+One real bug found and fixed along the way: Paper's `Snackbar` (v5) does **not** self-portal — its own docs say to wrap it in `Portal` for popup behavior, which [RestTimer.tsx](../src/components/workout/RestTimer.tsx) wasn't doing, so our floating tab bar (also `position: absolute`) was rendering on top of it, making the rest-timer invisible. Fixed by wrapping in `<Portal>`. Also caught `duration={Number.MAX_SAFE_INTEGER}` overflowing JS's 32-bit `setTimeout` range (auto-dismissing instantly) — replaced with a safe 24-hour value.
+
+Kept as genuinely custom (no off-the-shelf equivalent covers these): `AnimatedNumber` (tweened counter), `ProgressRing` (SVG ring for the Home hero), and the domain-specific card compositions themselves (StreakCard, MesocycleCard, TodayWorkoutHero, etc.) — Paper supplies their chrome (Card, ProgressBar, Chip) but the domain content inside is necessarily bespoke.
+
+Verified end-to-end on the Android dev client: Home, Analytics, Atlas, Profile, Workout (including the set-completion → rest-timer Snackbar flow) all confirmed working, no crashes. Typecheck/lint clean, 27/27 tests passing.
+
+## Dependency alignment (2026-09-13)
+
+`expo-doctor` flagged a real, applicable issue: `expo@57.0.7`/`react-native@0.86.0` (exactly what was installed) carries a documented Hermes regression that "drastically increases memory usage in apps importing `react-native-worklets` or `react-native-reanimated`" — which is every screen in this app. Fixed upstream in `expo@57.0.9+`.
+
+Ran `npx expo install --fix` (two passes — the first hit a transient npm peer-conflict on `react-native@0.86.3`/`@react-native/jest-preset`, resolved with `--legacy-peer-deps`, consistent with how this project has handled peer conflicts before) to align all 23 flagged packages to their SDK 57.0.22-compatible versions: `expo` 57.0.7→57.0.22, `react-native` 0.86.0→0.86.3, `react-native-reanimated` 4.5.0→4.5.1, `react-native-worklets` 0.10.0→0.10.1, plus `expo-router`, `expo-image`, `react-native-screens`, and the rest of the `expo-*` family. `npx expo-doctor` now reports 21/21 checks passing (was 2 failing). Typecheck/lint/tests unaffected (still 27/27 passing).
+
+Also caught in passing: `@gorhom/bottom-sheet` (native code, used by the new `HomeActionSheet`) had been added to `package.json` after the last native Android build, so the installed dev client predated it — rebuilding now picks up both that and the version bump in one pass.
+
+**Rebuild + verification (same session)**: full native rebuild succeeded (7m37s). Hit and fixed one real Worklets error post-rebuild — `[Worklets] Mismatch between JavaScript code version and Worklets Babel plugin version (0.10.1 vs 0.10.0)` — a stale Metro transform cache from before the version bump; fixed with `expo start --clear`.
+
+**Real bug found while verifying, not an infra issue**: [ReadinessCommandCard.tsx](../src/components/home/ReadinessCommandCard.tsx)'s decorative "scan rail" ran **16 simultaneous Moti animations with `loop: true, repeatReverse: true`** — i.e. infinite, forever, for as long as Home is mounted. This pegged the emulator at 90-100%+ CPU continuously and was the actual root cause of a string of system-wide ANRs ("Pixel Launcher isn't responding", "System UI isn't responding") that looked like emulator flakiness but weren't — confirmed by CPU dropping to single digits immediately after removing the loop. This would have been a real battery/performance drain on physical devices too. Fixed to animate once on mount instead of looping forever. Checked the rest of the new Home cards (`OverloadRunwayCard`, `MuscleFocusMap`, `PrWatchCard`, `RecoveryProtocolCard`) for the same `loop:`/`repeatReverse` pattern — none found.
+
+Verified end-to-end on-device post-fix: Home (all cards, including the newer `OverloadRunwayCard`/`MuscleFocusMap`/`PrWatchCard`/`RecoveryProtocolCard`), the `HomeActionSheet` bottom sheet (swap-day action correctly cascades through the overload target, muscle allocation, and PR watchlist), and stable CPU throughout. Typecheck/lint/tests unaffected (27/27 passing).
+
+## Competitor-research design pass (2026-09-13)
+
+Researched Strong, Fitbod, Boostcamp, StrengthLog, and JEFIT's home/dashboard screens (current App Store screenshots) and implemented all 5 findings:
+
+1. **Body-silhouette muscle heatmap** — new [BodyHeatmap.tsx](../src/components/home/BodyHeatmap.tsx), a stylized (non-anatomical) front+back SVG figure pair, wired into `MuscleFocusMap`. Every serious competitor (Fitbod, StrengthLog, JEFIT) uses a real body illustration instead of bars; ours was the odd one out. Built from simple `react-native-svg` rects/circles per muscle region, tinted by `colors.accent` at intensity-proportional opacity — no new dependency.
+2. **PR celebration hero card** — `PrWatchCard`'s most recent record now gets a gradient hero treatment (trophy watermark, jumbo number, "NEW RECORD" badge) matching Fitbod's photo-card pattern, minus a stock photo (none licensed — used an icon watermark instead, consistent with the promo banner precedent).
+3. **Bolder stat typography** — added a `typography.jumbo` token (44px/800 weight); applied to the PR hero number and `WeekLogCard`'s volume stat (17px → 30px `display`), following Boostcamp's oversized-number pattern.
+4. **Colorful gamification badges** — `LevelCard` now maps each tier (Rookie/Grinder/Beast/Titan/Legend) to a distinct icon + semantic color (gray/green/amber/red/blue) instead of one static shield icon, matching StrengthLog's colorful circular achievements.
+5. **Fixed fabricated "upcoming" data in `WeekLogCard`** — found while implementing the JEFIT forward-plan-view idea: the volume trend sparkline and per-row descriptions were showing hardcoded tonnage for days that haven't happened yet (`status: 'upcoming'`), contradicting the card's own "Tonnage only counts completed work" caption. Both now correctly zero out for non-`done` days; upcoming days show "Upcoming" instead of a fake number.
+
+Verified end-to-end on-device: Home (heatmap, PR hero, week log) and Analytics (tier badge) all confirmed rendering correctly, no crashes. Typecheck/lint/tests unaffected (27/27 passing). No new native dependencies — pure JS/SVG, no rebuild needed.
+
+## Auditing hand-built pieces against real packages (2026-09-13)
+
+Per instruction to import everything possible rather than hand-build, audited every remaining custom visual primitive against the real npm/GitHub ecosystem, verifying peer-dependency health before installing anything (the gluestack-ui lesson from earlier applied here too — checked `npm view <pkg> peerDependencies` for every candidate before adopting).
+
+**Adopted:**
+- **[react-native-body-highlighter](https://github.com/HichamELBSI/react-native-body-highlighter)** (MIT, react-native-svg@^15.9.0 peer — matches our installed 15.15.5) replaces the hand-built `BodyHeatmap.tsx` (deleted) in `MuscleFocusMap`. Its 24 body-part slugs map almost 1:1 onto our 12 `MuscleGroup` values (`chest→chest`, `back→upper-back`, `shoulders→deltoids`, etc.) — a real anatomical front+back illustration instead of an approximated block figure.
+- **[react-native-gifted-charts](https://github.com/Abhinandan-Kushwaha/react-native-gifted-charts)** replaces the hand-rolled `Polyline` sparkline in `WeekLogCard`. Rejected `react-native-svg-charts` first despite a higher "benchmark score" — its peer dependency is pinned to `react-native-svg ^6/^7` (we're on v15), the same stale-dependency trap as the earlier gluestack-ui attempt.
+- Deleted `ProgressRing.tsx` — confirmed fully unused dead code from an earlier Home iteration, no replacement needed.
+
+**Real bug found and fixed mid-swap**: `hideAxesAndRules` (a prop that only appears in this library's `BubbleChart`/`BarChart` docs, never `LineChart`) silently blanked the *entire rest of the Home screen* below the chart when passed to `LineChart` — not a redbox crash, a silent render failure. Found by bisecting props back to the documented minimal example and re-adding one at a time. Fixed by dropping that prop and using `xAxisThickness={0}`/`yAxisThickness={0}` plus a fixed-size `overflow: hidden` wrapper to force the "full chart" component into a true compact sparkline footprint.
+
+**Checked and deliberately not swapped** (documented so this isn't silent scope-cutting):
+- **`AnimatedNumber.tsx`** (tween-to-value counter, used in `StreakCard`/`PrWatchCard`) — the two candidate packages found (`react-native-countup` v0.0.2 from 2022 using the pre-hooks `react-timer-mixin`; `react-native-number-animate` v1.0.3 from 2023, zero declared dependencies despite claiming a reanimated dependency) are both effectively unmaintained single-maintainer packages with real compatibility risk against React 19/new architecture. Kept our ~20-line hook, which is a thin wrapper directly on `react-native-reanimated` (an already-imported, vetted library) — this is gluing imported primitives together for a domain need, not hand-building an animation engine.
+- **Week-strip day markers** — the one candidate (`react-native-calendar-strip`) is from 2022, pulls in `moment` (unused elsewhere in this codebase) and, oddly, a `node-git-hooks` runtime dependency — a red flag for a UI library. Not worth the risk for 7 static day pills.
+- **`Reveal.tsx`** — already a thin Moti wrapper, not hand-built animation logic.
+
+Verified end-to-end on-device: Muscle Allocation (real body diagram, front+back, correct muscle highlighting) and Week to date (real chart, correct trend line, no layout regression) both confirmed working after the fix. Typecheck/lint/tests unaffected (27/27 passing). No native rebuild needed (both packages are pure JS/SVG).
+
+## Command Check redesign — Whoop-inspired (2026-09-13)
+
+Hevy has no readiness/recovery concept to draw from, so researched the app that actually owns this pattern — Whoop's Recovery card (current App Store screenshots): a colored circular ring (green/yellow/red by band) with the score centered inside, and a metric breakdown below with a colored dot per row.
+
+Installed **[react-native-circular-progress](https://github.com/bartgryszko/react-native-circular-progress)** (`AnimatedCircularProgress`, MIT, react-native-svg@>=7.0.0 peer — comfortably satisfied by our v15) after checking three gauge-package candidates' peer-dependency health first (one, `react-native-circular-progress-indicator`, was rejected for pulling in `react-native-redash` and being stale since Dec 2022 — same category of risk as the earlier `react-native-svg-charts` rejection).
+
+Rewrote [ReadinessCommandCard.tsx](../src/components/home/ReadinessCommandCard.tsx): removed the hand-built 16-`MotiView` "scan rail" entirely, replaced with the real gauge ring. Added a genuine `bandFor()`/`bandColor()` mapping (good/caution/hold at 0.8/0.55 thresholds) driving **real color-coding** throughout — the ring color, the "GREEN LIGHT"/"CAUTION"/"HOLD BACK" status badge, and each signal-gate's dot + progress-bar color are now all data-driven from the same band logic, not hardcoded green everywhere like before.
+
+Verified live on-device: green ring, correctly color-coded signal dots (amber Fuel, green Intent/Fatigue) matching real band values, no crashes. Typecheck/lint/tests unaffected (27/27 passing). Pure JS/SVG package, no native rebuild needed.
+
 ## Proposed roadmap
 
 **Phase 0 — Harden the domain layer**

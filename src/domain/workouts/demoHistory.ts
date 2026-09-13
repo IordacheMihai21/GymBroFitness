@@ -39,11 +39,16 @@ export const DEMO_PERSONAL_RECORDS: PersonalRecord[] = [
   record('overhead-press', 62.5, 4, 27),
 ];
 
-/** Completed-workout dates for streak/level math — last 4 days plus older history. */
+/** Completed-workout dates for streak/level math — a visible demo streak plus older history. */
 export const DEMO_COMPLETED_AT: string[] = (() => {
   const dates: string[] = [];
   const today = new Date();
-  const recentDaysAgo = [0, 1, 2, 3, 4, 6, 7]; // a week of training with one rest day (5 days ago)
+  const recentDaysAgo = [
+    ...Array.from({ length: 19 }, (_, i) => i),
+    21,
+    22,
+    25,
+  ];
   for (const daysAgo of recentDaysAgo) {
     const d = new Date(today);
     d.setUTCDate(d.getUTCDate() - daysAgo);

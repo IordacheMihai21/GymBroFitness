@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { List } from 'react-native-paper';
 
 import type { LibraryExercise } from '@/domain/exercises/library';
 import { useTheme } from '@/theme';
@@ -7,58 +8,52 @@ import { useTheme } from '@/theme';
 type ExerciseListItemProps = {
   exercise: LibraryExercise;
   onPress?: () => void;
+  selected?: boolean;
 };
 
-export function ExerciseListItem({ exercise, onPress }: ExerciseListItemProps) {
-  const { colors, radius, spacing, typography } = useTheme();
+export function ExerciseListItem({ exercise, onPress, selected = false }: ExerciseListItemProps) {
+  const { colors, radius, typography } = useTheme();
   const thumbnail = exercise.images[0];
   const muscleLabel = exercise.primaryMuscles.join(', ') || 'Other';
 
   return (
-    <Pressable
+    <List.Item
       onPress={onPress}
-      style={({ pressed }) => [
+      title={exercise.name}
+      description={`${exercise.equipmentLabel} · ${muscleLabel}`}
+      titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+      descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+      titleNumberOfLines={1}
+      descriptionNumberOfLines={1}
+      style={[
         styles.row,
         {
-          backgroundColor: pressed ? colors.surfacePressed : colors.surfaceRaised,
+          backgroundColor: selected ? colors.accentSoft : colors.surfaceRaised,
           borderRadius: radius.lg,
-          borderColor: colors.border,
-          padding: spacing.sm,
-          gap: spacing.md,
+          borderColor: selected ? colors.accent : colors.border,
         },
       ]}
-    >
-      <View style={[styles.thumbnailWrap, { backgroundColor: colors.surfacePressed }]}>
-        {thumbnail ? (
-          <Image source={{ uri: thumbnail }} style={styles.thumbnail} contentFit="cover" />
-        ) : null}
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
-          {exercise.name}
-        </Text>
-        <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
-          {exercise.equipmentLabel} · {muscleLabel}
-        </Text>
-      </View>
-    </Pressable>
+      left={() =>
+        thumbnail ? (
+          <Image
+            source={{ uri: thumbnail }}
+            style={[styles.thumbnail, { borderRadius: radius.md, backgroundColor: colors.surfacePressed }]}
+            contentFit="cover"
+          />
+        ) : (
+          <List.Icon icon="dumbbell" color={colors.textMuted} />
+        )
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
   },
-  thumbnailWrap: {
+  thumbnail: {
     width: 56,
     height: 56,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  thumbnail: {
-    width: '100%',
-    height: '100%',
   },
 });

@@ -1,5 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
+import { Card, Icon } from 'react-native-paper';
 
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { requireExercise } from '@/domain/exercises/catalog';
@@ -12,19 +12,14 @@ type PersonalRecordCardProps = {
 };
 
 export function PersonalRecordCard({ record }: PersonalRecordCardProps) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const exercise = requireExercise(record.exerciseId);
 
   return (
-    <View
-      style={[
-        styles.card,
-        { backgroundColor: colors.surfaceRaised, borderRadius: radius.lg, borderColor: colors.border },
-      ]}
-    >
-      <View style={{ padding: spacing.md, gap: 4 }}>
+    <Card mode="outlined">
+      <Card.Content style={{ gap: 4, padding: spacing.md }}>
         <View style={styles.header}>
-          <Ionicons name="trophy" size={14} color={colors.warning} />
+          <Icon source="trophy" size={14} color={colors.warning} />
           <Text
             style={[typography.captionBold, { color: colors.textSecondary }]}
             numberOfLines={1}
@@ -43,13 +38,12 @@ export function PersonalRecordCard({ record }: PersonalRecordCardProps) {
         <Text style={[typography.micro, { color: colors.textMuted }]}>
           {formatDate(record.date)}
         </Text>
-      </View>
-    </View>
+      </Card.Content>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth },
   header: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   valueRow: { flexDirection: 'row', alignItems: 'baseline' },
 });

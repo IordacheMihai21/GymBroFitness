@@ -4,7 +4,7 @@
  */
 
 export const palette = {
-  // Neutral scale — cool, blue-tinted (midnight), not flat gray
+  // Neutral scale — black-first, with only a quiet cool edge in the deep surfaces.
   gray0: '#FFFFFF',
   gray50: '#F5F7FB',
   gray100: '#E9EDF5',
@@ -12,19 +12,19 @@ export const palette = {
   gray300: '#B9C3D6',
   gray400: '#8B96AD',
   gray500: '#626E88',
-  gray600: '#454F66',
-  gray700: '#2E3549',
-  gray800: '#1C2233',
-  gray850: '#151A28',
-  gray900: '#0F1320',
-  gray950: '#090C15',
+  gray600: '#3F4757',
+  gray700: '#252B36',
+  gray800: '#141821',
+  gray850: '#0C1018',
+  gray900: '#070A10',
+  gray950: '#030509',
 
-  // Brand — electric blue, deliberately not "AI purple"
-  brand300: '#7DA2FF',
-  brand400: '#4C7EFF',
-  brand500: '#2F5FEF',
-  brand600: '#2449C4',
-  brand700: '#1B3796',
+  // Brand — electric blue, deliberately not purple or blue-purple.
+  brand300: '#8AB9FF',
+  brand400: '#4A95FF',
+  brand500: '#1F73FF',
+  brand600: '#0F58D8',
+  brand700: '#0A3E9F',
 
   amber400: '#F5B942',
   amber600: '#B37E12',
@@ -104,7 +104,7 @@ export const darkColors: SemanticColors = {
   accent: palette.brand400,
   accentPressed: palette.brand300,
   onAccent: palette.gray950,
-  accentSoft: '#16224A',
+  accentSoft: '#071A3A',
   success: palette.green400,
   successSoft: '#12332A',
   warning: palette.amber400,
@@ -139,6 +139,7 @@ export const radius = {
 } as const;
 
 export const typography = {
+  jumbo: { fontSize: 44, lineHeight: 48, fontWeight: '800' as const },
   display: { fontSize: 30, lineHeight: 36, fontWeight: '700' as const },
   title: { fontSize: 24, lineHeight: 30, fontWeight: '700' as const },
   heading: { fontSize: 19, lineHeight: 25, fontWeight: '600' as const },

@@ -1,5 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { IconButton, TextInput } from 'react-native-paper';
 
 import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
 import type { PerformedSet } from '@/types';
@@ -9,9 +9,16 @@ type SetRowProps = {
   targetLabel: string;
   onChange: (patch: Partial<PerformedSet>) => void;
   onToggleComplete: () => void;
+  onCopyPrevious?: () => void;
 };
 
-export function SetRow({ set, targetLabel, onChange, onToggleComplete }: SetRowProps) {
+export function SetRow({
+  set,
+  targetLabel,
+  onChange,
+  onToggleComplete,
+  onCopyPrevious,
+}: SetRowProps) {
   const { colors, radius, spacing, typography } = useTheme();
 
   return (
@@ -26,71 +33,107 @@ export function SetRow({ set, targetLabel, onChange, onToggleComplete }: SetRowP
         },
       ]}
     >
-      <Text style={[typography.captionBold, { color: colors.textMuted, width: 28 }]}>
-        {set.setNumber}
-      </Text>
+      <View style={styles.rowHeader}>
+        <View style={styles.setMeta}>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+            Set {set.setNumber}
+          </Text>
+          <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
+            {targetLabel}
+          </Text>
+        </View>
 
-      <Text style={[typography.caption, { color: colors.textMuted, flex: 1 }]} numberOfLines={1}>
-        {targetLabel}
-      </Text>
+        <View style={styles.actionGroup}>
+          {onCopyPrevious ? (
+            <IconButton
+              icon="content-copy"
+              mode="contained-tonal"
+              size={16}
+              onPress={onCopyPrevious}
+              disabled={set.completed}
+              style={styles.compactButton}
+            />
+          ) : null}
 
-      <TextInput
-        value={set.loadKg != null ? String(set.loadKg) : ''}
-        onChangeText={(text) => onChange({ loadKg: text ? Number(text) : null })}
-        placeholder="kg"
-        placeholderTextColor={colors.textMuted}
-        keyboardType="decimal-pad"
-        editable={!set.completed}
-        style={[typography.bodyBold, styles.input, { color: colors.textPrimary }]}
-      />
-      <TextInput
-        value={set.reps != null ? String(set.reps) : ''}
-        onChangeText={(text) => onChange({ reps: text ? Number(text) : null })}
-        placeholder="reps"
-        placeholderTextColor={colors.textMuted}
-        keyboardType="number-pad"
-        editable={!set.completed}
-        style={[typography.bodyBold, styles.input, { color: colors.textPrimary }]}
-      />
+          <IconButton
+            icon="check"
+            mode={set.completed ? 'contained' : 'contained-tonal'}
+            size={18}
+            onPress={onToggleComplete}
+            style={styles.compactButton}
+          />
+        </View>
+      </View>
 
-      <Pressable
-        onPress={onToggleComplete}
-        hitSlop={8}
-        style={[
-          styles.checkButton,
-          {
-            backgroundColor: set.completed ? colors.success : colors.surfacePressed,
-            borderRadius: radius.pill,
-          },
-        ]}
-      >
-        <Ionicons
-          name="checkmark"
-          size={18}
-          color={set.completed ? colors.onAccent : colors.textMuted}
+      <View style={styles.inputGroup}>
+        <TextInput
+          mode="outlined"
+          dense
+          label="kg"
+          value={set.loadKg != null ? String(set.loadKg) : ''}
+          onChangeText={(text) => onChange({ loadKg: text ? Number(text) : null })}
+          keyboardType="decimal-pad"
+          editable={!set.completed}
+          style={styles.input}
         />
-      </Pressable>
+        <TextInput
+          mode="outlined"
+          dense
+          label="reps"
+          value={set.reps != null ? String(set.reps) : ''}
+          onChangeText={(text) => onChange({ reps: text ? Number(text) : null })}
+          keyboardType="number-pad"
+          editable={!set.completed}
+          style={styles.input}
+        />
+        <TextInput
+          mode="outlined"
+          dense
+          label="RIR"
+          value={set.rir != null ? String(set.rir) : ''}
+          onChangeText={(text) => onChange({ rir: text ? Number(text) : null })}
+          keyboardType="number-pad"
+          editable={!set.completed}
+          style={styles.input}
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 108,
+    paddingVertical: 10,
+  },
+  rowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  setMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  actionGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  inputGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    minHeight: MIN_TOUCH_TARGET,
   },
   input: {
-    width: 56,
-    textAlign: 'center',
-    paddingVertical: 6,
+    flex: 1,
   },
-  checkButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+  compactButton: {
+    margin: 0,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
   },
 });

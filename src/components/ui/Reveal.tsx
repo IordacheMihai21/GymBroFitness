@@ -1,6 +1,6 @@
+import { MotiView } from 'moti';
 import type { PropsWithChildren } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 type RevealProps = PropsWithChildren<{
   index?: number;
@@ -10,11 +10,13 @@ type RevealProps = PropsWithChildren<{
 /** Staggered fade+slide entrance for list-like content. */
 export function Reveal({ index = 0, style, children }: RevealProps) {
   return (
-    <Animated.View
+    <MotiView
       style={style}
-      entering={FadeInDown.delay(index * 70).springify().damping(16).mass(0.7)}
+      from={{ opacity: 0, translateY: 16 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      transition={{ type: 'spring', damping: 16, mass: 0.7, delay: index * 70 }}
     >
       {children}
-    </Animated.View>
+    </MotiView>
   );
 }

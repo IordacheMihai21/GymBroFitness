@@ -1,5 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Card, Icon, ProgressBar } from 'react-native-paper';
 
 import { computePreWorkoutStatus, type PreWorkoutLog } from '@/domain/workouts/preRoutine';
 import { useTheme } from '@/theme';
@@ -12,51 +12,85 @@ type PreFuelCardProps = {
 export function PreFuelCard({ log, onPress }: PreFuelCardProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const status = computePreWorkoutStatus(log);
+  const peakProgress = Math.min(1, status.minutesSinceTaken / log.peakWindowMinutes);
 
   return (
-    <Pressable
+    <Card
+      mode="contained"
       onPress={onPress}
-      style={({ pressed }) => [
+      style={[
         styles.card,
         {
-          backgroundColor: pressed ? colors.surfacePressed : colors.surfaceRaised,
-          borderRadius: radius.lg,
+          backgroundColor: colors.surface,
           borderColor: colors.border,
+          borderRadius: radius.xl,
         },
       ]}
     >
-      <View style={{ padding: spacing.md, gap: 4 }}>
-        <View style={styles.row}>
-          <Ionicons name="flash" size={14} color={colors.warning} />
-          <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
-            Pre-Workout: {log.doseMg}mg {log.substance}
-          </Text>
-          <Text style={[typography.micro, { color: colors.textMuted }]}>
-            {' '}
-            (Taken {status.minutesSinceTaken}m ago)
-          </Text>
+      <Card.Content style={{ gap: spacing.sm }}>
+        <View style={styles.headerRow}>
+          <View style={styles.row}>
+            <View style={[styles.iconBubble, { backgroundColor: colors.accentSoft }]}>
+              <Icon source="flash" size={16} color={colors.accent} />
+            </View>
+            <View>
+              <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
+                {log.doseMg}mg {log.substance}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                Taken {status.minutesSinceTaken}m ago
+              </Text>
+            </View>
+          </View>
+          <Icon source="chevron-right" size={18} color={colors.textMuted} />
         </View>
-        <View style={styles.row}>
-          <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+
+        <ProgressBar
+          progress={peakProgress}
+          color={colors.accent}
+          style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
+        />
+
+        <View style={styles.footerRow}>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>
             {status.atPeak
               ? 'At peak effect'
               : `Peak effect in: ~${status.minutesToPeak} min`}
-            {'  ·  '}Carbs: {log.carbsLoadedG}g loaded
           </Text>
-          <Ionicons
-            name="chevron-forward"
-            size={14}
-            color={colors.textMuted}
-            style={{ marginLeft: 'auto' }}
-          />
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+            {log.carbsLoadedG}g carbs loaded
+          </Text>
         </View>
-      </View>
-    </Pressable>
+      </Card.Content>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth },
+  card: {
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  iconBubble: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progress: {
+    height: 6,
+    borderRadius: 999,
+  },
 });

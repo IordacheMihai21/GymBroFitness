@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Portal, Snackbar } from 'react-native-paper';
 
 import { useTheme } from '@/theme';
 
 type RestTimerProps = {
   secondsRemaining: number;
   onDismiss: () => void;
+  bottomOffset: number;
 };
 
 function formatTime(totalSeconds: number): string {
@@ -14,8 +16,8 @@ function formatTime(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export function RestTimer({ secondsRemaining, onDismiss }: RestTimerProps) {
-  const { colors, radius, spacing, typography } = useTheme();
+export function RestTimer({ secondsRemaining, onDismiss, bottomOffset }: RestTimerProps) {
+  const { colors } = useTheme();
   const [remaining, setRemaining] = useState(secondsRemaining);
 
   useEffect(() => {
@@ -30,39 +32,36 @@ export function RestTimer({ secondsRemaining, onDismiss }: RestTimerProps) {
   }, [remaining, onDismiss]);
 
   return (
-    <View
-      style={[
-        styles.pill,
-        {
-          backgroundColor: colors.accent,
-          borderRadius: radius.pill,
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.sm,
-          shadowColor: colors.accent,
-        },
-      ]}
-    >
-      <Text style={[typography.bodyBold, { color: colors.onAccent }]}>
+    <Portal>
+      <Snackbar
+        visible
+        onDismiss={onDismiss}
+        duration={24 * 60 * 60 * 1000}
+        action={{ label: 'Skip', onPress: onDismiss, textColor: colors.accent }}
+        style={[
+          styles.snackbar,
+          {
+            marginBottom: bottomOffset,
+            backgroundColor: colors.surfaceRaised,
+            borderColor: colors.border,
+          },
+        ]}
+        theme={{
+          colors: {
+            inverseOnSurface: colors.textPrimary,
+            inversePrimary: colors.accent,
+            inverseSurface: colors.surfaceRaised,
+          },
+        }}
+      >
         {remaining > 0 ? `Resting · ${formatTime(remaining)}` : 'Rest done'}
-      </Text>
-      <Pressable onPress={onDismiss} hitSlop={8}>
-        <Text style={[typography.captionBold, { color: colors.onAccent, opacity: 0.85 }]}>
-          Skip
-        </Text>
-      </Pressable>
-    </View>
+      </Snackbar>
+    </Portal>
   );
 }
 
 const styles = StyleSheet.create({
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+  snackbar: {
+    borderWidth: StyleSheet.hairlineWidth,
   },
 });

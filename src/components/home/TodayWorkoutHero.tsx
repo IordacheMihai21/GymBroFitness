@@ -1,8 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { Button, Card, Chip, Icon } from 'react-native-paper';
 
-import { PrimaryButton } from '@/components/ui/PrimaryButton';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
+import { EXERCISE_LIBRARY } from '@/domain/exercises/library';
 import type { TargetToBeat } from '@/domain/workouts/targetToBeat';
 import { useTheme } from '@/theme';
 import type { ProgramDay } from '@/types';
@@ -14,6 +16,7 @@ type TodayWorkoutHeroProps = {
   swapLabel: string;
   onStart: () => void;
   onSwap: () => void;
+  onWeakPoint: () => void;
 };
 
 export function TodayWorkoutHero({
@@ -23,107 +26,211 @@ export function TodayWorkoutHero({
   swapLabel,
   onStart,
   onSwap,
+  onWeakPoint,
 }: TodayWorkoutHeroProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const totalSets = day.prescriptions.reduce((sum, p) => sum + p.workingSets, 0);
   const { decision, lastSession } = target;
+  const heroImage = useMemo(() => resolveExerciseImage(target.exerciseName), [target.exerciseName]);
   const targetText =
     decision.nextLoad != null
       ? `${decision.nextLoad} kg × ${decision.nextMaxReps} reps`
       : `${decision.nextMinReps}-${decision.nextMaxReps} reps`;
+  const decisionCopy =
+    decision.action === 'increase_load'
+      ? 'Load earned. Keep the same rep intent and own the first set.'
+      : decision.action === 'increase_reps'
+        ? 'Same load. Buy one cleaner rep before chasing plates.'
+        : 'Hold the line today and make the execution boringly clean.';
 
   return (
-    <View
+    <Card
+      mode="contained"
       style={[
         styles.card,
-        { backgroundColor: colors.surfaceRaised, borderRadius: radius.xl, borderColor: colors.accent, shadowColor: colors.accent },
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderRadius: radius.xl,
+        },
       ]}
     >
-      <View style={{ padding: spacing.lg, gap: spacing.md }}>
-        <View style={styles.headerRow}>
-          <Text style={[typography.captionBold, { color: colors.accent, letterSpacing: 0.5 }]}>
-            TODAY · {day.name.toUpperCase()}
-          </Text>
-          <View style={[styles.pill, { backgroundColor: colors.accentSoft, borderRadius: radius.pill }]}>
-            <Text style={[typography.micro, { color: colors.accent }]}>RIR {targetRir}</Text>
+      <View style={styles.imageFrame}>
+        <Image
+          source={heroImage}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={300}
+          cachePolicy="disk"
+          accessibilityLabel={`${target.exerciseName} exercise reference`}
+        />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(3, 5, 9, 0.52)' }]} />
+        <View style={styles.imageContent}>
+          <View style={styles.headerRow}>
+            <Text style={[typography.captionBold, { color: colors.accent }]}>
+              TODAY · {day.name.toUpperCase()}
+            </Text>
+            <Chip
+              compact
+              mode="flat"
+              style={{ backgroundColor: colors.accentSoft }}
+              textStyle={[typography.micro, { color: colors.textPrimary }]}
+            >
+              RIR {targetRir}
+            </Chip>
           </View>
+          <Text style={[typography.jumbo, { color: colors.textPrimary }]} numberOfLines={2}>
+            Beat one honest top set.
+          </Text>
         </View>
+      </View>
 
+      <Card.Content style={{ gap: spacing.md, paddingTop: spacing.md }}>
         <Text style={[typography.body, { color: colors.textSecondary }]}>
           {day.focus.map((m) => MUSCLE_LABELS[m]).join(', ')}
         </Text>
 
-        <Text style={[typography.caption, { color: colors.textMuted }]}>
-          {day.prescriptions.length} Exercises · {totalSets} Sets · Est. {day.estimatedMinutes} min
-        </Text>
+        <View style={styles.metricRow}>
+          <Metric label="Exercises" value={String(day.prescriptions.length)} />
+          <Metric label="Sets" value={String(totalSets)} />
+          <Metric label="Estimate" value={`${day.estimatedMinutes}m`} />
+        </View>
 
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-        <View style={{ gap: 4 }}>
-          <Text style={[typography.captionBold, { color: colors.textSecondary }]}>
-            Target to Beat Today
+        <View
+          style={[
+            styles.decisionPanel,
+            {
+              backgroundColor: colors.surfaceRaised,
+              borderColor: colors.accent,
+            },
+          ]}
+        >
+          <View style={styles.rowBetween}>
+            <Text style={[typography.captionBold, { color: colors.accent }]}>
+              Progression contract
+            </Text>
+            <Icon source="trending-up" size={16} color={colors.accent} />
+          </View>
+          <Text style={[typography.heading, { color: colors.textPrimary }]}>
+            {target.exerciseName}
           </Text>
-          <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
-            {target.exerciseName}: {targetText}
-          </Text>
+          <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{targetText}</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             Last session: {lastSession.loadKg} kg × {lastSession.reps} reps @ RIR{' '}
             {lastSession.rir}
           </Text>
-        </View>
-
-        <PrimaryButton label="Start Workout" fullWidth onPress={onStart} />
-
-        <View style={{ gap: spacing.xs }}>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>
-            Switching it up today?
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            {decisionCopy}
           </Text>
-          <View style={styles.swapRow}>
-            <Pressable
-              onPress={onSwap}
-              style={[styles.swapPill, { backgroundColor: colors.surfacePressed, borderRadius: radius.pill }]}
-            >
-              <Ionicons name="swap-horizontal" size={13} color={colors.textSecondary} />
-              <Text style={[typography.micro, { color: colors.textSecondary }]} numberOfLines={1}>
-                Swap to {swapLabel}
-              </Text>
-            </Pressable>
-            <View
-              style={[
-                styles.swapPill,
-                { backgroundColor: colors.surfacePressed, borderRadius: radius.pill, opacity: 0.5 },
-              ]}
-            >
-              <Ionicons name="options-outline" size={13} color={colors.textSecondary} />
-              <Text style={[typography.micro, { color: colors.textSecondary }]}>
-                Custom / Weak Point
-              </Text>
-            </View>
+          <View style={[styles.ruleLine, { borderColor: colors.borderStrong }]}>
+            <Text style={[typography.micro, { color: colors.accent }]}>Rule</Text>
+            <Text style={[typography.micro, { color: colors.textSecondary, flex: 1 }]}>
+              Top range with reps to spare earns the next load.
+            </Text>
           </View>
         </View>
-      </View>
+
+        <Button
+          mode="contained"
+          icon="play"
+          buttonColor={colors.accent}
+          textColor={colors.onAccent}
+          contentStyle={styles.startButton}
+          onPress={onStart}
+        >
+          Start {day.name}
+        </Button>
+
+        <View style={styles.swapRow}>
+          <Chip
+            compact
+            mode="flat"
+            icon="swap-horizontal"
+            onPress={onSwap}
+            style={{ backgroundColor: colors.surfacePressed }}
+            textStyle={{ color: colors.textSecondary }}
+          >
+            Swap to {swapLabel}
+          </Chip>
+          <Chip
+            compact
+            mode="flat"
+            icon="tune-variant"
+            onPress={onWeakPoint}
+            style={{ backgroundColor: colors.surfacePressed }}
+            textStyle={{ color: colors.textSecondary }}
+          >
+            Weak point
+          </Chip>
+        </View>
+      </Card.Content>
+    </Card>
+  );
+}
+
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function resolveExerciseImage(exerciseName: string): string {
+  const normalized = normalizeName(exerciseName);
+  const match =
+    EXERCISE_LIBRARY.find((exercise) => normalizeName(exercise.name) === normalized) ??
+    EXERCISE_LIBRARY.find((exercise) => normalized.includes(normalizeName(exercise.name))) ??
+    EXERCISE_LIBRARY.find((exercise) => normalizeName(exercise.name).includes('dumbbell bench press')) ??
+    EXERCISE_LIBRARY.find((exercise) => normalizeName(exercise.name).includes('bench press'));
+  return match?.images[0] ?? EXERCISE_LIBRARY[0].images[0];
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  const { colors, typography } = useTheme();
+
+  return (
+    <View style={styles.metric}>
+      <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
+      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
+    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
+  },
+  imageFrame: {
+    height: 218,
+  },
+  imageContent: {
+    flex: 1,
+    justifyContent: 'space-between',
+    padding: 18,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  pill: { paddingHorizontal: 10, paddingVertical: 3 },
-  divider: { height: StyleSheet.hairlineWidth },
-  swapRow: { flexDirection: 'row', gap: 8 },
-  swapPill: {
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  metricRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  metric: {
+    flex: 1,
+  },
+  decisionPanel: {
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+    gap: 4,
+  },
+  startButton: {
+    minHeight: 52,
+  },
+  swapRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  ruleLine: {
+    marginTop: 5,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    flexShrink: 1,
+    gap: 8,
   },
 });
