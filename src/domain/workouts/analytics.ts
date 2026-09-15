@@ -20,10 +20,26 @@ export function estimateOneRepMax(loadKg: number, reps: number): number | null {
   return Math.round(loadKg * (1 + reps / 30) * 10) / 10;
 }
 
-/** Volume load: sum of load × reps across completed working sets. */
+export type SetEffort = { loadKg: number | null; reps: number | null };
+
+/**
+ * A set's primary effort plus any logged sub-efforts, flattened. Drop sets,
+ * rest-pause, myo-reps, cluster sets, and top-set-plus-backoff all store
+ * their follow-on work as `subEfforts` on the same `PerformedSet` — this is
+ * the one place that unpacks them so volume/e1RM/PR logic doesn't need to
+ * know which technique produced them.
+ */
+export function setEfforts(set: PerformedSet): SetEffort[] {
+  const primary: SetEffort = { loadKg: set.loadKg, reps: set.reps };
+  const extra = (set.subEfforts ?? []).map((e) => ({ loadKg: e.loadKg, reps: e.reps }));
+  return [primary, ...extra];
+}
+
+/** Volume load: sum of load × reps across completed working sets and their sub-efforts. */
 export function volumeLoadKg(sets: PerformedSet[]): number {
   return completedWorkingSets(sets).reduce(
-    (total, s) => total + (s.loadKg ?? 0) * (s.reps ?? 0),
+    (total, s) =>
+      total + setEfforts(s).reduce((sum, e) => sum + (e.loadKg ?? 0) * (e.reps ?? 0), 0),
     0,
   );
 }
@@ -80,8 +96,9 @@ export function detectPersonalRecords(
     const loaded = exercise.trackingType === 'weight_reps' || exercise.trackingType === 'weighted_bodyweight';
 
     if (loaded) {
-      const topLoadSet = working.reduce((a, b) => ((b.loadKg ?? 0) > (a.loadKg ?? 0) ? b : a));
-      const topLoad = topLoadSet.loadKg ?? 0;
+      const allEfforts = working.flatMap(setEfforts);
+      const topEffort = allEfforts.reduce((a, b) => ((b.loadKg ?? 0) > (a.loadKg ?? 0) ? b : a));
+      const topLoad = topEffort.loadKg ?? 0;
       if (topLoad > best(ex.exerciseId, 'max_load')) {
         newRecords.push({
           id: uuid(),
@@ -89,13 +106,13 @@ export function detectPersonalRecords(
           kind: 'max_load',
           value: topLoad,
           loadKg: topLoad,
-          reps: topLoadSet.reps ?? undefined,
+          reps: topEffort.reps ?? undefined,
           date: session.startedAt,
           sessionId: session.id,
         });
       }
-      const e1rms = working
-        .map((s) => estimateOneRepMax(s.loadKg ?? 0, s.reps ?? 0))
+      const e1rms = allEfforts
+        .map((e) => estimateOneRepMax(e.loadKg ?? 0, e.reps ?? 0))
         .filter((v): v is number => v != null);
       if (e1rms.length > 0) {
         const bestE1rm = Math.max(...e1rms);

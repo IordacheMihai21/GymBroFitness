@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Card, Icon } from 'react-native-paper';
-import Body, { type ExtendedBodyPart, type Slug } from 'react-native-body-highlighter';
+import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { requireExercise } from '@/domain/exercises/catalog';
+import { bodySlugsForMuscle } from '@/domain/muscles/muscleMap';
 import { useTheme } from '@/theme';
 import type { MuscleGroup, ProgramDay } from '@/types';
 
@@ -17,22 +18,6 @@ type MuscleLoad = {
   sets: number;
 };
 
-/** Our muscle taxonomy has no front/back distinction; map each to its clearest single slug. */
-const MUSCLE_TO_SLUG: Record<MuscleGroup, Slug> = {
-  chest: 'chest',
-  back: 'upper-back',
-  shoulders: 'deltoids',
-  biceps: 'biceps',
-  triceps: 'triceps',
-  forearms: 'forearm',
-  quadriceps: 'quadriceps',
-  hamstrings: 'hamstring',
-  glutes: 'gluteal',
-  calves: 'calves',
-  abs: 'abs',
-  lower_back: 'lower-back',
-};
-
 export function MuscleFocusMap({ day }: MuscleFocusMapProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const muscleLoads = useMemo(() => computeMuscleLoads(day), [day]);
@@ -42,10 +27,12 @@ export function MuscleFocusMap({ day }: MuscleFocusMapProps) {
 
   const bodyData: ExtendedBodyPart[] = useMemo(
     () =>
-      muscleLoads.map((item) => ({
-        slug: MUSCLE_TO_SLUG[item.muscle],
-        intensity: item.sets / maxSets <= 0.5 ? 1 : 2,
-      })),
+      muscleLoads.flatMap((item) =>
+        bodySlugsForMuscle(item.muscle).map((slug) => ({
+          slug,
+          intensity: item.sets / maxSets <= 0.5 ? 1 : 2,
+        })),
+      ),
     [muscleLoads, maxSets],
   );
   const intensityColors = [`${colors.accent}77`, colors.accent];
@@ -80,8 +67,8 @@ export function MuscleFocusMap({ day }: MuscleFocusMapProps) {
           <View style={[styles.primaryPanel, { backgroundColor: colors.accentSoft }]}>
             <Icon source="crosshairs-gps" size={18} color={colors.accent} />
             <Text style={[typography.captionBold, { color: colors.textPrimary, flex: 1 }]}>
-              {MUSCLE_LABELS[primary.muscle]} leads today. Keep execution strict before adding
-              pump work.
+              {MUSCLE_LABELS[primary.muscle]} leads today. Keep execution strict before adding pump
+              work.
             </Text>
           </View>
         ) : null}
@@ -111,13 +98,14 @@ export function MuscleFocusMap({ day }: MuscleFocusMapProps) {
 
         <View style={styles.chipRow}>
           {muscleLoads.slice(0, 4).map((item) => (
-            <View key={item.muscle} style={[styles.chip, { backgroundColor: colors.surfaceRaised }]}>
+            <View
+              key={item.muscle}
+              style={[styles.chip, { backgroundColor: colors.surfaceRaised }]}
+            >
               <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
                 {MUSCLE_LABELS[item.muscle]}
               </Text>
-              <Text style={[typography.micro, { color: colors.textMuted }]}>
-                {item.sets} sets
-              </Text>
+              <Text style={[typography.micro, { color: colors.textMuted }]}>{item.sets} sets</Text>
             </View>
           ))}
         </View>
@@ -147,7 +135,9 @@ function computeMuscleLoads(day: ProgramDay): MuscleLoad[] {
 
   return [...setsByMuscle.entries()]
     .map(([muscle, sets]) => ({ muscle, sets }))
-    .sort((a, b) => b.sets - a.sets || MUSCLE_LABELS[a.muscle].localeCompare(MUSCLE_LABELS[b.muscle]));
+    .sort(
+      (a, b) => b.sets - a.sets || MUSCLE_LABELS[a.muscle].localeCompare(MUSCLE_LABELS[b.muscle]),
+    );
 }
 
 const styles = StyleSheet.create({

@@ -11,9 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { usePaperTheme } from '@/theme/paperTheme';
 import { darkColors } from '@/theme/tokens';
 
-LogBox.ignoreLogs([
-  "SafeAreaView has been deprecated and will be removed in a future release.",
-]);
+LogBox.ignoreLogs(['SafeAreaView has been deprecated and will be removed in a future release.']);
 
 export default function RootLayout() {
   const paperTheme = usePaperTheme();
@@ -35,6 +33,8 @@ export default function RootLayout() {
               }}
             >
               <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="custom-workout" />
+              <Stack.Screen name="program-day/[day]" />
               <Stack.Screen
                 name="settings"
                 options={{

@@ -5,6 +5,8 @@ import { ActivityIndicator, Button, Card, Chip, IconButton, List } from 'react-n
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
+import { deleteTemplate, listTemplates } from '@/domain/programs/templateStore';
+import type { WorkoutTemplate } from '@/domain/programs/templates';
 import { summarizeWorkoutSession, type WorkoutHistorySummary } from '@/domain/workouts/history';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { useTheme } from '@/theme';
@@ -15,24 +17,35 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
+  const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      let mounted = true;
-      setLoading(true);
-      listWorkoutHistory()
-        .then((next) => {
-          if (mounted) setSessions(next);
-        })
-        .finally(() => {
-          if (mounted) setLoading(false);
-        });
-      return () => {
-        mounted = false;
-      };
-    }, []),
-  );
+  const refresh = useCallback(() => {
+    let mounted = true;
+    setLoading(true);
+    Promise.all([listWorkoutHistory(), listTemplates()])
+      .then(([nextSessions, nextTemplates]) => {
+        if (!mounted) return;
+        setSessions(nextSessions);
+        setTemplates(nextTemplates);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useFocusEffect(refresh);
+
+  const startTemplate = (templateId: string) =>
+    router.push({ pathname: '/workout', params: { templateId } });
+
+  const removeTemplate = async (templateId: string) => {
+    await deleteTemplate(templateId);
+    setTemplates((prev) => prev.filter((t) => t.id !== templateId));
+  };
 
   const summaries = useMemo(() => sessions.map(summarizeWorkoutSession), [sessions]);
   const totalVolume = summaries.reduce((total, item) => total + item.volumeKg, 0);
@@ -41,6 +54,7 @@ export default function HistoryScreen() {
     if (router.canGoBack()) router.back();
     else router.replace('/');
   };
+  const goToExercise = (exerciseId: string) => router.push(`/exercise/${exerciseId}`);
 
   return (
     <Animated.View entering={FadeIn} style={{ flex: 1, backgroundColor: colors.background }}>
@@ -91,6 +105,22 @@ export default function HistoryScreen() {
                 </View>
               </Card.Content>
             </Card>
+
+            {templates.length > 0 ? (
+              <View style={{ gap: spacing.sm }}>
+                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+                  Saved templates
+                </Text>
+                {templates.map((template) => (
+                  <TemplateRow
+                    key={template.id}
+                    template={template}
+                    onStart={() => startTemplate(template.id)}
+                    onDelete={() => removeTemplate(template.id)}
+                  />
+                ))}
+              </View>
+            ) : null}
           </View>
         }
         ListEmptyComponent={
@@ -124,13 +154,19 @@ export default function HistoryScreen() {
             </Card>
           )
         }
-        renderItem={({ item }) => <HistorySessionCard summary={item} />}
+        renderItem={({ item }) => <HistorySessionCard summary={item} onSelectExercise={goToExercise} />}
       />
     </Animated.View>
   );
 }
 
-function HistorySessionCard({ summary }: { summary: WorkoutHistorySummary }) {
+function HistorySessionCard({
+  summary,
+  onSelectExercise,
+}: {
+  summary: WorkoutHistorySummary;
+  onSelectExercise: (exerciseId: string) => void;
+}) {
   const { colors, radius, spacing, typography } = useTheme();
   const topExercises = summary.exerciseSummaries.filter((item) => item.completedSets > 0).slice(0, 3);
 
@@ -177,7 +213,9 @@ function HistorySessionCard({ summary }: { summary: WorkoutHistorySummary }) {
               key={exercise.exerciseId}
               title={exercise.name}
               description={`${exercise.completedSets} sets · ${formatVolume(exercise.volumeKg)} · best ${exercise.bestSetLabel}`}
+              onPress={() => onSelectExercise(exercise.exerciseId)}
               left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
+              right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
               titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
               descriptionStyle={[typography.caption, { color: colors.textMuted }]}
               style={styles.compactListItem}
@@ -186,6 +224,40 @@ function HistorySessionCard({ summary }: { summary: WorkoutHistorySummary }) {
         </View>
       </Card.Content>
     </Card>
+  );
+}
+
+function TemplateRow({
+  template,
+  onStart,
+  onDelete,
+}: {
+  template: WorkoutTemplate;
+  onStart: () => void;
+  onDelete: () => void;
+}) {
+  const { colors, radius, spacing, typography } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.templateRow,
+        { backgroundColor: colors.surfaceRaised, borderRadius: radius.md, paddingHorizontal: spacing.md },
+      ]}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
+          {template.name}
+        </Text>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          {template.day.prescriptions.length} exercises · ~{template.day.estimatedMinutes} min
+        </Text>
+      </View>
+      <IconButton icon="delete-outline" size={18} onPress={onDelete} />
+      <Button mode="contained-tonal" compact onPress={onStart}>
+        Start
+      </Button>
+    </View>
   );
 }
 
@@ -241,6 +313,12 @@ const styles = StyleSheet.create({
   },
   compactListItem: {
     paddingVertical: 0,
+  },
+  templateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
   },
   loadingWrap: {
     minHeight: 180,

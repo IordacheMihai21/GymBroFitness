@@ -182,11 +182,7 @@ export type UserProfile = {
 // ---------------------------------------------------------------------------
 
 export type SplitType =
-  | 'full_body'
-  | 'upper_lower'
-  | 'push_pull_legs'
-  | 'upper_lower_full'
-  | 'custom';
+  'full_body' | 'upper_lower' | 'push_pull_legs' | 'upper_lower_full' | 'custom';
 
 export type ExercisePrescription = {
   exerciseId: string;
@@ -198,6 +194,19 @@ export type ExercisePrescription = {
   restSeconds: number;
   recommendedLoad?: number;
   selectionReason: string;
+  /** Coach/programmer note shown before starting the exercise. */
+  note?: string;
+  /** Optional default intensification technique applied to new workout sets. */
+  setTechnique?: SetTechnique;
+  /**
+   * Chains this exercise to the very next one in the day/session as a
+   * superset — logging a set on either advances straight to the other with
+   * no rest, instead of waiting for this exercise to finish. A run of
+   * exercises can chain together (A→B→C) by flagging each except the last.
+   * Adjacency-based rather than a group id, matching how a template/session
+   * already stores exercises as an ordered list — see docs/PLAN.md.
+   */
+  supersetWithNext?: boolean;
 };
 
 export type ProgramDay = {
@@ -229,6 +238,24 @@ export type TrainingProgram = {
 
 export type SetKind = 'warmup' | 'working' | 'failure';
 
+/**
+ * How a working set was extended beyond a single clean effort. All five
+ * intensification techniques reduce to the same shape: a primary effort
+ * (the set's own loadKg/reps) plus a list of follow-on sub-efforts —
+ * a drop set's reduced-load continuations, a rest-pause/myo-rep/cluster
+ * set's short-rest clusters at the same load, or a backoff set's lighter
+ * volume after a top set.
+ */
+export type SetTechnique =
+  'standard' | 'drop_set' | 'rest_pause' | 'myo_reps' | 'cluster_set' | 'top_backoff';
+
+export type SubEffort = {
+  loadKg: number | null;
+  reps: number | null;
+  /** Rest taken before this sub-effort, seconds. 0 for a true drop set (no rest). */
+  restSeconds: number;
+};
+
 export type PerformedSet = {
   id: string;
   setNumber: number;
@@ -243,6 +270,10 @@ export type PerformedSet = {
   skipped: boolean;
   completedAt: string | null;
   note?: string;
+  /** Defaults to 'standard' when omitted — every set logged before this field existed. */
+  technique?: SetTechnique;
+  /** Follow-on efforts after the primary load/reps above. Empty/omitted for a standard set. */
+  subEfforts?: SubEffort[];
 };
 
 export type PerformedExercise = {

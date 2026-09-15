@@ -1,7 +1,7 @@
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
-import { type ElementRef, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { type ElementRef, useCallback, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Avatar, Button, IconButton, TouchableRipple } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,22 +17,19 @@ import { TodayWorkoutHero } from '@/components/home/TodayWorkoutHero';
 import { WeekLogCard } from '@/components/home/WeekLogCard';
 import { Reveal } from '@/components/ui/Reveal';
 import { BRAND } from '@/constants/branding';
-import { DEMO_DISPLAY_NAME, DEMO_PREFERENCES, DEMO_USER_ID } from '@/domain/programs/demoPreferences';
-import { generateProgram } from '@/domain/programs/generator';
 import { computeMesocycleStatus } from '@/domain/programs/mesocycle';
 import {
-  DEMO_COMPLETED_AT,
-  DEMO_INTENSITY_RIR_MATCH,
   DEMO_LAST_TOP_SET_SESSION,
   DEMO_MESOCYCLE_BLOCK,
-  DEMO_PERSONAL_RECORDS,
   DEMO_PRE_WORKOUT_LOG,
-  DEMO_WEEK_LOG,
-  DEMO_WEEK_VOLUME_KG,
 } from '@/domain/workouts/demoHistory';
-import { computeStreak } from '@/domain/workouts/gamification';
+import { buildPlannedWeek, buildWorkoutHistoryInsights } from '@/domain/workouts/historyInsights';
+import { listWorkoutHistory } from '@/domain/workouts/historyStore';
+import { findLastPerformedExercise, previousSetAtIndex } from '@/domain/workouts/lastPerformance';
 import { computeTargetToBeat } from '@/domain/workouts/targetToBeat';
+import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
+import type { WorkoutSession } from '@/types';
 
 const COACH_NOTE = 'Today is simple: own the first top set, then let the plan do its job.';
 
@@ -42,23 +39,52 @@ export default function HomeScreen() {
   const router = useRouter();
   const actionSheetRef = useRef<ElementRef<typeof BottomSheetModal>>(null);
   const safeTop = Math.max(insets.top, spacing.xxl);
-
-  const program = useMemo(() => generateProgram(DEMO_PREFERENCES, DEMO_USER_ID), []);
+  const { user, preferences, program } = useActiveProgram();
+  const [history, setHistory] = useState<WorkoutSession[]>([]);
   const [dayIndex, setDayIndex] = useState(0);
   const [activeSheet, setActiveSheet] = useState<HomeSheet | null>(null);
   const day = program.days[dayIndex];
   const swapIndex = (dayIndex + 1) % program.days.length;
 
-  const streakDays = useMemo(() => computeStreak(DEMO_COMPLETED_AT), []);
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+      listWorkoutHistory().then((next) => {
+        if (mounted) setHistory(next);
+      });
+      return () => {
+        mounted = false;
+      };
+    }, []),
+  );
+
+  const plannedWeek = useMemo(
+    () => buildPlannedWeek(program.days, preferences.preferredDays),
+    [preferences.preferredDays, program.days],
+  );
+  const insights = useMemo(
+    () => buildWorkoutHistoryInsights(history, plannedWeek),
+    [history, plannedWeek],
+  );
   const mesocycleStatus = useMemo(() => computeMesocycleStatus(DEMO_MESOCYCLE_BLOCK), []);
+  const topSetBenchmark = useMemo(() => {
+    const previous = findLastPerformedExercise(history, day.prescriptions[0].exerciseId);
+    const previousSet = previousSetAtIndex(previous, 0);
+    if (previousSet?.loadKg != null && previousSet.reps != null && previousSet.rir != null) {
+      return {
+        seed: {
+          loadKg: previousSet.loadKg,
+          reps: previousSet.reps,
+          rir: previousSet.rir,
+        },
+        isReal: true,
+      };
+    }
+    return { seed: DEMO_LAST_TOP_SET_SESSION, isReal: false };
+  }, [day.prescriptions, history]);
   const target = useMemo(
-    () =>
-      computeTargetToBeat(
-        day.prescriptions[0],
-        DEMO_PREFERENCES.experience,
-        DEMO_LAST_TOP_SET_SESSION,
-      ),
-    [day],
+    () => computeTargetToBeat(day.prescriptions[0], preferences.experience, topSetBenchmark.seed),
+    [day, preferences.experience, topSetBenchmark.seed],
   );
 
   function startDay(index: number) {
@@ -112,14 +138,14 @@ export default function HomeScreen() {
                 contentStyle={styles.streakButtonContent}
                 labelStyle={typography.captionBold}
               >
-                {streakDays}d
+                {insights.streakDays}d
               </Button>
               <TouchableRipple
                 onPress={() => router.push('/profile')}
                 style={styles.avatarTouchable}
                 borderless
               >
-                <Avatar.Text size={32} label={DEMO_DISPLAY_NAME.slice(0, 1)} />
+                <Avatar.Text size={32} label={user.displayName.slice(0, 1)} />
               </TouchableRipple>
             </View>
           </View>
@@ -128,11 +154,9 @@ export default function HomeScreen() {
         <Reveal index={1}>
           <View style={{ gap: 4 }}>
             <Text style={[typography.title, { color: colors.textPrimary }]}>
-              Ready to jump back to work, {DEMO_DISPLAY_NAME}?
+              Ready to jump back to work, {user.displayName}?
             </Text>
-            <Text style={[typography.body, { color: colors.textSecondary }]}>
-              {COACH_NOTE}
-            </Text>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>{COACH_NOTE}</Text>
           </View>
         </Reveal>
 
@@ -141,16 +165,18 @@ export default function HomeScreen() {
             day={day}
             targetRir={day.prescriptions[0].targetRir}
             target={target}
+            hasPreviousTopSet={topSetBenchmark.isReal}
             swapLabel={program.days[swapIndex].name}
             onStart={() => startDay(dayIndex)}
             onSwap={() => openSheet('swap')}
             onWeakPoint={() => openSheet('weakPoint')}
+            onCustomWorkout={() => router.push('/custom-workout')}
           />
         </Reveal>
 
         <Reveal index={3}>
           <HomePreflightRail
-            intensityMatchPct={DEMO_INTENSITY_RIR_MATCH}
+            intensityMatchPct={insights.intensityMatchPct}
             preWorkoutLog={DEMO_PRE_WORKOUT_LOG}
             status={mesocycleStatus}
             onFuelPress={() => openSheet('preFuel')}
@@ -166,14 +192,14 @@ export default function HomeScreen() {
         </Reveal>
 
         <Reveal index={6}>
-          <PrWatchCard records={DEMO_PERSONAL_RECORDS} />
+          <PrWatchCard records={insights.personalRecords} />
         </Reveal>
 
         <Reveal index={7}>
           <WeekLogCard
-            entries={DEMO_WEEK_LOG}
-            weekVolumeKg={DEMO_WEEK_VOLUME_KG}
-            intensityMatchPct={DEMO_INTENSITY_RIR_MATCH}
+            entries={insights.weekLog}
+            weekVolumeKg={insights.weekVolumeKg}
+            intensityMatchPct={insights.intensityMatchPct}
           />
         </Reveal>
 
@@ -182,7 +208,7 @@ export default function HomeScreen() {
         </Reveal>
 
         <Reveal index={9}>
-          <RecoveryProtocolCard status={mesocycleStatus} weekVolumeKg={DEMO_WEEK_VOLUME_KG} />
+          <RecoveryProtocolCard status={mesocycleStatus} weekVolumeKg={insights.weekVolumeKg} />
         </Reveal>
       </ScrollView>
 
@@ -190,7 +216,7 @@ export default function HomeScreen() {
         activeSheet={activeSheet}
         modalRef={actionSheetRef}
         preWorkoutLog={DEMO_PRE_WORKOUT_LOG}
-        streakDays={streakDays}
+        streakDays={insights.streakDays}
         currentDayName={day.name}
         swapLabel={program.days[swapIndex].name}
         onDismiss={() => setActiveSheet(null)}

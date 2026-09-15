@@ -2,7 +2,7 @@ import { requireExercise } from '@/domain/exercises/catalog';
 import { completedWorkingSets } from '@/domain/progression/engine';
 import type { WorkoutSession } from '@/types';
 
-import { sessionVolumeKg, volumeLoadKg } from './analytics';
+import { estimateOneRepMax, sessionVolumeKg, setEfforts, volumeLoadKg } from './analytics';
 
 export type WorkoutExerciseSummary = {
   exerciseId: string;
@@ -10,6 +10,8 @@ export type WorkoutExerciseSummary = {
   completedSets: number;
   volumeKg: number;
   bestSetLabel: string;
+  /** Best Epley-estimated 1RM across completed sets, kg. Null when not a loaded lift. */
+  bestE1rmKg: number | null;
 };
 
 export type WorkoutHistorySummary = {
@@ -34,6 +36,7 @@ export function summarizeWorkoutSession(session: WorkoutSession): WorkoutHistory
       completedSets: completed.length,
       volumeKg: volumeLoadKg(exercise.sets),
       bestSetLabel: bestSetLabel(completed),
+      bestE1rmKg: bestEstimatedOneRepMax(completed),
     };
   });
 
@@ -58,9 +61,23 @@ export function sessionDurationMinutes(session: WorkoutSession, now = new Date()
   return Math.max(0, Math.round(elapsedMs / 60000));
 }
 
+function bestEstimatedOneRepMax(sets: ReturnType<typeof completedWorkingSets>): number | null {
+  const estimates = sets
+    .flatMap(setEfforts)
+    .map((e) => estimateOneRepMax(e.loadKg ?? 0, e.reps ?? 0))
+    .filter((v): v is number => v != null);
+  return estimates.length > 0 ? Math.max(...estimates) : null;
+}
+
+type LabelCandidate = { loadKg: number | null; reps: number | null; durationSeconds: number | null };
+
 function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>): string {
-  if (sets.length === 0) return 'No completed sets';
-  const best = sets.reduce((current, candidate) => {
+  const candidates: LabelCandidate[] = sets.flatMap((s) => [
+    { loadKg: s.loadKg, reps: s.reps, durationSeconds: s.durationSeconds },
+    ...(s.subEfforts ?? []).map((e) => ({ loadKg: e.loadKg, reps: e.reps, durationSeconds: null })),
+  ]);
+  if (candidates.length === 0) return 'No completed sets';
+  const best = candidates.reduce((current, candidate) => {
     const currentScore = (current.loadKg ?? 0) * (current.reps ?? current.durationSeconds ?? 0);
     const candidateScore = (candidate.loadKg ?? 0) * (candidate.reps ?? candidate.durationSeconds ?? 0);
     return candidateScore > currentScore ? candidate : current;

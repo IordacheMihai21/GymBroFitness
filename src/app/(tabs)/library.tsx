@@ -1,17 +1,15 @@
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
-import Body, { type ExtendedBodyPart, type Slug } from 'react-native-body-highlighter';
+import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
 import { Card, Chip, List, Searchbar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ExerciseListItem } from '@/components/exercise/ExerciseListItem';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
-import {
-  EXERCISE_LIBRARY,
-  searchLibrary,
-  type LibraryExercise,
-} from '@/domain/exercises/library';
+import { EXERCISE_LIBRARY, searchLibrary, type LibraryExercise } from '@/domain/exercises/library';
+import { bodySlugsForMuscle } from '@/domain/muscles/muscleMap';
 import { MUSCLE_GROUPS, type MuscleGroup } from '@/types';
 import { useTheme } from '@/theme';
 
@@ -24,24 +22,10 @@ const LEVEL_FILTERS: { label: string; value: LevelFilter }[] = [
   { label: 'Expert', value: 'expert' },
 ];
 
-const MUSCLE_TO_SLUG: Record<MuscleGroup, Slug> = {
-  chest: 'chest',
-  back: 'upper-back',
-  shoulders: 'deltoids',
-  biceps: 'biceps',
-  triceps: 'triceps',
-  forearms: 'forearm',
-  quadriceps: 'quadriceps',
-  hamstrings: 'hamstring',
-  glutes: 'gluteal',
-  calves: 'calves',
-  abs: 'abs',
-  lower_back: 'lower-back',
-};
-
 export default function LibraryScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [muscle, setMuscle] = useState<MuscleGroup | null>(null);
   const [level, setLevel] = useState<LevelFilter>('all');
@@ -54,17 +38,13 @@ export default function LibraryScreen() {
 
   const results = useMemo(
     () =>
-      level === 'all'
-        ? baseResults
-        : baseResults.filter((exercise) => exercise.level === level),
+      level === 'all' ? baseResults : baseResults.filter((exercise) => exercise.level === level),
     [baseResults, level],
   );
 
   const selectedExercise = useMemo(
     () =>
-      results.find((exercise) => exercise.id === selectedId) ??
-      results[0] ??
-      EXERCISE_LIBRARY[0],
+      results.find((exercise) => exercise.id === selectedId) ?? results[0] ?? EXERCISE_LIBRARY[0],
     [results, selectedId],
   );
 
@@ -72,7 +52,8 @@ export default function LibraryScreen() {
   const primaryLabel = selectedExercise.primaryMuscles
     .map((item) => MUSCLE_LABELS[item])
     .join(', ');
-  const firstInstruction = selectedExercise.instructions[0] ?? 'Load with control and repeat with consistent form.';
+  const firstInstruction =
+    selectedExercise.instructions[0] ?? 'Load with control and repeat with consistent form.';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
@@ -120,12 +101,11 @@ export default function LibraryScreen() {
               bodyData={bodyData}
               primaryLabel={primaryLabel}
               firstInstruction={firstInstruction}
+              onViewHistory={() => router.push(`/exercise/${selectedExercise.id}`)}
             />
 
             <View style={{ gap: spacing.sm }}>
-              <Text style={[typography.captionBold, { color: colors.textMuted }]}>
-                Filters
-              </Text>
+              <Text style={[typography.captionBold, { color: colors.textMuted }]}>Filters</Text>
               <FlatList
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -197,11 +177,13 @@ function SelectedExerciseCard({
   bodyData,
   primaryLabel,
   firstInstruction,
+  onViewHistory,
 }: {
   exercise: LibraryExercise;
   bodyData: ExtendedBodyPart[];
   primaryLabel: string;
   firstInstruction: string;
+  onViewHistory: () => void;
 }) {
   const { colors, radius, spacing, typography } = useTheme();
   const heroImage = exercise.images[0];
@@ -222,13 +204,14 @@ function SelectedExerciseCard({
         <View style={styles.previewRow}>
           <Image
             source={heroImage ? { uri: heroImage } : undefined}
-            style={[styles.heroImage, { backgroundColor: colors.surfacePressed, borderRadius: radius.lg }]}
+            style={[
+              styles.heroImage,
+              { backgroundColor: colors.surfacePressed, borderRadius: radius.lg },
+            ]}
             contentFit="cover"
           />
           <View style={{ flex: 1, gap: spacing.xs }}>
-            <Text style={[typography.micro, { color: colors.accent }]}>
-              Selected movement
-            </Text>
+            <Text style={[typography.micro, { color: colors.accent }]}>Selected movement</Text>
             <Text style={[typography.heading, { color: colors.textPrimary }]} numberOfLines={2}>
               {exercise.name}
             </Text>
@@ -274,6 +257,17 @@ function SelectedExerciseCard({
         </View>
 
         <List.Item
+          title="View training history"
+          description="Session-by-session e1RM trend and logged sets for this exercise."
+          onPress={onViewHistory}
+          left={(props) => <List.Icon {...props} icon="chart-line" color={colors.accent} />}
+          right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
+          titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+          descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+          style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
+        />
+
+        <List.Item
           title="Use as substitution reference"
           description="Compare target muscle, equipment, level, and mechanics before swapping a lift."
           left={(props) => <List.Icon {...props} icon="swap-horizontal" color={colors.accent} />}
@@ -287,16 +281,20 @@ function SelectedExerciseCard({
 }
 
 function buildBodyData(exercise: LibraryExercise): ExtendedBodyPart[] {
-  const primary = exercise.primaryMuscles.map((muscle) => ({
-    slug: MUSCLE_TO_SLUG[muscle],
-    intensity: 2,
-  }));
+  const primary = exercise.primaryMuscles.flatMap((muscle) =>
+    bodySlugsForMuscle(muscle).map((slug) => ({
+      slug,
+      intensity: 2,
+    })),
+  );
   const secondary = exercise.secondaryMuscles
     .filter((muscle) => !exercise.primaryMuscles.includes(muscle))
-    .map((muscle) => ({
-      slug: MUSCLE_TO_SLUG[muscle],
-      intensity: 1,
-    }));
+    .flatMap((muscle) =>
+      bodySlugsForMuscle(muscle).map((slug) => ({
+        slug,
+        intensity: 1,
+      })),
+    );
 
   return [...primary, ...secondary];
 }

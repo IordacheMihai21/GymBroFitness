@@ -13,31 +13,37 @@ type TodayWorkoutHeroProps = {
   day: ProgramDay;
   targetRir: number;
   target: TargetToBeat;
+  hasPreviousTopSet: boolean;
   swapLabel: string;
   onStart: () => void;
   onSwap: () => void;
   onWeakPoint: () => void;
+  onCustomWorkout: () => void;
 };
 
 export function TodayWorkoutHero({
   day,
   targetRir,
   target,
+  hasPreviousTopSet,
   swapLabel,
   onStart,
   onSwap,
   onWeakPoint,
+  onCustomWorkout,
 }: TodayWorkoutHeroProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const totalSets = day.prescriptions.reduce((sum, p) => sum + p.workingSets, 0);
   const { decision, lastSession } = target;
   const heroImage = useMemo(() => resolveExerciseImage(target.exerciseName), [target.exerciseName]);
-  const targetText =
-    decision.nextLoad != null
+  const targetText = !hasPreviousTopSet
+    ? 'Calibrate live'
+    : decision.nextLoad != null
       ? `${decision.nextLoad} kg × ${decision.nextMaxReps} reps`
       : `${decision.nextMinReps}-${decision.nextMaxReps} reps`;
-  const decisionCopy =
-    decision.action === 'increase_load'
+  const decisionCopy = !hasPreviousTopSet
+    ? 'Log the first honest top set today. The next run will use saved history for the overload target.'
+    : decision.action === 'increase_load'
       ? 'Load earned. Keep the same rep intent and own the first set.'
       : decision.action === 'increase_reps'
         ? 'Same load. Buy one cleaner rep before chasing plates.'
@@ -116,12 +122,11 @@ export function TodayWorkoutHero({
           </Text>
           <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{targetText}</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            Last session: {lastSession.loadKg} kg × {lastSession.reps} reps @ RIR{' '}
-            {lastSession.rir}
+            {hasPreviousTopSet
+              ? `Last session: ${lastSession.loadKg} kg × ${lastSession.reps} reps @ RIR ${lastSession.rir}`
+              : 'No saved benchmark for this lift yet'}
           </Text>
-          <Text style={[typography.caption, { color: colors.textSecondary }]}>
-            {decisionCopy}
-          </Text>
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>{decisionCopy}</Text>
           <View style={[styles.ruleLine, { borderColor: colors.borderStrong }]}>
             <Text style={[typography.micro, { color: colors.accent }]}>Rule</Text>
             <Text style={[typography.micro, { color: colors.textSecondary, flex: 1 }]}>
@@ -162,6 +167,16 @@ export function TodayWorkoutHero({
           >
             Weak point
           </Chip>
+          <Chip
+            compact
+            mode="flat"
+            icon="playlist-plus"
+            onPress={onCustomWorkout}
+            style={{ backgroundColor: colors.surfacePressed }}
+            textStyle={{ color: colors.textSecondary }}
+          >
+            Custom
+          </Chip>
         </View>
       </Card.Content>
     </Card>
@@ -169,7 +184,10 @@ export function TodayWorkoutHero({
 }
 
 function normalizeName(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function resolveExerciseImage(exerciseName: string): string {
@@ -177,7 +195,9 @@ function resolveExerciseImage(exerciseName: string): string {
   const match =
     EXERCISE_LIBRARY.find((exercise) => normalizeName(exercise.name) === normalized) ??
     EXERCISE_LIBRARY.find((exercise) => normalized.includes(normalizeName(exercise.name))) ??
-    EXERCISE_LIBRARY.find((exercise) => normalizeName(exercise.name).includes('dumbbell bench press')) ??
+    EXERCISE_LIBRARY.find((exercise) =>
+      normalizeName(exercise.name).includes('dumbbell bench press'),
+    ) ??
     EXERCISE_LIBRARY.find((exercise) => normalizeName(exercise.name).includes('bench press'));
   return match?.images[0] ?? EXERCISE_LIBRARY[0].images[0];
 }

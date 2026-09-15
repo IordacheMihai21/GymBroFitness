@@ -32,6 +32,20 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="program"
+        options={{
+          title: 'Plan',
+          tabBarIcon: ({ color, size }) => <Ionicons name="clipboard" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="body"
+        options={{
+          title: 'Body',
+          tabBarIcon: ({ color, size }) => <Ionicons name="body" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="analytics"
         options={{
           title: 'Analytics',
@@ -44,18 +58,14 @@ export default function TabsLayout() {
         name="library"
         options={{
           title: 'Atlas',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="library" color={color} size={size} />
-          ),
+          tabBarIcon: ({ color, size }) => <Ionicons name="library" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" color={color} size={size} />
-          ),
+          tabBarIcon: ({ color, size }) => <Ionicons name="person" color={color} size={size} />,
         }}
       />
       <Tabs.Screen

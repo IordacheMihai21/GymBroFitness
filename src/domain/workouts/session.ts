@@ -1,7 +1,13 @@
-import type { PerformedExercise, PerformedSet, ProgramDay, WorkoutSession } from '@/types';
+import type {
+  PerformedExercise,
+  PerformedSet,
+  ProgramDay,
+  SetTechnique,
+  WorkoutSession,
+} from '@/types';
 import { uuid } from '@/utils/ids';
 
-function buildEmptySets(count: number): PerformedSet[] {
+function buildEmptySets(count: number, technique: SetTechnique = 'standard'): PerformedSet[] {
   return Array.from({ length: count }, (_, i) => ({
     id: uuid(),
     setNumber: i + 1,
@@ -13,6 +19,8 @@ function buildEmptySets(count: number): PerformedSet[] {
     completed: false,
     skipped: false,
     completedAt: null,
+    technique,
+    subEfforts: [],
   }));
 }
 
@@ -22,7 +30,7 @@ export function startWorkoutSession(day: ProgramDay, userId: string): WorkoutSes
     exerciseId: prescription.exerciseId,
     order: i,
     prescription,
-    sets: buildEmptySets(prescription.workingSets),
+    sets: buildEmptySets(prescription.workingSets, prescription.setTechnique ?? 'standard'),
     markedDiscomfort: false,
     markedUnavailable: false,
   }));

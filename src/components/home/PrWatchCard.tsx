@@ -40,7 +40,16 @@ export function PrWatchCard({ records }: PrWatchCardProps) {
           <Icon source="trophy-outline" size={21} color={colors.accent} />
         </View>
 
-        {hero ? <HeroRecord record={hero} /> : null}
+        {hero ? (
+          <HeroRecord record={hero} />
+        ) : (
+          <View style={[styles.emptyPanel, { backgroundColor: colors.surfaceRaised }]}>
+            <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>No PRs logged yet</Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              Finish a loaded workout and this card will track your best e1RM records.
+            </Text>
+          </View>
+        )}
 
         {rest.length > 0 && (
           <View style={{ gap: spacing.sm }}>
@@ -169,6 +178,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  emptyPanel: {
+    borderRadius: 14,
+    padding: 14,
+    gap: 4,
   },
   rank: {
     width: 28,
