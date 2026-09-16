@@ -228,6 +228,24 @@ export default function ProfileScreen() {
               descriptionStyle={[typography.caption, { color: colors.textMuted }]}
             />
             <List.Item
+              title="Form AI camera test"
+              description="Open lateral raise form analysis. Requires a native development build on your phone."
+              onPress={() =>
+                router.push({
+                  pathname: '/form-check/[exerciseId]',
+                  params: { exerciseId: 'lateral-raise' },
+                })
+              }
+              left={(props) => (
+                <List.Icon {...props} icon="camera-outline" color={colors.accent} />
+              )}
+              right={(props) => (
+                <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+              )}
+              titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+              descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+            />
+            <List.Item
               title="Settings"
               description="Units, profile, notifications, and training preferences"
               onPress={() => router.push('/settings')}

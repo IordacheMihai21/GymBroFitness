@@ -256,6 +256,20 @@ export type SubEffort = {
   restSeconds: number;
 };
 
+export type SetFormAnalysis = {
+  id: string;
+  exerciseId: string;
+  capturedAt: string;
+  repCount: number;
+  averageScore: number;
+  averageRomScore: number;
+  averageTempoScore: number;
+  bestRepScore: number | null;
+  worstRepScore: number | null;
+  mostCommonIssue: string | null;
+  recommendations: string[];
+};
+
 export type PerformedSet = {
   id: string;
   setNumber: number;
@@ -274,6 +288,8 @@ export type PerformedSet = {
   technique?: SetTechnique;
   /** Follow-on efforts after the primary load/reps above. Empty/omitted for a standard set. */
   subEfforts?: SubEffort[];
+  /** Optional camera-based set-quality analysis captured with Form AI. */
+  formAnalysis?: SetFormAnalysis;
 };
 
 export type PerformedExercise = {

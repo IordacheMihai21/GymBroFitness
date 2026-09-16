@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { availableExercises, requireExercise } from '@/domain/exercises/catalog';
+import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type { EquipmentType, Exercise, MuscleGroup } from '@/types';
@@ -67,6 +68,9 @@ export default function CustomWorkoutScreen() {
     (sum, exercise) => sum + (exercise.exerciseType === 'compound' ? 3 : 2),
     0,
   );
+  const formAiCount = selectedExercises.filter((exercise) =>
+    getVisionConfigForMovementPattern(exercise.movementPattern),
+  ).length;
 
   function addExercise(exercise: Exercise) {
     setSelectedExerciseIds((current) => [...current, exercise.id]);
@@ -154,7 +158,7 @@ export default function CustomWorkoutScreen() {
           <View style={styles.metricGrid}>
             <MetricBlock label="lifts" value={String(selectedExercises.length)} />
             <MetricBlock label="est. sets" value={String(totalSets)} />
-            <MetricBlock label="mode" value="manual" />
+            <MetricBlock label="form AI" value={String(formAiCount)} />
           </View>
 
           <Button
@@ -210,6 +214,11 @@ export default function CustomWorkoutScreen() {
                   <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
                     {muscleLabels(exercise.primaryMuscles)} - {equipmentLabels(exercise.equipment)}
                   </Text>
+                  {getVisionConfigForMovementPattern(exercise.movementPattern) ? (
+                    <Chip compact mode="flat" icon="camera-outline" style={styles.formChip}>
+                      Form AI
+                    </Chip>
+                  ) : null}
                 </View>
                 <IconButton
                   icon="trash-can-outline"
@@ -310,6 +319,13 @@ export default function CustomWorkoutScreen() {
                 descriptionStyle={[typography.caption, { color: colors.textMuted }]}
                 style={[styles.catalogRow, { backgroundColor: colors.surfaceRaised }]}
               />
+              {getVisionConfigForMovementPattern(exercise.movementPattern) ? (
+                <View style={styles.catalogBadgeRow}>
+                  <Chip compact mode="flat" icon="camera-outline">
+                    Form AI ready
+                  </Chip>
+                </View>
+              ) : null}
               {index < candidates.length - 1 ? <View style={{ height: spacing.sm }} /> : null}
             </View>
           ))
@@ -464,5 +480,14 @@ const styles = StyleSheet.create({
   },
   catalogRow: {
     borderRadius: 14,
+  },
+  catalogBadgeRow: {
+    flexDirection: 'row',
+    marginTop: -4,
+    marginLeft: 56,
+  },
+  formChip: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
   },
 });

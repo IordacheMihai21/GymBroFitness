@@ -78,6 +78,8 @@ describe('workout history summaries', () => {
     expect(summary.completedSets).toBe(2);
     expect(summary.exerciseCount).toBe(1);
     expect(summary.volumeKg).toBe(1500);
+    expect(summary.analyzedSetCount).toBe(0);
+    expect(summary.averageFormScore).toBeNull();
     expect(summary.exerciseSummaries[0]).toMatchObject({
       name: 'Barbell Bench Press',
       completedSets: 2,
@@ -145,5 +147,95 @@ describe('workout history summaries', () => {
     expect(summary.volumeKg).toBe(1640);
     // The primary set (100kg x 8) still outscores either drop.
     expect(summary.exerciseSummaries[0].bestSetLabel).toBe('100 kg x 8');
+  });
+
+  it('summarizes attached Form AI analyses across completed sets', () => {
+    const session: WorkoutSession = {
+      id: 'session-3',
+      userId: 'user-1',
+      programId: null,
+      programDayId: 'upper-a',
+      dayName: 'Upper A',
+      status: 'completed',
+      startedAt: '2026-09-14T10:00:00.000Z',
+      finishedAt: '2026-09-14T10:20:00.000Z',
+      totalPausedSeconds: 0,
+      exercises: [
+        {
+          id: 'performed-3',
+          exerciseId: 'barbell-bench-press',
+          order: 0,
+          markedDiscomfort: false,
+          markedUnavailable: false,
+          prescription: {
+            exerciseId: 'barbell-bench-press',
+            order: 0,
+            workingSets: 2,
+            minReps: 6,
+            maxReps: 10,
+            targetRir: 1,
+            restSeconds: 180,
+            selectionReason: 'test',
+          },
+          sets: [
+            {
+              id: 'set-1',
+              setNumber: 1,
+              kind: 'working',
+              loadKg: 100,
+              reps: 8,
+              durationSeconds: null,
+              rir: 1,
+              completed: true,
+              skipped: false,
+              completedAt: '2026-09-14T10:05:00.000Z',
+              formAnalysis: {
+                id: 'analysis-1',
+                exerciseId: 'barbell-bench-press',
+                capturedAt: '2026-09-14T10:05:00.000Z',
+                repCount: 8,
+                averageScore: 80,
+                averageRomScore: 82,
+                averageTempoScore: 78,
+                bestRepScore: 91,
+                worstRepScore: 70,
+                mostCommonIssue: null,
+                recommendations: ['Clean set.'],
+              },
+            },
+            {
+              id: 'set-2',
+              setNumber: 2,
+              kind: 'working',
+              loadKg: 100,
+              reps: 7,
+              durationSeconds: null,
+              rir: 1,
+              completed: true,
+              skipped: false,
+              completedAt: '2026-09-14T10:10:00.000Z',
+              formAnalysis: {
+                id: 'analysis-2',
+                exerciseId: 'barbell-bench-press',
+                capturedAt: '2026-09-14T10:10:00.000Z',
+                repCount: 7,
+                averageScore: 90,
+                averageRomScore: 92,
+                averageTempoScore: 88,
+                bestRepScore: 96,
+                worstRepScore: 83,
+                mostCommonIssue: 'Control the eccentric.',
+                recommendations: ['Slow down.'],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const summary = summarizeWorkoutSession(session);
+
+    expect(summary.analyzedSetCount).toBe(2);
+    expect(summary.averageFormScore).toBe(85);
   });
 });

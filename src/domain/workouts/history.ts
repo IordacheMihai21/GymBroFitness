@@ -23,6 +23,8 @@ export type WorkoutHistorySummary = {
   completedSets: number;
   exerciseCount: number;
   volumeKg: number;
+  analyzedSetCount: number;
+  averageFormScore: number | null;
   exerciseSummaries: WorkoutExerciseSummary[];
 };
 
@@ -39,6 +41,9 @@ export function summarizeWorkoutSession(session: WorkoutSession): WorkoutHistory
       bestE1rmKg: bestEstimatedOneRepMax(completed),
     };
   });
+  const formAnalyses = session.exercises.flatMap((exercise) =>
+    exercise.sets.flatMap((set) => (set.formAnalysis ? [set.formAnalysis] : [])),
+  );
 
   return {
     sessionId: session.id,
@@ -49,6 +54,14 @@ export function summarizeWorkoutSession(session: WorkoutSession): WorkoutHistory
     completedSets: exerciseSummaries.reduce((total, item) => total + item.completedSets, 0),
     exerciseCount: exerciseSummaries.filter((item) => item.completedSets > 0).length,
     volumeKg: sessionVolumeKg(session),
+    analyzedSetCount: formAnalyses.length,
+    averageFormScore:
+      formAnalyses.length > 0
+        ? Math.round(
+            formAnalyses.reduce((sum, analysis) => sum + analysis.averageScore, 0) /
+              formAnalyses.length,
+          )
+        : null,
     exerciseSummaries,
   };
 }
@@ -69,7 +82,11 @@ function bestEstimatedOneRepMax(sets: ReturnType<typeof completedWorkingSets>): 
   return estimates.length > 0 ? Math.max(...estimates) : null;
 }
 
-type LabelCandidate = { loadKg: number | null; reps: number | null; durationSeconds: number | null };
+type LabelCandidate = {
+  loadKg: number | null;
+  reps: number | null;
+  durationSeconds: number | null;
+};
 
 function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>): string {
   const candidates: LabelCandidate[] = sets.flatMap((s) => [
@@ -79,7 +96,8 @@ function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>): string {
   if (candidates.length === 0) return 'No completed sets';
   const best = candidates.reduce((current, candidate) => {
     const currentScore = (current.loadKg ?? 0) * (current.reps ?? current.durationSeconds ?? 0);
-    const candidateScore = (candidate.loadKg ?? 0) * (candidate.reps ?? candidate.durationSeconds ?? 0);
+    const candidateScore =
+      (candidate.loadKg ?? 0) * (candidate.reps ?? candidate.durationSeconds ?? 0);
     return candidateScore > currentScore ? candidate : current;
   });
   if (best.durationSeconds != null && best.durationSeconds > 0) return `${best.durationSeconds}s`;

@@ -135,6 +135,11 @@ export function SetRow({
               {previousLabel}
             </Text>
           ) : null}
+          {set.formAnalysis ? (
+            <Text style={[typography.micro, { color: colors.success }]} numberOfLines={1}>
+              Form AI: {set.formAnalysis.averageScore}/100 · {set.formAnalysis.repCount} reps
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.actionGroup}>
@@ -208,10 +213,7 @@ export function SetRow({
         <Pressable
           onPress={onOpenRirPicker}
           disabled={isLocked}
-          style={[
-            styles.rirButton,
-            { borderColor: colors.border, opacity: isLocked ? 0.6 : 1 },
-          ]}
+          style={[styles.rirButton, { borderColor: colors.border, opacity: isLocked ? 0.6 : 1 }]}
         >
           <Text style={[typography.micro, { color: colors.textMuted }]}>RIR</Text>
           <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
@@ -230,6 +232,29 @@ export function SetRow({
               ≈{plates.achievedWeight} kg closest
             </Text>
           ) : null}
+        </View>
+      ) : null}
+
+      {set.formAnalysis ? (
+        <View
+          style={[
+            styles.formAnalysisPanel,
+            { backgroundColor: colors.successSoft, borderColor: colors.success },
+          ]}
+        >
+          <View style={styles.formAnalysisHeader}>
+            <Text style={[typography.captionBold, { color: colors.success }]}>
+              Form AI {set.formAnalysis.averageScore}/100
+            </Text>
+            <Text style={[typography.micro, { color: colors.textSecondary }]}>
+              ROM {set.formAnalysis.averageRomScore} · Tempo {set.formAnalysis.averageTempoScore}
+            </Text>
+          </View>
+          <Text style={[typography.micro, { color: colors.textSecondary }]} numberOfLines={2}>
+            {set.formAnalysis.mostCommonIssue ??
+              set.formAnalysis.recommendations[0] ??
+              'Clean set — keep this as your baseline.'}
+          </Text>
         </View>
       ) : null}
 
@@ -354,6 +379,18 @@ const styles = StyleSheet.create({
     gap: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 8,
+  },
+  formAnalysisPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    padding: 10,
+    gap: 4,
+  },
+  formAnalysisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   subEffortRow: {
     flexDirection: 'row',

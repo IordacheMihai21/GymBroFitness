@@ -1,8 +1,8 @@
-import { type ElementRef, useEffect, useMemo, useRef, useState } from 'react';
+import { type ElementRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { AppState, ScrollView, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import {
   ActivityIndicator,
   Button,
@@ -15,6 +15,7 @@ import {
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { PrCelebration } from '@/components/workout/PrCelebration';
 import { RestTimer } from '@/components/workout/RestTimer';
 import { RirPickerSheet } from '@/components/workout/RirPickerSheet';
@@ -24,8 +25,7 @@ import { buildManualPrescription, recalculateProgramDay } from '@/domain/program
 import { saveTemplate, listTemplates } from '@/domain/programs/templateStore';
 import { buildTemplateFromSession, defaultTemplateName } from '@/domain/programs/templates';
 import { detectPersonalRecords, sessionVolumeKg } from '@/domain/workouts/analytics';
-import { DEMO_PERSONAL_RECORDS } from '@/domain/workouts/demoHistory';
-import { summarizeWorkoutSession } from '@/domain/workouts/history';
+import type { WorkoutExerciseSummary } from '@/domain/workouts/history';
 import {
   discardInProgressWorkoutSession,
   getInProgressWorkoutSession,
@@ -38,6 +38,7 @@ import {
   previousSetAtIndex,
   formatPreviousSet,
 } from '@/domain/workouts/lastPerformance';
+import { buildAllPersonalRecordsFromHistory } from '@/domain/workouts/historyInsights';
 import {
   buildSetAutofillSuggestion,
   setAutofillPatch,
@@ -45,6 +46,24 @@ import {
 } from '@/domain/workouts/setAutofill';
 import { startWorkoutSession } from '@/domain/workouts/session';
 import { navigateAfterSetCompletion } from '@/domain/workouts/supersetNavigation';
+import {
+  buildProgramProgressionTargets,
+  formatProgressionSignal,
+  progressionActionLabel,
+  type TargetToBeat,
+} from '@/domain/workouts/targetToBeat';
+import {
+  buildWorkoutSessionReview,
+  type WorkoutFormReview,
+  type WorkoutMuscleDose,
+  type WorkoutProgressionReview,
+  type WorkoutRirReview,
+} from '@/domain/workouts/workoutReview';
+import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
+import {
+  takePendingFormAnalysisResult,
+  type PendingFormAnalysisResult,
+} from '@/domain/vision/formAnalysisResultStore';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type {
@@ -112,6 +131,7 @@ export default function WorkoutScreen() {
       programName={program.name}
       day={day}
       userId={user.id}
+      preferences={preferences}
     />
   );
 }
@@ -120,10 +140,12 @@ function WorkoutSessionView({
   programName,
   day,
   userId,
+  preferences,
 }: {
   programName: string;
   day: ProgramDay;
   userId: string;
+  preferences: TrainingPreferences;
 }) {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
@@ -148,6 +170,7 @@ function WorkoutSessionView({
   const [isHydratingDraft, setIsHydratingDraft] = useState(true);
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
   const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null);
+  const [formAnalysisStatus, setFormAnalysisStatus] = useState<string | null>(null);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -199,6 +222,21 @@ function WorkoutSessionView({
     };
   }, [finished, isHydratingDraft, session]);
 
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+      takePendingFormAnalysisResult(session.id).then((result) => {
+        if (!mounted || !result) return;
+        setSession((prev) => attachFormAnalysisResult(prev, result));
+        setFormAnalysisStatus(`Form AI attached to set ${result.setIndex + 1}.`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      });
+      return () => {
+        mounted = false;
+      };
+    }, [session.id]),
+  );
+
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active' || isHydratingDraft || finished || !isResumableSession(session)) {
@@ -220,6 +258,7 @@ function WorkoutSessionView({
   const activeExercise = session.exercises[activeExerciseIndex] ?? session.exercises[0];
   const isPaused = session.status === 'paused';
   const activeExerciseMeta = requireExercise(activeExercise.exerciseId);
+  const activeVisionConfig = getVisionConfigForMovementPattern(activeExerciseMeta.movementPattern);
   const activePrescription = activeExercise.prescription;
   const plannedSets = session.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
   const completedSets = countCompletedSets(session.exercises);
@@ -234,6 +273,8 @@ function WorkoutSessionView({
     [history, activeExercise.exerciseId],
   );
   const nextOpenSetIndex = firstOpenSetIndex(activeExercise.sets);
+  const formTargetSetIndex = nextOpenSetIndex ?? Math.max(0, activeExercise.sets.length - 1);
+  const formTargetSet = activeExercise.sets[formTargetSetIndex];
   const openSetCount = activeExercise.sets.filter((set) => !set.completed && !set.skipped).length;
   const activeAutofillSuggestion = useMemo(
     () =>
@@ -242,6 +283,16 @@ function WorkoutSessionView({
         : buildSetAutofillSuggestion(activeExercise, previousPerformance, nextOpenSetIndex),
     [activeExercise, nextOpenSetIndex, previousPerformance],
   );
+  const progressionTargets = useMemo(
+    () =>
+      buildProgramProgressionTargets({
+        prescriptions: session.exercises.map((exercise) => exercise.prescription),
+        history,
+        userExperience: preferences.experience,
+      }),
+    [history, preferences.experience, session.exercises],
+  );
+  const activeProgressionTarget = progressionTargets.get(activeExercise.exerciseId) ?? null;
 
   function updateSet(exerciseIndex: number, setIndex: number, patch: Partial<PerformedSet>) {
     setSession((prev) => {
@@ -396,8 +447,12 @@ function WorkoutSessionView({
 
     try {
       const saved = await saveWorkoutSession(completedSession);
-      const records = detectPersonalRecords(saved, DEMO_PERSONAL_RECORDS, getExercise);
+      const existingRecords = buildAllPersonalRecordsFromHistory(
+        history.filter((item) => item.id !== saved.id),
+      );
+      const records = detectPersonalRecords(saved, existingRecords, getExercise);
       setSession(saved);
+      setHistory((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
       setNewRecordCount(records.length);
       if (records.length > 0) setShowCelebration(true);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -432,68 +487,196 @@ function WorkoutSessionView({
   }
 
   if (finished) {
-    const summary = summarizeWorkoutSession(session);
+    const review = buildWorkoutSessionReview(session, {
+      history: [session, ...history.filter((item) => item.id !== session.id)],
+      userExperience: preferences.experience,
+    });
+    const summary = review.summary;
 
     return (
-      <View style={[styles.center, { backgroundColor: colors.background, padding: spacing.xl }]}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         {showCelebration && <PrCelebration onDone={() => setShowCelebration(false)} />}
-        <Card
-          mode="contained"
-          style={[
-            styles.completeCard,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
+        <ScrollView
+          contentContainerStyle={{
+            paddingTop: safeTop,
+            paddingHorizontal: spacing.lg,
+            paddingBottom: insets.bottom + spacing.xxl,
+            gap: spacing.lg,
+          }}
         >
-          <Card.Content style={{ gap: spacing.lg }}>
-            <View style={{ gap: spacing.xs }}>
-              <Text style={[typography.micro, { color: colors.accent }]}>Session saved</Text>
-              <Text style={[typography.title, { color: colors.textPrimary }]}>
-                {day.name} complete
-              </Text>
-              <Text style={[typography.body, { color: colors.textSecondary }]}>
-                {summary.completedSets} working sets logged with {formatVolume(summary.volumeKg)}{' '}
-                total volume.
-              </Text>
-            </View>
-            <View style={styles.completionStats}>
-              <Chip compact mode="flat" icon="timer-check-outline">
-                {summary.durationMinutes} min
-              </Chip>
-              <Chip compact mode="flat" icon="dumbbell">
-                {summary.exerciseCount} lifts
-              </Chip>
-              {newRecordCount > 0 && (
-                <Chip compact mode="flat" icon="trophy-outline">
-                  {newRecordCount} PR
-                </Chip>
+          <Card
+            mode="contained"
+            style={[
+              styles.completeCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.borderStrong,
+                borderRadius: radius.xl,
+              },
+            ]}
+          >
+            <Card.Content style={{ gap: spacing.lg }}>
+              <View style={{ gap: spacing.xs }}>
+                <Text style={[typography.micro, { color: colors.accent }]}>Session saved</Text>
+                <Text style={[typography.title, { color: colors.textPrimary }]}>
+                  {day.name} complete
+                </Text>
+                <Text style={[typography.body, { color: colors.textSecondary }]}>
+                  {summary.completedSets} working sets, {formatVolume(summary.volumeKg)} volume, and{' '}
+                  {summary.exerciseCount} trained lifts added to your log.
+                </Text>
+              </View>
+
+              <View style={styles.finishMetricGrid}>
+                <FinishMetric label="duration" value={`${summary.durationMinutes}m`} />
+                <FinishMetric label="volume" value={formatVolume(summary.volumeKg)} />
+                <FinishMetric label="sets" value={String(summary.completedSets)} />
+                <FinishMetric label="PRs" value={String(newRecordCount)} />
+              </View>
+
+              <ProgressBar
+                progress={1}
+                color={colors.accent}
+                style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
+              />
+
+              <View
+                style={[
+                  styles.nextActionPanel,
+                  { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+                ]}
+              >
+                <Text style={[typography.micro, { color: colors.accent }]}>Next session</Text>
+                <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+                  {review.nextAction}
+                </Text>
+              </View>
+
+              {saveError != null && (
+                <Text style={[typography.caption, { color: colors.warning }]}>{saveError}</Text>
               )}
-            </View>
-            {saveError != null && (
-              <Text style={[typography.caption, { color: colors.warning }]}>{saveError}</Text>
-            )}
-            <ProgressBar
-              progress={1}
-              color={colors.accent}
-              style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
-            />
+            </Card.Content>
+          </Card>
+
+          <Card mode="contained" style={[styles.reviewCard, { backgroundColor: colors.surface }]}>
+            <Card.Content style={{ gap: spacing.md }}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={[typography.micro, { color: colors.accent }]}>Performance</Text>
+                  <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+                    Top lifts
+                  </Text>
+                </View>
+                <Chip
+                  compact
+                  mode="flat"
+                  icon={newRecordCount > 0 ? 'trophy-outline' : 'chart-line'}
+                >
+                  {newRecordCount > 0 ? `${newRecordCount} new` : 'logged'}
+                </Chip>
+              </View>
+
+              <View style={{ gap: spacing.sm }}>
+                {review.topExercises.map((exercise, index) => (
+                  <TopExerciseRow key={exercise.exerciseId} exercise={exercise} rank={index + 1} />
+                ))}
+              </View>
+            </Card.Content>
+          </Card>
+
+          <Card mode="contained" style={[styles.reviewCard, { backgroundColor: colors.surface }]}>
+            <Card.Content style={{ gap: spacing.md }}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={[typography.micro, { color: colors.accent }]}>Next targets</Text>
+                  <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+                    Progression decisions
+                  </Text>
+                </View>
+                <Chip compact mode="flat" icon="trending-up">
+                  {review.progression.length}
+                </Chip>
+              </View>
+
+              <View style={{ gap: spacing.sm }}>
+                {review.progression.map((item) => (
+                  <ProgressionReviewRow key={item.exerciseId} item={item} />
+                ))}
+              </View>
+            </Card.Content>
+          </Card>
+
+          <Card mode="contained" style={[styles.reviewCard, { backgroundColor: colors.surface }]}>
+            <Card.Content style={{ gap: spacing.md }}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={[typography.micro, { color: colors.accent }]}>Muscle dose</Text>
+                  <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+                    What got hit
+                  </Text>
+                </View>
+                <Chip compact mode="flat" icon="arm-flex-outline">
+                  {review.muscleDose.length} zones
+                </Chip>
+              </View>
+
+              <View style={{ gap: spacing.sm }}>
+                {review.muscleDose.map((dose) => (
+                  <MuscleDoseRow key={dose.muscle} dose={dose} />
+                ))}
+              </View>
+            </Card.Content>
+          </Card>
+
+          <Card mode="contained" style={[styles.reviewCard, { backgroundColor: colors.surface }]}>
+            <Card.Content style={{ gap: spacing.md }}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={[typography.micro, { color: colors.accent }]}>Execution</Text>
+                  <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+                    Effort and form
+                  </Text>
+                </View>
+                <Chip
+                  compact
+                  mode="flat"
+                  icon={summary.averageFormScore != null ? 'camera-outline' : 'camera-off-outline'}
+                >
+                  {summary.averageFormScore != null
+                    ? `Form ${summary.averageFormScore}/100`
+                    : 'no camera'}
+                </Chip>
+              </View>
+
+              <View style={styles.qualityGrid}>
+                <RirQualityBlock review={review.rir} />
+                <FormQualityBlock review={review.form} />
+              </View>
+            </Card.Content>
+          </Card>
+
+          <View style={styles.finishActions}>
             <Button
               mode="outlined"
               icon={templateSaved ? 'check' : 'content-save-outline'}
               onPress={saveAsTemplate}
               loading={isSavingTemplate}
               disabled={templateSaved || isSavingTemplate}
+              style={styles.finishButton}
             >
               {templateSaved ? 'Saved as template' : 'Save as template'}
             </Button>
-            <Button mode="contained-tonal" icon="history" onPress={() => router.push('/history')}>
+            <Button
+              mode="contained-tonal"
+              icon="history"
+              onPress={() => router.push('/history')}
+              style={styles.finishButton}
+            >
               View history
             </Button>
             <Button
               mode="contained"
+              icon="refresh"
               onPress={() => {
                 setSession(startWorkoutSession(day, userId));
                 setActiveExerciseIndex(0);
@@ -507,11 +690,12 @@ function WorkoutSessionView({
                 setRestSeconds(null);
                 setRestDurationSeconds(null);
               }}
+              style={styles.finishButton}
             >
               Start another run
             </Button>
-          </Card.Content>
-        </Card>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -599,6 +783,9 @@ function WorkoutSessionView({
                 </Text>
               ) : null}
             </View>
+            {formAnalysisStatus ? (
+              <Text style={[typography.micro, { color: colors.accent }]}>{formAnalysisStatus}</Text>
+            ) : null}
           </Card.Content>
         </Card>
 
@@ -721,6 +908,10 @@ function WorkoutSessionView({
               </View>
             ) : null}
 
+            {activeProgressionTarget ? (
+              <ProgressionTargetPanel target={activeProgressionTarget} />
+            ) : null}
+
             {activeExerciseIndex < session.exercises.length - 1 && (
               <Chip
                 compact
@@ -736,6 +927,31 @@ function WorkoutSessionView({
                   : 'Group with next lift'}
               </Chip>
             )}
+
+            {activeVisionConfig ? (
+              <Chip
+                compact
+                mode="outlined"
+                icon="camera-outline"
+                disabled={isPaused}
+                onPress={() =>
+                  router.push({
+                    pathname: '/form-check/[exerciseId]',
+                    params: {
+                      exerciseId: activeExercise.exerciseId,
+                      sessionId: session.id,
+                      exerciseIndex: String(activeExerciseIndex),
+                      setIndex: String(formTargetSetIndex),
+                    },
+                  })
+                }
+                style={styles.supersetChip}
+              >
+                {formTargetSet?.formAnalysis
+                  ? `Form AI ${formTargetSet.formAnalysis.averageScore}/100`
+                  : `Form AI · ${cameraAngleLabel(activeVisionConfig.recommendedCameraAngle)}`}
+              </Chip>
+            ) : null}
 
             <Divider />
 
@@ -957,6 +1173,201 @@ function AssistantFact({ label, value }: { label: string; value: string }) {
   );
 }
 
+function FinishMetric({ label, value }: { label: string; value: string }) {
+  const { colors, typography } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.finishMetric,
+        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+      ]}
+    >
+      <Text style={[typography.numeric, { color: colors.textPrimary }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+    </View>
+  );
+}
+
+function TopExerciseRow({ exercise, rank }: { exercise: WorkoutExerciseSummary; rank: number }) {
+  const { colors, typography } = useTheme();
+  const bestLabel =
+    exercise.bestE1rmKg != null
+      ? `e1RM ${Math.round(exercise.bestE1rmKg)}kg`
+      : exercise.bestSetLabel;
+
+  return (
+    <View
+      style={[
+        styles.reviewRow,
+        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+      ]}
+    >
+      <View style={[styles.rankBadge, { backgroundColor: colors.accentSoft }]}>
+        <Text style={[typography.micro, { color: colors.accent }]}>#{rank}</Text>
+      </View>
+      <View style={styles.reviewRowText}>
+        <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+          {exercise.name}
+        </Text>
+        <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
+          {exercise.completedSets} sets · {formatVolume(exercise.volumeKg)} · {bestLabel}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function MuscleDoseRow({ dose }: { dose: WorkoutMuscleDose }) {
+  const { colors, typography } = useTheme();
+  const width = `${Math.max(6, Math.round(Math.min(1, dose.share) * 100))}%` as DimensionValue;
+
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={styles.muscleDoseHeader}>
+        <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+          {MUSCLE_LABELS[dose.muscle]}
+        </Text>
+        <Text style={[typography.micro, { color: colors.textMuted }]}>{dose.sets} sets</Text>
+      </View>
+      <View style={[styles.muscleDoseTrack, { backgroundColor: colors.surfacePressed }]}>
+        <View style={[styles.muscleDoseFill, { width, backgroundColor: colors.accent }]} />
+      </View>
+    </View>
+  );
+}
+
+function RirQualityBlock({ review }: { review: WorkoutRirReview | null }) {
+  return (
+    <QualityBlock
+      label="RIR discipline"
+      value={review ? `${review.accuracyPct}%` : 'missing'}
+      detail={review?.detail ?? 'Log RIR on working sets to unlock effort accuracy.'}
+      progress={review ? review.accuracyPct / 100 : 0}
+      title={review?.label ?? 'No effort signal yet'}
+    />
+  );
+}
+
+function FormQualityBlock({ review }: { review: WorkoutFormReview | null }) {
+  return (
+    <QualityBlock
+      label="Form AI"
+      value={review ? `${review.averageScore}/100` : 'off'}
+      detail={
+        review
+          ? `${review.analyzedSetCount} analyzed sets · ${review.coveragePct}% coverage · ${review.cue}`
+          : 'Run a camera set on supported lifts to track technical quality.'
+      }
+      progress={review ? review.averageScore / 100 : 0}
+      title={review?.label ?? 'No camera data'}
+    />
+  );
+}
+
+function QualityBlock({
+  label,
+  value,
+  title,
+  detail,
+  progress,
+}: {
+  label: string;
+  value: string;
+  title: string;
+  detail: string;
+  progress: number;
+}) {
+  const { colors, typography } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.qualityBlock,
+        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+      ]}
+    >
+      <View style={styles.sectionHeader}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
+        <Text style={[typography.captionBold, { color: colors.accent }]}>{value}</Text>
+      </View>
+      <ProgressBar
+        progress={Math.max(0, Math.min(1, progress))}
+        color={colors.accent}
+        style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
+      />
+      <Text style={[typography.micro, { color: colors.textMuted }]}>{detail}</Text>
+    </View>
+  );
+}
+
+function ProgressionTargetPanel({ target }: { target: TargetToBeat }) {
+  const { colors, typography } = useTheme();
+  const action = progressionActionLabel(target.decision.action);
+
+  return (
+    <View
+      style={[
+        styles.progressionPanel,
+        { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+      ]}
+    >
+      <View style={styles.sectionHeader}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[typography.micro, { color: colors.accent }]}>Progression target</Text>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+            {target.targetText}
+          </Text>
+        </View>
+        <Chip compact mode="flat" icon="trending-up">
+          {action}
+        </Chip>
+      </View>
+      <View style={styles.progressionFacts}>
+        <AssistantFact label="last" value={formatProgressionSignal(target.lastSignal)} />
+        <AssistantFact label="win" value={target.winCondition} />
+      </View>
+      <Text style={[typography.micro, { color: colors.textSecondary }]} numberOfLines={2}>
+        {target.decision.explanation}
+      </Text>
+    </View>
+  );
+}
+
+function ProgressionReviewRow({ item }: { item: WorkoutProgressionReview }) {
+  const { colors, typography } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.reviewRow,
+        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+      ]}
+    >
+      <View style={[styles.rankBadge, { backgroundColor: colors.accentSoft }]}>
+        <Text style={[typography.micro, { color: colors.accent }]}>
+          {item.actionLabel.slice(0, 3)}
+        </Text>
+      </View>
+      <View style={styles.reviewRowText}>
+        <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+          {item.exerciseName}
+        </Text>
+        <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={2}>
+          {item.targetSummary}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 function countCompletedSets(exercises: PerformedExercise[]): number {
   return exercises.reduce(
     (sum, exercise) => sum + exercise.sets.filter((set) => set.completed && !set.skipped).length,
@@ -1086,6 +1497,26 @@ function buildCustomWorkoutDay({
   });
 }
 
+function attachFormAnalysisResult(
+  session: WorkoutSession,
+  result: PendingFormAnalysisResult,
+): WorkoutSession {
+  if (session.id !== result.sessionId) return session;
+  const exercise = session.exercises[result.exerciseIndex];
+  const set = exercise?.sets[result.setIndex];
+  if (!exercise || !set || exercise.exerciseId !== result.analysis.exerciseId) return session;
+
+  const exercises = [...session.exercises];
+  const sets = [...exercise.sets];
+  sets[result.setIndex] = {
+    ...set,
+    reps: set.reps ?? result.analysis.repCount,
+    formAnalysis: result.analysis,
+  };
+  exercises[result.exerciseIndex] = { ...exercise, sets };
+  return { ...session, exercises };
+}
+
 function techniqueLabel(technique: SetTechnique): string {
   switch (technique) {
     case 'drop_set':
@@ -1100,6 +1531,17 @@ function techniqueLabel(technique: SetTechnique): string {
       return 'Top + backoff';
     case 'standard':
       return 'Standard';
+  }
+}
+
+function cameraAngleLabel(angle: 'front' | 'side' | 'front-45'): string {
+  switch (angle) {
+    case 'front':
+      return 'front';
+    case 'side':
+      return 'side';
+    case 'front-45':
+      return '45°';
   }
 }
 
@@ -1128,6 +1570,95 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  finishMetricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  finishMetric: {
+    flexGrow: 1,
+    flexBasis: '47%',
+    minWidth: 130,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 12,
+    gap: 2,
+  },
+  nextActionPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 12,
+    gap: 4,
+  },
+  progressionPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+  },
+  progressionFacts: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  reviewCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  reviewRow: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  rankBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewRowText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  muscleDoseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  muscleDoseTrack: {
+    height: 7,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  muscleDoseFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  qualityGrid: {
+    gap: 10,
+  },
+  qualityBlock: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+  },
+  finishActions: {
+    gap: 10,
+  },
+  finishButton: {
+    width: '100%',
   },
   metricRow: {
     flexDirection: 'row',

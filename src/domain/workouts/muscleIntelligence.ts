@@ -54,12 +54,49 @@ export type MuscleStrengthRank = {
   leaderLoadKg: number | null;
 };
 
+export type MuscleRecentExercise = {
+  exerciseId: string;
+  name: string;
+  sets: number;
+  volumeKg: number;
+  bestSetLabel: string;
+  averageFormScore: number | null;
+};
+
+export type MuscleRecentSession = {
+  sessionId: string;
+  dayName: string;
+  performedAt: string;
+  sets: number;
+  volumeKg: number;
+  averageRir: number | null;
+  averageFormScore: number | null;
+  exercises: MuscleRecentExercise[];
+};
+
+export type MuscleFormQuality = {
+  analyzedSetCount: number;
+  analyzedRepCount: number;
+  averageScore: number | null;
+  coveragePct: number;
+  mostCommonIssue: string | null;
+};
+
+export type MuscleTrainingSignal = {
+  kind: 'train' | 'maintain' | 'recover' | 'build_baseline';
+  label: string;
+  detail: string;
+};
+
 export type MuscleIntelligence = {
   muscle: MuscleGroup;
   programExercises: MuscleProgramExercise[];
   records: MuscleExerciseRecord[];
   fatigue: MuscleFatigue;
   rank: MuscleStrengthRank;
+  recentSessions: MuscleRecentSession[];
+  formQuality: MuscleFormQuality;
+  signal: MuscleTrainingSignal;
 };
 
 type MuscleSessionTouch = {
@@ -87,12 +124,18 @@ export function buildMuscleIntelligence(
 
   return MUSCLE_GROUPS.map((muscle) => {
     const records = recordsByMuscle.get(muscle) ?? [];
+    const fatigue = buildMuscleFatigue(muscle, completedSessions, now);
+    const recentSessions = buildRecentSessionsForMuscle(muscle, completedSessions);
+    const formQuality = buildFormQualityForMuscle(muscle, completedSessions);
     return {
       muscle,
       programExercises: buildProgramExercisesForMuscle(programDays, muscle),
       records,
-      fatigue: buildMuscleFatigue(muscle, completedSessions, now),
+      fatigue,
       rank: rankTable.get(muscle) ?? emptyRank(),
+      recentSessions,
+      formQuality,
+      signal: trainingSignal({ records, fatigue, formQuality }),
     };
   });
 }
@@ -289,12 +332,164 @@ function buildStrengthRankTable(completedSessions: WorkoutSession[]): Map<Muscle
   return result;
 }
 
+function buildRecentSessionsForMuscle(
+  muscle: MuscleGroup,
+  completedSessions: WorkoutSession[],
+): MuscleRecentSession[] {
+  return completedSessions.flatMap((session) => {
+    const exercises = session.exercises.flatMap((performed) => {
+      const exercise = getExercise(performed.exerciseId);
+      if (!exercise?.primaryMuscles.includes(muscle)) return [];
+      const working = completedWorkingSets(performed.sets);
+      if (working.length === 0) return [];
+
+      return [{
+        exerciseId: exercise.id,
+        name: exercise.name,
+        sets: working.length,
+        volumeKg: Math.round(volumeLoadKg(performed.sets)),
+        bestSetLabel: bestSetLabel(working),
+        averageFormScore: averageFormScore(working),
+      }];
+    });
+    if (exercises.length === 0) return [];
+
+    const rirValues = session.exercises.flatMap((performed) => {
+      const exercise = getExercise(performed.exerciseId);
+      if (!exercise?.primaryMuscles.includes(muscle)) return [];
+      return completedWorkingSets(performed.sets)
+        .map((set) => set.rir)
+        .filter((rir): rir is number => rir != null);
+    });
+    const formScores = exercises
+      .map((exercise) => exercise.averageFormScore)
+      .filter((score): score is number => score != null);
+
+    return [{
+      sessionId: session.id,
+      dayName: session.dayName,
+      performedAt: session.finishedAt ?? session.startedAt,
+      sets: exercises.reduce((sum, exercise) => sum + exercise.sets, 0),
+      volumeKg: exercises.reduce((sum, exercise) => sum + exercise.volumeKg, 0),
+      averageRir: rirValues.length
+        ? round1(rirValues.reduce((sum, rir) => sum + rir, 0) / rirValues.length)
+        : null,
+      averageFormScore: formScores.length
+        ? Math.round(formScores.reduce((sum, score) => sum + score, 0) / formScores.length)
+        : null,
+      exercises,
+    }];
+  }).slice(0, 4);
+}
+
+function buildFormQualityForMuscle(
+  muscle: MuscleGroup,
+  completedSessions: WorkoutSession[],
+): MuscleFormQuality {
+  let completedSetCount = 0;
+  let analyzedRepCount = 0;
+  const scores: number[] = [];
+  const issues = new Map<string, number>();
+
+  for (const session of completedSessions) {
+    for (const performed of session.exercises) {
+      const exercise = getExercise(performed.exerciseId);
+      if (!exercise?.primaryMuscles.includes(muscle)) continue;
+      const working = completedWorkingSets(performed.sets);
+      completedSetCount += working.length;
+      for (const set of working) {
+        const analysis = set.formAnalysis;
+        if (!analysis) continue;
+        scores.push(analysis.averageScore);
+        analyzedRepCount += analysis.repCount;
+        if (analysis.mostCommonIssue) {
+          issues.set(analysis.mostCommonIssue, (issues.get(analysis.mostCommonIssue) ?? 0) + 1);
+        }
+      }
+    }
+  }
+
+  return {
+    analyzedSetCount: scores.length,
+    analyzedRepCount,
+    averageScore: scores.length
+      ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+      : null,
+    coveragePct: completedSetCount > 0 ? Math.round((scores.length / completedSetCount) * 100) : 0,
+    mostCommonIssue: [...issues.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+  };
+}
+
+function trainingSignal({
+  records,
+  fatigue,
+  formQuality,
+}: {
+  records: MuscleExerciseRecord[];
+  fatigue: MuscleFatigue;
+  formQuality: MuscleFormQuality;
+}): MuscleTrainingSignal {
+  if (records.length === 0 && fatigue.weeklySets === 0) {
+    return {
+      kind: 'build_baseline',
+      label: 'Build baseline',
+      detail: 'Log direct work here so the app can rank strength, dose, and recovery.',
+    };
+  }
+  if (fatigue.volume.zone === 'excessive' || fatigue.score >= 72) {
+    return {
+      kind: 'recover',
+      label: 'Recover / rotate away',
+      detail: 'Weekly load is near the recoverable ceiling. Keep direct work conservative.',
+    };
+  }
+  if (formQuality.averageScore != null && formQuality.averageScore < 80) {
+    return {
+      kind: 'maintain',
+      label: 'Clean execution first',
+      detail: formQuality.mostCommonIssue ?? 'Technique quality is limiting the signal.',
+    };
+  }
+  if (fatigue.volume.zone === 'below_mv' || fatigue.volume.zone === 'maintenance') {
+    return {
+      kind: 'train',
+      label: 'Priority target',
+      detail: 'Direct sets are below the growth zone. Add quality volume when this fits the split.',
+    };
+  }
+  return {
+    kind: 'maintain',
+    label: 'Growth dose active',
+    detail: 'Volume and fatigue are usable. Progress by beating the top working set.',
+  };
+}
+
 function directSetsForMuscle(session: WorkoutSession, muscle: MuscleGroup): number {
   return session.exercises.reduce((total, performed) => {
     const exercise = getExercise(performed.exerciseId);
     if (!exercise?.primaryMuscles.includes(muscle)) return total;
     return total + completedWorkingSets(performed.sets).length;
   }, 0);
+}
+
+function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>): string {
+  const efforts = sets.flatMap(setEfforts);
+  if (efforts.length === 0) return 'No sets';
+  const best = efforts.reduce((current, effort) => {
+    const currentLoad = current.loadKg ?? 0;
+    const effortLoad = effort.loadKg ?? 0;
+    if (effortLoad !== currentLoad) return effortLoad > currentLoad ? effort : current;
+    return (effort.reps ?? 0) > (current.reps ?? 0) ? effort : current;
+  });
+  if (best.loadKg != null && best.loadKg > 0) return `${best.loadKg}kg x ${best.reps ?? 0}`;
+  return `${best.reps ?? 0} reps`;
+}
+
+function averageFormScore(sets: ReturnType<typeof completedWorkingSets>): number | null {
+  const scores = sets
+    .map((set) => set.formAnalysis?.averageScore)
+    .filter((score): score is number => score != null);
+  return scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null;
 }
 
 function muscleSessionTouch(session: WorkoutSession, muscle: MuscleGroup): MuscleSessionTouch | null {

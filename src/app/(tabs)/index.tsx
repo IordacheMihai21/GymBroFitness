@@ -18,15 +18,10 @@ import { WeekLogCard } from '@/components/home/WeekLogCard';
 import { Reveal } from '@/components/ui/Reveal';
 import { BRAND } from '@/constants/branding';
 import { computeMesocycleStatus } from '@/domain/programs/mesocycle';
-import {
-  DEMO_LAST_TOP_SET_SESSION,
-  DEMO_MESOCYCLE_BLOCK,
-  DEMO_PRE_WORKOUT_LOG,
-} from '@/domain/workouts/demoHistory';
+import { DEMO_MESOCYCLE_BLOCK, DEMO_PRE_WORKOUT_LOG } from '@/domain/workouts/demoHistory';
 import { buildPlannedWeek, buildWorkoutHistoryInsights } from '@/domain/workouts/historyInsights';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
-import { findLastPerformedExercise, previousSetAtIndex } from '@/domain/workouts/lastPerformance';
-import { computeTargetToBeat } from '@/domain/workouts/targetToBeat';
+import { buildProgressionTarget } from '@/domain/workouts/targetToBeat';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type { WorkoutSession } from '@/types';
@@ -67,24 +62,15 @@ export default function HomeScreen() {
     [history, plannedWeek],
   );
   const mesocycleStatus = useMemo(() => computeMesocycleStatus(DEMO_MESOCYCLE_BLOCK), []);
-  const topSetBenchmark = useMemo(() => {
-    const previous = findLastPerformedExercise(history, day.prescriptions[0].exerciseId);
-    const previousSet = previousSetAtIndex(previous, 0);
-    if (previousSet?.loadKg != null && previousSet.reps != null && previousSet.rir != null) {
-      return {
-        seed: {
-          loadKg: previousSet.loadKg,
-          reps: previousSet.reps,
-          rir: previousSet.rir,
-        },
-        isReal: true,
-      };
-    }
-    return { seed: DEMO_LAST_TOP_SET_SESSION, isReal: false };
-  }, [day.prescriptions, history]);
   const target = useMemo(
-    () => computeTargetToBeat(day.prescriptions[0], preferences.experience, topSetBenchmark.seed),
-    [day, preferences.experience, topSetBenchmark.seed],
+    () =>
+      buildProgressionTarget({
+        prescription: day.prescriptions[0],
+        history,
+        userExperience: preferences.experience,
+        isPriorityMuscle: day.focus.some((muscle) => preferences.musclePriorities.includes(muscle)),
+      }),
+    [day, history, preferences.experience, preferences.musclePriorities],
   );
 
   function startDay(index: number) {
@@ -165,7 +151,7 @@ export default function HomeScreen() {
             day={day}
             targetRir={day.prescriptions[0].targetRir}
             target={target}
-            hasPreviousTopSet={topSetBenchmark.isReal}
+            hasPreviousTopSet={target.lastSignal != null}
             swapLabel={program.days[swapIndex].name}
             onStart={() => startDay(dayIndex)}
             onSwap={() => openSheet('swap')}

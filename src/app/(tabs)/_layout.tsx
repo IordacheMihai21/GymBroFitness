@@ -1,11 +1,25 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { Redirect, Tabs } from 'expo-router';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import { useTrainingProfile } from '@/hooks/useTrainingProfile';
 import { useTheme } from '@/theme';
 
 export default function TabsLayout() {
   const { colors, typography } = useTheme();
+  const profile = useTrainingProfile();
+
+  if (profile.loading) {
+    return (
+      <View style={[styles.loadingScreen, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (!profile.user.onboardingCompleted || !profile.user.email) {
+    return <Redirect href="/onboarding" />;
+  }
 
   return (
     <Tabs
@@ -79,6 +93,11 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
+  loadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tabBar: {
     position: 'absolute',
     left: 20,

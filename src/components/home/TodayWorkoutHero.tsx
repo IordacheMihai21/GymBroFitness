@@ -5,7 +5,7 @@ import { Button, Card, Chip, Icon } from 'react-native-paper';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { EXERCISE_LIBRARY } from '@/domain/exercises/library';
-import type { TargetToBeat } from '@/domain/workouts/targetToBeat';
+import { formatProgressionSignal, type TargetToBeat } from '@/domain/workouts/targetToBeat';
 import { useTheme } from '@/theme';
 import type { ProgramDay } from '@/types';
 
@@ -34,13 +34,9 @@ export function TodayWorkoutHero({
 }: TodayWorkoutHeroProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const totalSets = day.prescriptions.reduce((sum, p) => sum + p.workingSets, 0);
-  const { decision, lastSession } = target;
+  const { decision } = target;
   const heroImage = useMemo(() => resolveExerciseImage(target.exerciseName), [target.exerciseName]);
-  const targetText = !hasPreviousTopSet
-    ? 'Calibrate live'
-    : decision.nextLoad != null
-      ? `${decision.nextLoad} kg × ${decision.nextMaxReps} reps`
-      : `${decision.nextMinReps}-${decision.nextMaxReps} reps`;
+  const targetText = !hasPreviousTopSet ? 'Calibrate live' : target.targetText;
   const decisionCopy = !hasPreviousTopSet
     ? 'Log the first honest top set today. The next run will use saved history for the overload target.'
     : decision.action === 'increase_load'
@@ -123,7 +119,7 @@ export function TodayWorkoutHero({
           <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{targetText}</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             {hasPreviousTopSet
-              ? `Last session: ${lastSession.loadKg} kg × ${lastSession.reps} reps @ RIR ${lastSession.rir}`
+              ? `Last session: ${formatProgressionSignal(target.lastSignal)}`
               : 'No saved benchmark for this lift yet'}
           </Text>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>{decisionCopy}</Text>

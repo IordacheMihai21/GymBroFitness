@@ -35,7 +35,24 @@
         }
       ],
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      "react-native-fast-tflite",
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "GymBroFitness uses your camera to analyze your exercise form in real time. Video is processed on your device only and never leaves it.",
+          "enableFrameProcessors": true,
+          "enableCodeScanner": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -16,12 +16,19 @@ import {
   moveProgramPrescription,
   updateProgramPrescription,
 } from '@/domain/programs/programEditing';
+import {
+  buildProgramProgressionSummary,
+  type ProgramProgressionDay,
+  type ProgramProgressionSummary,
+  type ProgramProgressionTarget,
+} from '@/domain/programs/programProgression';
 import { listTemplates, saveTemplate } from '@/domain/programs/templateStore';
 import {
   buildTemplateFromProgramDay,
   defaultProgramDayTemplateName,
   type WorkoutTemplate,
 } from '@/domain/programs/templates';
+import { listWorkoutHistory } from '@/domain/workouts/historyStore';
 import {
   classifyWeeklyVolume,
   volumeZoneLabel,
@@ -35,6 +42,7 @@ import type {
   ProgramDay,
   TrainingPreferences,
   TrainingProgram,
+  WorkoutSession,
 } from '@/types';
 
 type SwapTarget = {
@@ -58,6 +66,7 @@ export default function ProgramScreen() {
   const { preferences, program, source, saveProgram, resetProgram } = useActiveProgram();
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
+  const [history, setHistory] = useState<WorkoutSession[]>([]);
   const [swapTarget, setSwapTarget] = useState<SwapTarget>(null);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -65,6 +74,16 @@ export default function ProgramScreen() {
   const dayStats = useMemo(() => summarizeDay(selectedDay), [selectedDay]);
   const muscleLoads = useMemo(() => computeProgramMuscleLoads(program.days), [program.days]);
   const bodyData = useMemo(() => buildBodyData(muscleLoads), [muscleLoads]);
+  const progressionSummary = useMemo(
+    () =>
+      buildProgramProgressionSummary({
+        days: program.days,
+        history,
+        userExperience: preferences.experience,
+        priorityMuscles: preferences.musclePriorities,
+      }),
+    [history, preferences.experience, preferences.musclePriorities, program.days],
+  );
   const swapOptions = useMemo(
     () => buildSwapOptions(program, selectedDayIndex, swapTarget, preferences),
     [preferences, program, selectedDayIndex, swapTarget],
@@ -73,8 +92,10 @@ export default function ProgramScreen() {
   useFocusEffect(
     useCallback(() => {
       let mounted = true;
-      listTemplates().then((next) => {
-        if (mounted) setTemplates(next);
+      Promise.all([listTemplates(), listWorkoutHistory()]).then(([nextTemplates, nextHistory]) => {
+        if (!mounted) return;
+        setTemplates(nextTemplates);
+        setHistory(nextHistory);
       });
       return () => {
         mounted = false;
@@ -228,6 +249,24 @@ export default function ProgramScreen() {
                 <Button
                   compact
                   mode="outlined"
+                  icon="book-open-variant"
+                  disabled={saving}
+                  onPress={() => router.push('/program-library')}
+                >
+                  Library
+                </Button>
+                <Button
+                  compact
+                  mode="outlined"
+                  icon="playlist-plus"
+                  disabled={saving}
+                  onPress={() => router.push('/program-builder')}
+                >
+                  Build
+                </Button>
+                <Button
+                  compact
+                  mode="outlined"
                   icon="restart"
                   disabled={saving}
                   onPress={resetGeneratedProgram}
@@ -271,6 +310,10 @@ export default function ProgramScreen() {
       </Reveal>
 
       <Reveal index={2}>
+        <ProgressionCockpit summary={progressionSummary} />
+      </Reveal>
+
+      <Reveal index={3}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -294,7 +337,7 @@ export default function ProgramScreen() {
         </ScrollView>
       </Reveal>
 
-      <Reveal index={3}>
+      <Reveal index={4}>
         <Card
           mode="contained"
           style={[
@@ -358,7 +401,7 @@ export default function ProgramScreen() {
         </Card>
       </Reveal>
 
-      <Reveal index={4}>
+      <Reveal index={5}>
         <DetailCard eyebrow="Prescription" title="Exercise order">
           {selectedDay.prescriptions.map((prescription, index) => (
             <View key={`${prescription.exerciseId}-${index}`}>
@@ -400,7 +443,7 @@ export default function ProgramScreen() {
         </DetailCard>
       </Reveal>
 
-      <Reveal index={5}>
+      <Reveal index={6}>
         <DetailCard eyebrow="Weekly dose" title="Muscle volume">
           <View style={styles.bodyRow}>
             <Body
@@ -431,7 +474,7 @@ export default function ProgramScreen() {
         </DetailCard>
       </Reveal>
 
-      <Reveal index={6}>
+      <Reveal index={7}>
         <DetailCard eyebrow="Saved templates" title="Replayable days">
           {templates.length === 0 ? (
             <List.Item
@@ -511,6 +554,132 @@ function MetricBlock({ label, value }: { label: string; value: string }) {
     <View style={[styles.metricBlock, { backgroundColor: colors.surfaceRaised }]}>
       <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
       <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
+    </View>
+  );
+}
+
+function ProgressionCockpit({ summary }: { summary: ProgramProgressionSummary }) {
+  const { colors, radius, spacing, typography } = useTheme();
+  const topTargets = summary.priorityTargets.slice(0, 3);
+
+  return (
+    <Card
+      mode="contained"
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.borderStrong,
+          borderRadius: radius.xl,
+        },
+      ]}
+    >
+      <Card.Content style={{ gap: spacing.md }}>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[typography.micro, { color: colors.accent }]}>Progression engine</Text>
+            <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+              Program cockpit
+            </Text>
+          </View>
+          <Chip compact mode="flat" icon="radar">
+            {summary.readyToProgressCount} active
+          </Chip>
+        </View>
+
+        <View
+          style={[
+            styles.progressionHero,
+            { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+          ]}
+        >
+          <Text style={[typography.heading, { color: colors.textPrimary }]}>
+            {summary.headline}
+          </Text>
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            {summary.detail}
+          </Text>
+        </View>
+
+        <View style={styles.metricGrid}>
+          <MetricBlock label="load jumps" value={String(summary.actionCounts.increase_load)} />
+          <MetricBlock label="rep targets" value={String(summary.actionCounts.increase_reps)} />
+          <MetricBlock label="calibrate" value={String(summary.calibrationCount)} />
+        </View>
+
+        {topTargets.length > 0 ? (
+          <View style={{ gap: spacing.sm }}>
+            {topTargets.map((target) => (
+              <ProgressionTargetRow key={`${target.dayId}-${target.exerciseId}`} target={target} />
+            ))}
+          </View>
+        ) : (
+          <View style={[styles.emptyProgressionPanel, { backgroundColor: colors.surfaceRaised }]}>
+            <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+              No urgent target
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              The engine is holding the week steady. Make RIR and execution consistent.
+            </Text>
+          </View>
+        )}
+
+        <View style={{ gap: spacing.sm }}>
+          {summary.days.map((day) => (
+            <ProgramReadinessRow key={day.dayId} day={day} />
+          ))}
+        </View>
+      </Card.Content>
+    </Card>
+  );
+}
+
+function ProgressionTargetRow({ target }: { target: ProgramProgressionTarget }) {
+  const { colors, typography } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.progressionRow,
+        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+      ]}
+    >
+      <View style={[styles.actionBadge, { backgroundColor: colors.accentSoft }]}>
+        <Text style={[typography.micro, { color: colors.accent }]} numberOfLines={1}>
+          {target.actionLabel}
+        </Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+          {target.exerciseName}
+        </Text>
+        <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={2}>
+          {target.dayName} · {target.targetSummary}
+        </Text>
+      </View>
+      <Chip compact mode="outlined">
+        {target.confidence}
+      </Chip>
+    </View>
+  );
+}
+
+function ProgramReadinessRow({ day }: { day: ProgramProgressionDay }) {
+  const { colors, typography } = useTheme();
+
+  return (
+    <View style={styles.readinessRow}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+          {day.dayName}
+        </Text>
+        <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
+          {day.readinessDetail}
+        </Text>
+      </View>
+      <Chip compact mode="flat" icon="pulse">
+        {day.readinessLabel}
+      </Chip>
     </View>
   );
 }
@@ -1019,5 +1188,37 @@ const styles = StyleSheet.create({
   },
   listPanel: {
     borderRadius: 14,
+  },
+  progressionHero: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 12,
+    gap: 4,
+  },
+  progressionRow: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  actionBadge: {
+    minWidth: 72,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  readinessRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  emptyProgressionPanel: {
+    borderRadius: 14,
+    padding: 12,
+    gap: 4,
   },
 });

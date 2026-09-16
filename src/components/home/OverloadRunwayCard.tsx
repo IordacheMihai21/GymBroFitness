@@ -1,7 +1,11 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Card, Icon } from 'react-native-paper';
 
-import type { TargetToBeat } from '@/domain/workouts/targetToBeat';
+import {
+  formatProgressionSignal,
+  progressionActionLabel,
+  type TargetToBeat,
+} from '@/domain/workouts/targetToBeat';
 import { useTheme } from '@/theme';
 
 type OverloadRunwayCardProps = {
@@ -10,16 +14,14 @@ type OverloadRunwayCardProps = {
 
 export function OverloadRunwayCard({ target }: OverloadRunwayCardProps) {
   const { colors, radius, spacing, typography } = useTheme();
-  const { decision, lastSession } = target;
-  const nextLoad = decision.nextLoad ?? lastSession.loadKg;
-  const loadDelta = nextLoad - lastSession.loadKg;
-  const repDelta = decision.nextMaxReps - lastSession.reps;
+  const { decision } = target;
   const confidenceCopy =
     decision.confidence === 'high'
       ? 'High confidence'
       : decision.confidence === 'medium'
         ? 'Medium confidence'
         : 'Needs one more signal';
+  const lastValue = target.lastSignal ? formatProgressionSignal(target.lastSignal) : 'Baseline';
 
   return (
     <Card
@@ -48,18 +50,11 @@ export function OverloadRunwayCard({ target }: OverloadRunwayCardProps) {
         </View>
 
         <View style={styles.runway}>
-          <RunwayStep label="Last signal" value={`${lastSession.loadKg}×${lastSession.reps}`} />
+          <RunwayStep label="Last signal" value={lastValue} />
           <View style={[styles.connector, { backgroundColor: colors.borderStrong }]} />
-          <RunwayStep
-            label="Today target"
-            value={`${nextLoad}×${decision.nextMaxReps}`}
-            active
-          />
+          <RunwayStep label="Today target" value={target.targetText} active />
           <View style={[styles.connector, { backgroundColor: colors.borderStrong }]} />
-          <RunwayStep
-            label="Win condition"
-            value={loadDelta > 0 ? `+${loadDelta}kg` : repDelta > 0 ? `+${repDelta} rep` : 'Hold'}
-          />
+          <RunwayStep label="Decision" value={progressionActionLabel(decision.action)} />
         </View>
 
         <View style={[styles.coachNote, { backgroundColor: colors.surfaceRaised }]}>

@@ -1,12 +1,12 @@
 import * as Haptics from 'expo-haptics';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
 import { BarChart, type barDataItem } from 'react-native-gifted-charts';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Card, Chip, Divider, List, ProgressBar } from 'react-native-paper';
+import { Button, Card, Chip, Divider, List, ProgressBar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, runOnJS } from 'react-native-reanimated';
 
@@ -30,6 +30,7 @@ import {
   buildMuscleIntelligence,
   type MuscleIntelligence,
   type MuscleProgramExercise,
+  type MuscleRecentSession,
   type MuscleStrengthRank,
 } from '@/domain/workouts/muscleIntelligence';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
@@ -41,6 +42,7 @@ import type { MuscleGroup, WorkoutSession } from '@/types';
 export default function BodyScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleGroup>(DEFAULT_MUSCLE);
   const [bodySide, setBodySide] = useState<BodySide>('front');
@@ -244,6 +246,126 @@ export default function BodyScreen() {
         >
           <Card.Content style={{ gap: spacing.md }}>
             <View style={styles.headerRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[typography.micro, { color: selectedUiColor }]}>Command center</Text>
+                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+                  {selected.signal.label}
+                </Text>
+              </View>
+              <Chip
+                compact
+                mode="flat"
+                icon={signalIcon(selected.signal.kind)}
+                style={{ backgroundColor: withAlpha(selectedUiColor, '18') }}
+                textStyle={{ color: selectedUiColor }}
+              >
+                {selected.fatigue.label}
+              </Chip>
+            </View>
+
+            <View
+              style={[
+                styles.signalPanel,
+                { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+                {selected.signal.detail}
+              </Text>
+              <View style={styles.signalFacts}>
+                <SignalFact label="week" value={`${selected.fatigue.weeklySets} sets`} />
+                <SignalFact
+                  label="RIR"
+                  value={selected.fatigue.averageRir != null ? String(selected.fatigue.averageRir) : '--'}
+                />
+                <SignalFact
+                  label="Form"
+                  value={
+                    selected.formQuality.averageScore != null
+                      ? `${selected.formQuality.averageScore}/100`
+                      : 'off'
+                  }
+                />
+              </View>
+            </View>
+
+            {selected.recentSessions[0] ? (
+              <RecentSessionBlock session={selected.recentSessions[0]} />
+            ) : (
+              <EmptyListItem
+                icon="history"
+                title="No direct work yet"
+                description="Finish a session with direct sets for this muscle to unlock recent work."
+              />
+            )}
+
+            <View style={{ gap: spacing.xs }}>
+              <View style={styles.headerRow}>
+                <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+                  Form AI coverage
+                </Text>
+                <Text style={[typography.micro, { color: colors.textMuted }]}>
+                  {selected.formQuality.analyzedSetCount} sets · {selected.formQuality.analyzedRepCount} reps
+                </Text>
+              </View>
+              <ProgressBar
+                progress={selected.formQuality.coveragePct / 100}
+                color={selectedUiColor}
+                style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
+              />
+              <Text style={[typography.micro, { color: colors.textMuted }]}>
+                {selected.formQuality.mostCommonIssue ??
+                  (selected.formQuality.averageScore != null
+                    ? 'No repeated issue detected.'
+                    : 'Camera analysis appears here for supported lifts.')}
+              </Text>
+            </View>
+
+            <View style={styles.quickActions}>
+              <Button
+                compact
+                mode="contained-tonal"
+                icon="history"
+                onPress={() => router.push('/history')}
+                style={styles.quickActionButton}
+              >
+                History
+              </Button>
+              <Button
+                compact
+                mode="outlined"
+                icon="book-open-variant"
+                disabled={!selected.records[0]}
+                onPress={() =>
+                  selected.records[0] &&
+                  router.push({
+                    pathname: '/exercise/[id]',
+                    params: { id: selected.records[0].exerciseId },
+                  })
+                }
+                style={styles.quickActionButton}
+              >
+                Top exercise
+              </Button>
+            </View>
+          </Card.Content>
+        </Card>
+      </Reveal>
+
+      <Reveal index={3}>
+        <Card
+          mode="contained"
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: radius.xl,
+            },
+          ]}
+        >
+          <Card.Content style={{ gap: spacing.md }}>
+            <View style={styles.headerRow}>
               <View>
                 <Text style={[typography.micro, { color: selectedRankColor }]}>
                   Strength leaderboard
@@ -297,7 +419,7 @@ export default function BodyScreen() {
         </Card>
       </Reveal>
 
-      <Reveal index={3}>
+      <Reveal index={4}>
         <DetailCard title="Program exercises" eyebrow="Current plan">
           {selected.programExercises.length === 0 ? (
             <EmptyListItem
@@ -319,7 +441,7 @@ export default function BodyScreen() {
         </DetailCard>
       </Reveal>
 
-      <Reveal index={4}>
+      <Reveal index={5}>
         <DetailCard title="Records" eyebrow="Saved history">
           {selected.records.length === 0 ? (
             <EmptyListItem
@@ -423,6 +545,74 @@ function MetricBlock({ label, value, detail }: { label: string; value: string; d
       <Text numberOfLines={1} style={[typography.micro, { color: colors.textMuted }]}>
         {detail}
       </Text>
+    </View>
+  );
+}
+
+function SignalFact({ label, value }: { label: string; value: string }) {
+  const { colors, typography } = useTheme();
+
+  return (
+    <View style={styles.signalFact}>
+      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function RecentSessionBlock({ session }: { session: MuscleRecentSession }) {
+  const { colors, typography } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.recentPanel,
+        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+      ]}
+    >
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[typography.micro, { color: colors.textMuted }]}>Last direct session</Text>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+            {session.dayName}
+          </Text>
+        </View>
+        <Text style={[typography.micro, { color: colors.textMuted }]}>
+          {formatDate(session.performedAt)}
+        </Text>
+      </View>
+
+      <View style={styles.signalFacts}>
+        <SignalFact label="sets" value={String(session.sets)} />
+        <SignalFact label="volume" value={formatVolume(session.volumeKg)} />
+        <SignalFact label="RIR" value={session.averageRir != null ? String(session.averageRir) : '--'} />
+        <SignalFact
+          label="form"
+          value={session.averageFormScore != null ? `${session.averageFormScore}/100` : '--'}
+        />
+      </View>
+
+      {session.exercises.slice(0, 3).map((exercise, index) => (
+        <View key={exercise.exerciseId}>
+          <List.Item
+            title={exercise.name}
+            description={`${exercise.sets} sets · ${formatVolume(exercise.volumeKg)} · best ${exercise.bestSetLabel}`}
+            left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
+            right={() =>
+              exercise.averageFormScore != null ? (
+                <Chip compact mode="flat" icon="camera-outline" style={styles.formChip}>
+                  {exercise.averageFormScore}
+                </Chip>
+              ) : null
+            }
+            titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+            descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+          />
+          {index < Math.min(session.exercises.length, 3) - 1 ? <Divider /> : null}
+        </View>
+      ))}
     </View>
   );
 }
@@ -553,6 +743,23 @@ function rankDetail(rank: MuscleStrengthRank): string {
   return `${rank.topLoadKg}kg top set`;
 }
 
+function signalIcon(kind: MuscleIntelligence['signal']['kind']): string {
+  switch (kind) {
+    case 'train':
+      return 'target';
+    case 'maintain':
+      return 'chart-line';
+    case 'recover':
+      return 'sleep';
+    case 'build_baseline':
+      return 'database-plus-outline';
+  }
+}
+
+function formatVolume(volumeKg: number): string {
+  return volumeKg >= 1000 ? `${(volumeKg / 1000).toFixed(1)}t` : `${Math.round(volumeKg)}kg`;
+}
+
 function lastTrainedLabel(selected: MuscleIntelligence): string {
   if (!selected.fatigue.lastTrainedAt) return 'No direct session yet';
   if (selected.fatigue.lastTrainedDaysAgo === 0) return 'Trained today';
@@ -593,6 +800,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 10,
     justifyContent: 'space-between',
+  },
+  signalPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+  },
+  signalFacts: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  signalFact: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recentPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 10,
+    gap: 4,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  quickActionButton: {
+    flex: 1,
+  },
+  formChip: {
+    alignSelf: 'center',
   },
   progress: {
     height: 7,

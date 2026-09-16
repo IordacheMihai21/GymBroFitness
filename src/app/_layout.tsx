@@ -33,7 +33,11 @@ export default function RootLayout() {
               }}
             >
               <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="onboarding" />
               <Stack.Screen name="custom-workout" />
+              <Stack.Screen name="form-check/[exerciseId]" />
+              <Stack.Screen name="program-builder" />
+              <Stack.Screen name="program-library" />
               <Stack.Screen name="program-day/[day]" />
               <Stack.Screen
                 name="settings"

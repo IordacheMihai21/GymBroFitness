@@ -165,4 +165,61 @@ describe('muscle intelligence', () => {
     expect(quads?.rank.rank).toBe(1);
     expect(chest?.rank.rank).toBe(2);
   });
+
+  it('builds recent work, form quality, and training signal for each muscle', () => {
+    const history = [
+      makeSession('upper', '2026-09-14T10:00:00.000Z', [
+        makeExercise('barbell-bench-press', [
+          makeSet('a', {
+            loadKg: 105,
+            reps: 7,
+            rir: 1,
+            formAnalysis: {
+              id: 'analysis-1',
+              exerciseId: 'barbell-bench-press',
+              capturedAt: '2026-09-14T10:10:00.000Z',
+              repCount: 7,
+              averageScore: 78,
+              averageRomScore: 80,
+              averageTempoScore: 75,
+              bestRepScore: 88,
+              worstRepScore: 68,
+              mostCommonIssue: 'Control the eccentric.',
+              recommendations: ['Lower with control.'],
+            },
+          }),
+          makeSet('b', { loadKg: 100, reps: 8, rir: 1 }),
+        ]),
+      ]),
+    ];
+
+    const intelligence = buildMuscleIntelligence(
+      [programDay()],
+      history,
+      new Date('2026-09-14T12:00:00.000Z'),
+    );
+    const chest = intelligence.find((item) => item.muscle === 'chest');
+    const calves = intelligence.find((item) => item.muscle === 'calves');
+
+    expect(chest?.recentSessions[0]).toMatchObject({
+      dayName: 'Upper A',
+      sets: 2,
+      volumeKg: 1535,
+      averageRir: 1,
+      averageFormScore: 78,
+    });
+    expect(chest?.recentSessions[0].exercises[0]).toMatchObject({
+      name: 'Barbell Bench Press',
+      bestSetLabel: '105kg x 7',
+    });
+    expect(chest?.formQuality).toMatchObject({
+      analyzedSetCount: 1,
+      analyzedRepCount: 7,
+      averageScore: 78,
+      coveragePct: 50,
+      mostCommonIssue: 'Control the eccentric.',
+    });
+    expect(chest?.signal.label).toBe('Clean execution first');
+    expect(calves?.signal.label).toBe('Build baseline');
+  });
 });

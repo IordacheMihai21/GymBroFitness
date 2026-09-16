@@ -86,14 +86,18 @@ export function buildPlannedWeek(programDays: ProgramDay[], preferredDays: DayOf
 }
 
 export function buildPersonalRecordsFromHistory(history: WorkoutSession[]): PersonalRecord[] {
+  return buildAllPersonalRecordsFromHistory(history)
+    .filter((record) => record.kind === 'best_e1rm')
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+}
+
+export function buildAllPersonalRecordsFromHistory(history: WorkoutSession[]): PersonalRecord[] {
   const records: PersonalRecord[] = [];
   const oldestFirst = [...history].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
   for (const session of oldestFirst) {
     records.push(...detectPersonalRecords(session, records, getExercise));
   }
-  return records
-    .filter((record) => record.kind === 'best_e1rm')
-    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+  return records.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
 }
 
 export function buildWeekLog(
