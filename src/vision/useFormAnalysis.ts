@@ -1,9 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useSkiaFrameProcessor, type DrawableFrame } from 'react-native-vision-camera';
+import { useFrameProcessor, type Frame } from 'react-native-vision-camera';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { useRunOnJS } from 'react-native-worklets-core';
 import { NitroModules } from 'react-native-nitro-modules';
-import { PaintStyle, Skia } from '@shopify/react-native-skia';
 import type { TensorflowModel } from 'react-native-fast-tflite';
 import * as Speech from 'expo-speech';
 
@@ -17,7 +16,6 @@ import {
   isCameraAngleMismatched,
 } from '@/domain/vision/cameraOrientation';
 import { extractKeyJoints, type PoseLandmarks } from '@/domain/vision/landmarks';
-import { SKELETON_CONNECTIONS } from '@/domain/vision/skeletonConnections';
 import { LandmarkSmoother } from '@/domain/vision/smoothing';
 import { VelocityTracker, getSymmetryRatio } from '@/domain/vision/biomechanics';
 import { assessTrackingQuality, hasRequiredJoints, type TrackingQuality } from '@/domain/vision/confidence';
@@ -39,6 +37,8 @@ export interface FormAnalysisState {
   currentAngle: number | null;
   topViolation: FormViolation | null;
   lastCompletedRep: RepAnalysis | null;
+  /** Smoothed per-frame landmarks, for a plain (non-Skia) overlay to draw — see useFrameProcessor below for why. */
+  landmarks: PoseLandmarks | null;
 }
 
 const INITIAL_STATE: FormAnalysisState = {
@@ -48,22 +48,22 @@ const INITIAL_STATE: FormAnalysisState = {
   currentAngle: null,
   topViolation: null,
   lastCompletedRep: null,
+  landmarks: null,
 };
 
 /**
  * Owns the whole per-frame analysis pipeline for one exercise: the camera
- * frame processor (pose inference + skeleton drawing, running on the
- * VisionCamera/worklets-core thread) and the stateful rep-counting/scoring
- * logic (running on the JS thread, using the exact same Phase 1 domain
- * modules, unit-tested independently of any camera).
+ * frame processor (pose inference, running on the VisionCamera/worklets-core
+ * thread) and the stateful rep-counting/scoring logic (running on the JS
+ * thread, using the exact same Phase 1 domain modules, unit-tested
+ * independently of any camera).
  *
  * Split deliberately across two threads: the frame processor worklet only
- * does inference and drawing with the model's raw per-frame landmarks (no
- * stateful classes — worklet runtimes make bridging class instances across
- * the worklet boundary unreliable). Every decoded frame is bridged to the
- * JS thread via `runOnJS`, where smoothing/rep-state/scoring all run as
- * plain, already-tested JS — a small, well-established VisionCamera
- * pattern for anything beyond pure per-frame drawing.
+ * does inference with the model's raw per-frame landmarks (no stateful
+ * classes — worklet runtimes make bridging class instances across the
+ * worklet boundary unreliable). Every decoded frame is bridged to the JS
+ * thread via `runOnJS`, where smoothing/rep-state/scoring/the skeleton
+ * overlay all run as plain, already-tested JS.
  */
 export function useFormAnalysis(model: TensorflowModel | undefined, config: VisionExerciseConfig) {
   const { resize } = useResizePlugin();
@@ -88,19 +88,6 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
     if (!enabled) Speech.stop();
   }, []);
 
-  const skeletonPaint = useMemo(() => {
-    const paint = Skia.Paint();
-    paint.setColor(Skia.Color('#4A95FF'));
-    paint.setStrokeWidth(4);
-    paint.setStyle(PaintStyle.Stroke);
-    return paint;
-  }, []);
-  const jointPaint = useMemo(() => {
-    const paint = Skia.Paint();
-    paint.setColor(Skia.Color('#FFFFFF'));
-    return paint;
-  }, []);
-
   // The TFLite model is a Nitro HybridObject (native C++ state). VisionCamera
   // v4's frame-processor worklet runtime (react-native-worklets-core) can't
   // capture that native state directly across the worklet boundary — it has
@@ -118,7 +105,7 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
       const quality = assessTrackingQuality(joints);
 
       if (!hasRequiredJoints(joints, config.requiredJoints)) {
-        setState((prev) => ({ ...prev, trackingQuality: quality }));
+        setState((prev) => ({ ...prev, trackingQuality: quality, landmarks: smoothed }));
         return;
       }
 
@@ -209,6 +196,7 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
         currentAngle: angle,
         topViolation,
         lastCompletedRep: newlyCompletedRep ?? prev.lastCompletedRep,
+        landmarks: smoothed,
       }));
     },
     // Deliberately excludes `state`: it's read only via the setState updater above, keeping
@@ -219,10 +207,19 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
 
   const reportLandmarks = useRunOnJS(onFrameLandmarks, [onFrameLandmarks]);
 
-  const frameProcessor = useSkiaFrameProcessor(
-    (frame: DrawableFrame) => {
+  // A plain (non-Skia) frame processor: on some devices (confirmed on a real
+  // Samsung Galaxy S24) the camera's native hardware buffer can't be wrapped
+  // into a Skia SkImage — useSkiaFrameProcessor's frame.render() throws
+  // "Failed to convert NativeBuffer to SkImage!" on every frame, since Skia's
+  // GPU import path doesn't recognize that device's buffer format. Inference
+  // (resize + model.runSync) never needs Skia at all, and the camera preview
+  // renders itself natively regardless of what the frame processor does — so
+  // dropping Skia here sidesteps that whole class of device incompatibility.
+  // The skeleton overlay is drawn separately in JS (SkeletonOverlay.tsx) from
+  // the landmarks already bridged to onFrameLandmarks below.
+  const frameProcessor = useFrameProcessor(
+    (frame: Frame) => {
       'worklet';
-      frame.render();
       if (boxedModel == null) return;
       const model = boxedModel.unbox();
 
@@ -238,22 +235,9 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
       const outputs = model.runSync([inputBuffer]);
       const landmarks = decodeMoveNetOutput(new Float32Array(outputs[0]));
 
-      const w = frame.width;
-      const h = frame.height;
-      for (const [a, b] of SKELETON_CONNECTIONS) {
-        const from = landmarks[a];
-        const to = landmarks[b];
-        if (from.visibility < 0.3 || to.visibility < 0.3) continue;
-        frame.drawLine(from.x * w, from.y * h, to.x * w, to.y * h, skeletonPaint);
-      }
-      for (const point of landmarks) {
-        if (point.visibility < 0.3) continue;
-        frame.drawCircle(point.x * w, point.y * h, 5, jointPaint);
-      }
-
       reportLandmarks(landmarks);
     },
-    [boxedModel, resize, skeletonPaint, jointPaint, reportLandmarks],
+    [boxedModel, resize, reportLandmarks],
   );
 
   const resetSet = useCallback(() => {

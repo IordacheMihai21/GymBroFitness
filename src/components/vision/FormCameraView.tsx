@@ -9,6 +9,7 @@ import type { RepAnalysis } from '@/domain/vision/formScoring';
 import { useTheme } from '@/theme';
 
 import { LiveFeedbackBanner } from './LiveFeedbackBanner';
+import { SkeletonOverlay } from './SkeletonOverlay';
 
 type FormCameraViewProps = {
   config: VisionExerciseConfig;
@@ -58,6 +59,7 @@ export function FormCameraView({ config, onFinishSet }: FormCameraViewProps) {
           isActive
           frameProcessor={modelPlugin.state === 'loaded' ? frameProcessor : undefined}
         />
+        {modelPlugin.state === 'loaded' && <SkeletonOverlay landmarks={state.landmarks} />}
         {modelPlugin.state !== 'loaded' && (
           <View style={[StyleSheet.absoluteFill, styles.centered, { backgroundColor: colors.background + 'CC' }]}>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
