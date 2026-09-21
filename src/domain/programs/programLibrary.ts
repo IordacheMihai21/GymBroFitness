@@ -4,6 +4,7 @@ import type {
   ExperienceLevel,
   MuscleGroup,
   SplitType,
+  TrainingGoal,
   TrainingPreferences,
   TrainingProgram,
 } from '@/types';
@@ -39,6 +40,7 @@ export type ProgramLibraryTemplate = {
   description: string;
   category: ProgramLibraryCategory;
   splitType: SplitType;
+  goal: TrainingGoal;
   daysPerWeek: 3 | 4 | 5 | 6;
   level: ExperienceLevel;
   tags: string[];
@@ -62,6 +64,7 @@ export const PROGRAM_LIBRARY: ProgramLibraryTemplate[] = [
       'A six-day bodybuilding split for lifters who recover well and want high weekly exposure per muscle.',
     category: 'ppl',
     splitType: 'push_pull_legs',
+    goal: 'hypertrophy',
     daysPerWeek: 6,
     level: 'advanced',
     tags: ['High frequency', 'Volume bias', 'Intermediate+'],
@@ -145,6 +148,7 @@ export const PROGRAM_LIBRARY: ProgramLibraryTemplate[] = [
       'A practical four-day split with enough weekly volume for serious hypertrophy without living in the gym.',
     category: 'upper_lower',
     splitType: 'upper_lower',
+    goal: 'hypertrophy',
     daysPerWeek: 4,
     level: 'intermediate',
     tags: ['Balanced', 'Recovery friendly', '4-day'],
@@ -208,6 +212,7 @@ export const PROGRAM_LIBRARY: ProgramLibraryTemplate[] = [
       'A stripped-down full-body setup that keeps the big hypertrophy levers covered with low complexity.',
     category: 'full_body',
     splitType: 'full_body',
+    goal: 'mixed',
     daysPerWeek: 3,
     level: 'beginner',
     tags: ['Low friction', '3-day', 'Efficient'],
@@ -260,6 +265,7 @@ export const PROGRAM_LIBRARY: ProgramLibraryTemplate[] = [
       'A four-day setup for lifters who care about numbers and physique: heavy top work first, volume after.',
     category: 'powerbuilding',
     splitType: 'upper_lower',
+    goal: 'mixed',
     daysPerWeek: 4,
     level: 'intermediate',
     tags: ['Strength + size', 'Top sets', 'Progression'],
@@ -322,6 +328,7 @@ export const PROGRAM_LIBRARY: ProgramLibraryTemplate[] = [
       'A five-day specialization block for lifters whose chest and back need the strongest growth signal.',
     category: 'specialization',
     splitType: 'custom',
+    goal: 'hypertrophy',
     daysPerWeek: 5,
     level: 'advanced',
     tags: ['Specialization', 'Torso focus', '5-day'],
@@ -566,7 +573,11 @@ function buildRationale(
           .map((muscle) => muscle.replace('_', ' '))
           .join(', ')}.`
       : '';
-  return `${template.description} ${match}${priority} Exercises auto-adapt to your equipment and blocked movements; edit any day after import.`;
+  const goal =
+    template.goal === preferences.goal
+      ? `Its ${template.goal} goal matches your profile.`
+      : `Its ${template.goal} goal differs from your current ${preferences.goal} preference.`;
+  return `${template.description} ${goal} ${match}${priority} Exercises auto-adapt to your equipment and blocked movements; edit any day after import.`;
 }
 
 function adjustSets(
@@ -589,6 +600,7 @@ function adjustRir(targetRir: number, experience: TrainingPreferences['experienc
 
 function scoreTemplate(template: ProgramLibraryTemplate, preferences: TrainingPreferences): number {
   let score = 0;
+  if (template.goal === preferences.goal) score += 30;
   if (template.daysPerWeek === preferences.daysPerWeek) score += 40;
   if (template.daysPerWeek <= preferences.daysPerWeek) score += 8;
   if (template.level === preferences.experience) score += 14;

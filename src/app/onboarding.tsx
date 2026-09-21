@@ -17,9 +17,9 @@ import {
 import { saveTrainingProfile } from '@/domain/programs/profileStore';
 import { saveActiveProgram } from '@/domain/programs/programStore';
 import { useTheme } from '@/theme';
-import { PRIORITY_MUSCLES, type ExperienceLevel, type MuscleGroup } from '@/types';
+import type { ExperienceLevel } from '@/types';
 
-const STEPS = ['Account', 'Training', 'Focus', 'Plan'] as const;
+const STEPS = ['Profile', 'Training', 'Plan'] as const;
 
 const EXPERIENCE_OPTIONS: {
   value: ExperienceLevel;
@@ -29,6 +29,28 @@ const EXPERIENCE_OPTIONS: {
   { value: 'beginner', title: 'Building base', detail: 'Simple loading, fewer edge cases' },
   { value: 'intermediate', title: 'Progressive lifter', detail: 'Balanced volume and overload' },
   { value: 'advanced', title: 'Advanced', detail: 'Tighter RIR and higher skill bias' },
+];
+
+const GOAL_OPTIONS: {
+  value: OnboardingInput['goal'];
+  title: string;
+  detail: string;
+}[] = [
+  {
+    value: 'hypertrophy',
+    title: 'Build muscle',
+    detail: 'Moderate-to-high reps with enough weekly volume to grow',
+  },
+  {
+    value: 'strength',
+    title: 'Get stronger',
+    detail: 'Lower-rep compound work with longer recovery between sets',
+  },
+  {
+    value: 'mixed',
+    title: 'Strength + muscle',
+    detail: 'Strength-focused compounds and hypertrophy accessories',
+  },
 ];
 
 const ENVIRONMENT_OPTIONS: {
@@ -43,6 +65,7 @@ const ENVIRONMENT_OPTIONS: {
 
 const DAY_OPTIONS: OnboardingInput['daysPerWeek'][] = [2, 3, 4, 5, 6];
 const SESSION_OPTIONS: OnboardingInput['sessionMinutes'][] = [30, 45, 60, 75, 90];
+const UNIT_OPTIONS: OnboardingInput['units'][] = ['kg', 'lb'];
 
 export default function OnboardingScreen() {
   const { colors, radius, spacing, typography, elevation } = useTheme();
@@ -50,40 +73,27 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [units, setUnits] = useState<OnboardingInput['units']>('kg');
+  const [goal, setGoal] = useState<OnboardingInput['goal']>('hypertrophy');
   const [experience, setExperience] = useState<OnboardingInput['experience']>('intermediate');
   const [environment, setEnvironment] = useState<OnboardingInput['environment']>('commercial_gym');
   const [daysPerWeek, setDaysPerWeek] = useState<OnboardingInput['daysPerWeek']>(4);
   const [sessionMinutes, setSessionMinutes] = useState<OnboardingInput['sessionMinutes']>(60);
-  const [musclePriorities, setMusclePriorities] = useState<MuscleGroup[]>(['chest', 'back']);
   const [issues, setIssues] = useState<OnboardingValidationIssue[]>([]);
-  const [confirmPasswordIssue, setConfirmPasswordIssue] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const input = useMemo<OnboardingInput>(
     () => ({
       displayName,
-      email,
-      password,
+      units,
+      goal,
       experience,
       environment,
       daysPerWeek,
       sessionMinutes,
-      musclePriorities,
     }),
-    [
-      daysPerWeek,
-      displayName,
-      email,
-      environment,
-      experience,
-      musclePriorities,
-      password,
-      sessionMinutes,
-    ],
+    [daysPerWeek, displayName, environment, experience, goal, sessionMinutes, units],
   );
 
   const previewPreferences = useMemo(() => buildOnboardingPreferences(input), [input]);
@@ -97,51 +107,25 @@ export default function OnboardingScreen() {
   function advance() {
     setStatus(null);
     if (step === 0) {
-      const nextIssues = validateOnboardingInput(input).filter((issue) =>
-        ['displayName', 'email', 'password'].includes(issue.field),
-      );
-      const nextConfirmIssue =
-        confirmPassword.length === 0
-          ? 'Confirm your password.'
-          : password !== confirmPassword
-            ? 'Passwords do not match.'
-            : null;
+      const nextIssues = validateOnboardingInput(input);
       setIssues(nextIssues);
-      setConfirmPasswordIssue(nextConfirmIssue);
-      if (nextIssues.length > 0 || nextConfirmIssue) return;
+      if (nextIssues.length > 0) return;
     }
     setIssues([]);
-    setConfirmPasswordIssue(null);
     setStep((current) => Math.min(current + 1, STEPS.length - 1));
   }
 
   function back() {
     setStatus(null);
     setIssues([]);
-    setConfirmPasswordIssue(null);
     setStep((current) => Math.max(current - 1, 0));
   }
 
-  function toggleMuscle(muscle: MuscleGroup) {
-    setMusclePriorities((current) => {
-      if (current.includes(muscle)) return current.filter((item) => item !== muscle);
-      if (current.length >= 3) return current;
-      return [...current, muscle];
-    });
-  }
-
-  async function createAccount() {
+  async function createProfile() {
     const nextIssues = validateOnboardingInput(input);
-    const nextConfirmIssue =
-      confirmPassword.length === 0
-        ? 'Confirm your password.'
-        : password !== confirmPassword
-          ? 'Passwords do not match.'
-          : null;
     setIssues(nextIssues);
-    setConfirmPasswordIssue(nextConfirmIssue);
     setStatus(null);
-    if (nextIssues.length > 0 || nextConfirmIssue) return;
+    if (nextIssues.length > 0) return;
 
     setSaving(true);
     try {
@@ -230,31 +214,23 @@ export default function OnboardingScreen() {
           <Card.Content style={{ gap: spacing.lg }}>
             <Animated.View key={step} entering={FadeInUp.duration(220)} style={{ gap: spacing.lg }}>
               {step === 0 ? (
-                <AccountStep
+                <LocalProfileStep
                   displayName={displayName}
-                  email={email}
-                  password={password}
-                  confirmPassword={confirmPassword}
+                  units={units}
                   setDisplayName={setDisplayName}
-                  setEmail={setEmail}
-                  setPassword={setPassword}
-                  setConfirmPassword={(value) => {
-                    setConfirmPassword(value);
-                    setConfirmPasswordIssue(null);
-                  }}
+                  setUnits={setUnits}
                   nameIssue={issueFor('displayName')}
-                  emailIssue={issueFor('email')}
-                  passwordIssue={issueFor('password')}
-                  confirmPasswordIssue={confirmPasswordIssue}
                 />
               ) : null}
 
               {step === 1 ? (
                 <TrainingStep
+                  goal={goal}
                   experience={experience}
                   environment={environment}
                   daysPerWeek={daysPerWeek}
                   sessionMinutes={sessionMinutes}
+                  setGoal={setGoal}
                   setExperience={setExperience}
                   setEnvironment={setEnvironment}
                   setDaysPerWeek={setDaysPerWeek}
@@ -263,16 +239,8 @@ export default function OnboardingScreen() {
               ) : null}
 
               {step === 2 ? (
-                <FocusStep
-                  selected={musclePriorities}
-                  onToggle={toggleMuscle}
-                  issue={issueFor('musclePriorities')}
-                />
-              ) : null}
-
-              {step === 3 ? (
                 <ReviewStep
-                  email={email}
+                  displayName={displayName}
                   preferences={previewPreferences}
                   program={previewProgram}
                 />
@@ -296,12 +264,12 @@ export default function OnboardingScreen() {
           ) : (
             <Button
               mode="contained"
-              icon="account-check"
-              onPress={createAccount}
+              icon="check"
+              onPress={createProfile}
               loading={saving}
               disabled={saving}
             >
-              Create account
+              Save plan
             </Button>
           )}
         </View>
@@ -310,41 +278,27 @@ export default function OnboardingScreen() {
   );
 }
 
-function AccountStep({
+function LocalProfileStep({
   displayName,
-  email,
-  password,
-  confirmPassword,
+  units,
   setDisplayName,
-  setEmail,
-  setPassword,
-  setConfirmPassword,
+  setUnits,
   nameIssue,
-  emailIssue,
-  passwordIssue,
-  confirmPasswordIssue,
 }: {
   displayName: string;
-  email: string;
-  password: string;
-  confirmPassword: string;
+  units: OnboardingInput['units'];
   setDisplayName: (value: string) => void;
-  setEmail: (value: string) => void;
-  setPassword: (value: string) => void;
-  setConfirmPassword: (value: string) => void;
+  setUnits: (value: OnboardingInput['units']) => void;
   nameIssue?: string;
-  emailIssue?: string;
-  passwordIssue?: string;
-  confirmPasswordIssue: string | null;
 }) {
   const { colors, spacing, typography } = useTheme();
 
   return (
     <View style={{ gap: spacing.md }}>
       <SectionHeader
-        eyebrow="Account setup"
-        title="Start with the profile your program will use."
-        body="The first plan is generated from these choices and saved locally on this device."
+        eyebrow="Local profile"
+        title="No account required."
+        body="Your profile, plan and workout history stay on this device unless you export them."
       />
       <TextInput
         mode="outlined"
@@ -361,74 +315,38 @@ function AccountStep({
       <HelperText type="error" visible={Boolean(nameIssue)}>
         {nameIssue}
       </HelperText>
-      <TextInput
-        mode="outlined"
-        label="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        textColor={colors.textPrimary}
-        outlineColor={colors.border}
-        activeOutlineColor={colors.accent}
-        error={Boolean(emailIssue)}
-        style={{ backgroundColor: colors.surfaceRaised }}
+      <InlineChips
+        label="Units"
+        options={UNIT_OPTIONS}
+        selected={units}
+        onSelect={setUnits}
+        format={(value) => value.toUpperCase()}
       />
-      <HelperText type="error" visible={Boolean(emailIssue)}>
-        {emailIssue}
-      </HelperText>
-      <TextInput
-        mode="outlined"
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        textColor={colors.textPrimary}
-        outlineColor={colors.border}
-        activeOutlineColor={colors.accent}
-        error={Boolean(passwordIssue)}
-        style={{ backgroundColor: colors.surfaceRaised }}
-      />
-      <HelperText type="error" visible={Boolean(passwordIssue)}>
-        {passwordIssue}
-      </HelperText>
-      <TextInput
-        mode="outlined"
-        label="Confirm password"
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        secureTextEntry
-        textColor={colors.textPrimary}
-        outlineColor={colors.border}
-        activeOutlineColor={colors.accent}
-        error={Boolean(confirmPasswordIssue)}
-        style={{ backgroundColor: colors.surfaceRaised }}
-      />
-      <HelperText type="error" visible={Boolean(confirmPasswordIssue)}>
-        {confirmPasswordIssue}
-      </HelperText>
       <Text style={[typography.caption, { color: colors.textMuted }]}>
-        Password validation is ready for cloud auth; only the profile and plan are stored in this
-        local build.
+        You can add optional profile details and advanced preferences later in Settings.
       </Text>
     </View>
   );
 }
 
 function TrainingStep({
+  goal,
   experience,
   environment,
   daysPerWeek,
   sessionMinutes,
+  setGoal,
   setExperience,
   setEnvironment,
   setDaysPerWeek,
   setSessionMinutes,
 }: {
+  goal: OnboardingInput['goal'];
   experience: OnboardingInput['experience'];
   environment: OnboardingInput['environment'];
   daysPerWeek: OnboardingInput['daysPerWeek'];
   sessionMinutes: OnboardingInput['sessionMinutes'];
+  setGoal: (value: OnboardingInput['goal']) => void;
   setExperience: (value: OnboardingInput['experience']) => void;
   setEnvironment: (value: OnboardingInput['environment']) => void;
   setDaysPerWeek: (value: OnboardingInput['daysPerWeek']) => void;
@@ -441,8 +359,9 @@ function TrainingStep({
       <SectionHeader
         eyebrow="Training model"
         title="Set the constraints that change the plan."
-        body="Experience controls progression and exercise difficulty. Schedule controls the split."
+        body="Your goal changes rep ranges and rest. Experience and schedule shape the rest of the plan."
       />
+      <OptionGrid label="Primary goal" options={GOAL_OPTIONS} selected={goal} onSelect={setGoal} />
       <OptionGrid
         label="Experience"
         options={EXPERIENCE_OPTIONS}
@@ -473,77 +392,12 @@ function TrainingStep({
   );
 }
 
-function FocusStep({
-  selected,
-  onToggle,
-  issue,
-}: {
-  selected: MuscleGroup[];
-  onToggle: (value: MuscleGroup) => void;
-  issue?: string;
-}) {
-  const { colors, spacing, typography } = useTheme();
-
-  return (
-    <View style={{ gap: spacing.lg }}>
-      <SectionHeader
-        eyebrow="Priority muscles"
-        title="Pick the muscles that should get extra weekly volume."
-        body="Leave this balanced, or choose up to three areas."
-      />
-      <View style={styles.muscleGrid}>
-        {PRIORITY_MUSCLES.map((muscle) => {
-          const active = selected.includes(muscle);
-          const disabled = !active && selected.length >= 3;
-          return (
-            <Pressable
-              key={muscle}
-              onPress={() => onToggle(muscle)}
-              disabled={disabled}
-              style={[
-                styles.muscleTile,
-                {
-                  backgroundColor: active ? colors.accentSoft : colors.surfaceRaised,
-                  borderColor: active ? colors.accent : colors.border,
-                  opacity: disabled ? 0.42 : 1,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  typography.captionBold,
-                  { color: active ? colors.accent : colors.textPrimary },
-                ]}
-              >
-                {MUSCLE_LABELS[muscle]}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={styles.focusFooter}>
-        <Text style={[typography.caption, { color: colors.textMuted }]}>
-          {selected.length}/3 selected
-        </Text>
-        <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-          {selected.length > 0
-            ? selected.map((muscle) => MUSCLE_LABELS[muscle]).join(' / ')
-            : 'Balanced plan'}
-        </Text>
-      </View>
-      <HelperText type="error" visible={Boolean(issue)}>
-        {issue}
-      </HelperText>
-    </View>
-  );
-}
-
 function ReviewStep({
-  email,
+  displayName,
   preferences,
   program,
 }: {
-  email: string;
+  displayName: string;
   preferences: ReturnType<typeof buildOnboardingPreferences>;
   program: ReturnType<typeof generateProgram>;
 }) {
@@ -554,11 +408,12 @@ function ReviewStep({
       <SectionHeader
         eyebrow="Ready"
         title="Your first block is ready to save."
-        body="This creates the local account profile and activates the generated hypertrophy plan."
+        body={`This creates the local profile and activates the generated ${formatGoal(preferences.goal)} plan.`}
       />
       <View style={styles.summaryGrid}>
-        <SummaryCell label="account" value={email.trim().toLowerCase()} />
+        <SummaryCell label="profile" value={displayName.trim()} />
         <SummaryCell label="split" value={program.name} />
+        <SummaryCell label="goal" value={formatGoal(preferences.goal)} />
         <SummaryCell label="schedule" value={`${preferences.daysPerWeek}d/wk`} />
         <SummaryCell label="session" value={`${preferences.sessionMinutes} min`} />
       </View>
@@ -589,6 +444,12 @@ function ReviewStep({
       </View>
     </View>
   );
+}
+
+function formatGoal(goal: OnboardingInput['goal']): string {
+  if (goal === 'hypertrophy') return 'muscle-building';
+  if (goal === 'strength') return 'strength';
+  return 'strength + muscle';
 }
 
 function SectionHeader({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) {
@@ -690,7 +551,10 @@ function InlineChips<T extends string | number>({
             selected={selected === option}
             mode={selected === option ? 'flat' : 'outlined'}
             onPress={() => onSelect(option)}
-            style={selected === option ? { backgroundColor: colors.accentSoft } : undefined}
+            style={[
+              styles.choiceChip,
+              selected === option ? { backgroundColor: colors.accentSoft } : undefined,
+            ]}
             textStyle={selected === option ? { color: colors.accent } : undefined}
           >
             {format(option)}
@@ -769,23 +633,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  muscleGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  muscleTile: {
-    minHeight: 48,
-    minWidth: '30%',
-    alignItems: 'center',
+  choiceChip: {
+    minHeight: 44,
     justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
-  focusFooter: {
-    gap: 4,
   },
   summaryGrid: {
     flexDirection: 'row',

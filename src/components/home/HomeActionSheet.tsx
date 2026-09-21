@@ -7,19 +7,17 @@ import {
 import type { ElementRef, RefObject } from 'react';
 import { useCallback } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Button, Chip, Icon, List, ProgressBar } from 'react-native-paper';
+import { Button, Chip, Icon, List } from 'react-native-paper';
 
-import { computePreWorkoutStatus, type PreWorkoutLog } from '@/domain/workouts/preRoutine';
 import { useTheme } from '@/theme';
 
-export type HomeSheet = 'preFuel' | 'swap' | 'weakPoint' | 'streak';
+export type HomeSheet = 'swap' | 'weakPoint' | 'streak';
 
 type SheetModalRef = ElementRef<typeof BottomSheetModal>;
 
 type HomeActionSheetProps = {
   activeSheet: HomeSheet | null;
   modalRef: RefObject<SheetModalRef | null>;
-  preWorkoutLog: PreWorkoutLog;
   streakDays: number;
   currentDayName: string;
   swapLabel: string;
@@ -30,7 +28,6 @@ type HomeActionSheetProps = {
 export function HomeActionSheet({
   activeSheet,
   modalRef,
-  preWorkoutLog,
   streakDays,
   currentDayName,
   swapLabel,
@@ -55,7 +52,6 @@ export function HomeActionSheet({
       backdropComponent={renderBackdrop}
     >
       <BottomSheetView style={[styles.sheet, { padding: spacing.lg }]}>
-        {activeSheet === 'preFuel' && <PreFuelSheet log={preWorkoutLog} />}
         {activeSheet === 'swap' && (
           <SwapSheet
             currentDayName={currentDayName}
@@ -82,38 +78,6 @@ function SheetHeader({ icon, title, eyebrow }: { icon: string; title: string; ey
         <Text style={[typography.micro, { color: colors.textMuted }]}>{eyebrow}</Text>
         <Text style={[typography.heading, { color: colors.textPrimary }]}>{title}</Text>
       </View>
-    </View>
-  );
-}
-
-function PreFuelSheet({ log }: { log: PreWorkoutLog }) {
-  const { colors, spacing, typography } = useTheme();
-  const status = computePreWorkoutStatus(log);
-  const progress = Math.min(1, status.minutesSinceTaken / log.peakWindowMinutes);
-
-  return (
-    <View style={{ gap: spacing.lg }}>
-      <SheetHeader icon="flash" eyebrow="Pre-routine" title="Fuel window" />
-      <View style={{ gap: spacing.sm }}>
-        <View style={styles.metricGrid}>
-          <Metric label="Dose" value={`${log.doseMg}mg`} />
-          <Metric label="Taken" value={`${status.minutesSinceTaken}m ago`} />
-          <Metric label="Carbs" value={`${log.carbsLoadedG}g`} />
-        </View>
-        <ProgressBar
-          progress={progress}
-          color={colors.accent}
-          style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
-        />
-        <Text style={[typography.body, { color: colors.textSecondary }]}>
-          {status.atPeak
-            ? 'You are in the peak window. Start warmups before the signal fades.'
-            : `Peak effect is roughly ${status.minutesToPeak} minutes away. Keep setup tight, then start.`}
-        </Text>
-      </View>
-      <Button mode="outlined" icon="plus" disabled>
-        Full pre-routine logging soon
-      </Button>
     </View>
   );
 }
@@ -202,17 +166,6 @@ function StreakSheet({ streakDays }: { streakDays: number }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={[styles.metric, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
-      <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{value}</Text>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   sheet: {
     flex: 1,
@@ -228,22 +181,6 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  metricGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  metric: {
-    flex: 1,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    gap: 2,
-  },
-  progress: {
-    height: 6,
-    borderRadius: 999,
   },
   chipWrap: {
     flexDirection: 'row',

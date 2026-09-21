@@ -1,14 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Button, Portal, ProgressBar } from 'react-native-paper';
 
+import { remainingRestSeconds } from '@/domain/workouts/restTimer';
 import { useTheme } from '@/theme';
+import type { RestTimerSnapshot } from '@/types';
 
 type RestTimerProps = {
-  secondsRemaining: number;
-  initialSeconds: number;
-  onChangeSeconds: (seconds: number) => void;
+  timer: RestTimerSnapshot;
+  onExtend: (seconds: number) => void;
   onDismiss: () => void;
   bottomOffset: number;
 };
@@ -19,39 +20,42 @@ function formatTime(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export function RestTimer({
-  secondsRemaining,
-  initialSeconds,
-  onChangeSeconds,
-  onDismiss,
-  bottomOffset,
-}: RestTimerProps) {
+export function RestTimer({ timer, onExtend, onDismiss, bottomOffset }: RestTimerProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const notifiedRef = useRef(false);
+  const [nowMs, setNowMs] = useState(Date.now);
+  const secondsRemaining = remainingRestSeconds(timer, nowMs);
   const isDone = secondsRemaining <= 0;
   const progress =
-    initialSeconds > 0 ? 1 - Math.min(1, Math.max(0, secondsRemaining) / initialSeconds) : 1;
+    timer.durationSeconds > 0
+      ? 1 - Math.min(1, Math.max(0, secondsRemaining) / timer.durationSeconds)
+      : 1;
 
   useEffect(() => {
-    if (secondsRemaining <= 0) {
-      if (!notifiedRef.current) {
-        notifiedRef.current = true;
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-      const timeout = setTimeout(onDismiss, 5000);
-      return () => clearTimeout(timeout);
-    }
-
     const id = setInterval(() => {
-      onChangeSeconds(Math.max(0, secondsRemaining - 1));
-    }, 1000);
+      setNowMs(Date.now());
+    }, 250);
     return () => clearInterval(id);
-  }, [onChangeSeconds, onDismiss, secondsRemaining]);
+  }, [timer.endsAt]);
+
+  useEffect(() => {
+    notifiedRef.current = false;
+  }, [timer.endsAt]);
+
+  useEffect(() => {
+    if (!isDone) return;
+    if (!notifiedRef.current) {
+      notifiedRef.current = true;
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    const timeout = setTimeout(onDismiss, 5000);
+    return () => clearTimeout(timeout);
+  }, [isDone, onDismiss]);
 
   function addThirtySeconds() {
     notifiedRef.current = false;
-    onChangeSeconds(Math.max(0, secondsRemaining) + 30);
-    Haptics.selectionAsync();
+    onExtend(30);
+    void Haptics.selectionAsync();
   }
 
   return (
@@ -71,7 +75,9 @@ export function RestTimer({
         >
           <View style={styles.headerRow}>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[typography.micro, { color: isDone ? colors.accent : colors.textMuted }]}>
+              <Text
+                style={[typography.micro, { color: isDone ? colors.accent : colors.textMuted }]}
+              >
                 {isDone ? 'Rest complete' : 'Rest timer'}
               </Text>
               <Text style={[typography.display, { color: colors.textPrimary }]}>
@@ -84,7 +90,12 @@ export function RestTimer({
                 { backgroundColor: isDone ? colors.accentSoft : colors.surfacePressed },
               ]}
             >
-              <Text style={[typography.captionBold, { color: isDone ? colors.accent : colors.textSecondary }]}>
+              <Text
+                style={[
+                  typography.captionBold,
+                  { color: isDone ? colors.accent : colors.textSecondary },
+                ]}
+              >
                 {isDone ? 'Ready' : 'Recover'}
               </Text>
             </View>

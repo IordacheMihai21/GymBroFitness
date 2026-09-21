@@ -33,10 +33,7 @@ const DIFFICULTY_ORDER = { beginner: 0, intermediate: 1, advanced: 2 } as const;
 export function rankReplacements(ctx: ReplacementContext): RankedReplacement[] {
   const { original, reason, equipment, prefs } = ctx;
   const used = new Set(ctx.usedExerciseIds);
-  const blocked = new Set([
-    ...prefs.excludedExerciseSlugs,
-    ...prefs.discomfortExerciseSlugs,
-  ]);
+  const blocked = new Set([...prefs.excludedExerciseSlugs, ...prefs.discomfortExerciseSlugs]);
 
   const candidates = EXERCISE_CATALOG.filter(
     (e) =>
@@ -67,8 +64,7 @@ export function rankReplacements(ctx: ReplacementContext): RankedReplacement[] {
     }
     if (e.exerciseType === original.exerciseType) score += 10;
 
-    const difficultyGap =
-      DIFFICULTY_ORDER[e.difficulty] - DIFFICULTY_ORDER[original.difficulty];
+    const difficultyGap = DIFFICULTY_ORDER[e.difficulty] - DIFFICULTY_ORDER[original.difficulty];
     if (reason === 'easier_alternative') {
       if (original.easierAlternatives.includes(e.slug)) {
         score += 35;
@@ -105,11 +101,9 @@ export function rankReplacements(ctx: ReplacementContext): RankedReplacement[] {
     return {
       exercise: e,
       score,
-      rationale: `Ranked because it shares ${notes.length > 0 ? notes.join(', ') : 'a training target'} with ${original.name}.`,
+      rationale: `Suggested because it shares ${notes.length > 0 ? notes.join(', ') : 'a training target'} with ${original.name}.`,
     };
   });
 
-  return ranked.sort(
-    (a, b) => b.score - a.score || a.exercise.slug.localeCompare(b.exercise.slug),
-  );
+  return ranked.sort((a, b) => b.score - a.score || a.exercise.slug.localeCompare(b.exercise.slug));
 }

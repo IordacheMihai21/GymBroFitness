@@ -1,17 +1,25 @@
-import { useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { IconButton, Menu, TextInput } from 'react-native-paper';
 
 import { formatPlateBreakdown, plateBreakdown } from '@/domain/workouts/plateMath';
 import { formatRir } from '@/domain/workouts/rir';
 import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
-import type { EquipmentType, PerformedSet, SetTechnique, SubEffort } from '@/types';
+import type {
+  EquipmentType,
+  PerformedSet,
+  SetTechnique,
+  SubEffort,
+  TrackingType,
+  Units,
+} from '@/types';
+import { displayLoad, loadInputToKg, parseDecimalInput, unitLabel } from '@/utils/units';
 
 /** Equipment where a barbell/EZ bar is actually loaded with plates. */
-const PLATE_LOADED_EQUIPMENT: Partial<Record<EquipmentType, number>> = {
-  barbell: 20,
-  smith_machine: 20,
-  ez_bar: 10,
+const PLATE_LOADED_EQUIPMENT: Partial<Record<EquipmentType, Record<Units, number>>> = {
+  barbell: { kg: 20, lb: 45 },
+  smith_machine: { kg: 20, lb: 45 },
+  ez_bar: { kg: 10, lb: 25 },
 };
 
 const TECHNIQUES: SetTechnique[] = [
@@ -55,33 +63,67 @@ type SetRowProps = {
   onOpenRirPicker: () => void;
   /** Locks every interactive control while the workout is paused. */
   disabled?: boolean;
+  trackingType: TrackingType;
+  units: Units;
+  validationError?: string | null;
+  /** Completes this row and advances focus to the next open set. */
+  onSubmitEditing?: () => void;
 };
 
-export function SetRow({
-  set,
-  targetLabel,
-  onChange,
-  onToggleComplete,
-  onCopyPrevious,
-  equipment,
-  previousLabel,
-  onOpenRirPicker,
-  disabled = false,
-}: SetRowProps) {
+export type SetRowHandle = {
+  focusPrimaryInput: () => void;
+};
+
+type FocusableInput = { focus: () => void };
+
+export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
+  {
+    set,
+    targetLabel,
+    onChange,
+    onToggleComplete,
+    onCopyPrevious,
+    equipment,
+    previousLabel,
+    onOpenRirPicker,
+    disabled = false,
+    trackingType,
+    units,
+    validationError,
+    onSubmitEditing,
+  },
+  ref,
+) {
   const { colors, radius, spacing, typography } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);
+  const loadInputRef = useRef<FocusableInput | null>(null);
+  const resultInputRef = useRef<FocusableInput | null>(null);
 
   const technique = set.technique ?? 'standard';
   const subEfforts = set.subEfforts ?? [];
   const isLocked = disabled || set.completed;
 
   const barWeight = equipment
-    ?.map((item) => PLATE_LOADED_EQUIPMENT[item])
+    ?.map((item) => PLATE_LOADED_EQUIPMENT[item]?.[units])
     .find((value): value is number => value != null);
   const plates =
     barWeight != null && set.loadKg != null && set.loadKg > 0
-      ? plateBreakdown(set.loadKg, 'kg', { barWeight })
+      ? plateBreakdown(displayLoad(set.loadKg, units) ?? 0, units, { barWeight })
       : null;
+  const supportsLoad = trackingType === 'weight_reps' || trackingType === 'weighted_bodyweight';
+  const supportsReps = trackingType !== 'time';
+  const supportsTechniques =
+    trackingType === 'weight_reps' || trackingType === 'weighted_bodyweight';
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusPrimaryInput() {
+        (supportsLoad ? loadInputRef : resultInputRef).current?.focus();
+      },
+    }),
+    [supportsLoad],
+  );
 
   function selectTechnique(next: SetTechnique) {
     setMenuVisible(false);
@@ -101,6 +143,11 @@ export function SetRow({
     onChange({ subEfforts: subEfforts.filter((_, i) => i !== index) });
   }
 
+  function copyPrevious() {
+    setMenuVisible(false);
+    onCopyPrevious?.();
+  }
+
   return (
     <View
       style={[
@@ -114,10 +161,15 @@ export function SetRow({
       ]}
     >
       <View style={styles.rowHeader}>
+        <View style={[styles.setNumber, { backgroundColor: colors.surfacePressed }]}>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+            {set.setNumber}
+          </Text>
+        </View>
         <View style={styles.setMeta}>
           <View style={styles.setTitleRow}>
-            <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-              Set {set.setNumber}
+            <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
+              {previousLabel ?? 'No previous set'}
             </Text>
             {technique !== 'standard' ? (
               <View style={[styles.techniqueBadge, { backgroundColor: colors.accentSoft }]}>
@@ -127,14 +179,9 @@ export function SetRow({
               </View>
             ) : null}
           </View>
-          <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
             {targetLabel}
           </Text>
-          {previousLabel && !set.completed ? (
-            <Text style={[typography.micro, { color: colors.accent }]} numberOfLines={1}>
-              {previousLabel}
-            </Text>
-          ) : null}
           {set.formAnalysis ? (
             <Text style={[typography.micro, { color: colors.success }]} numberOfLines={1}>
               Form AI: {set.formAnalysis.averageScore}/100 · {set.formAnalysis.repCount} reps
@@ -143,39 +190,39 @@ export function SetRow({
         </View>
 
         <View style={styles.actionGroup}>
-          <Menu
-            visible={menuVisible}
-            onDismiss={() => setMenuVisible(false)}
-            anchor={
-              <IconButton
-                icon="fire"
-                mode={technique !== 'standard' ? 'contained' : 'contained-tonal'}
-                size={16}
-                onPress={() => setMenuVisible(true)}
-                disabled={isLocked}
-                style={styles.compactButton}
-              />
-            }
-          >
-            {TECHNIQUES.map((item) => (
-              <Menu.Item
-                key={item}
-                onPress={() => selectTechnique(item)}
-                title={TECHNIQUE_LABELS[item]}
-                leadingIcon={item === technique ? 'check' : undefined}
-              />
-            ))}
-          </Menu>
-
-          {onCopyPrevious ? (
-            <IconButton
-              icon="content-copy"
-              mode="contained-tonal"
-              size={16}
-              onPress={onCopyPrevious}
-              disabled={isLocked}
-              style={styles.compactButton}
-            />
+          {supportsTechniques || onCopyPrevious ? (
+            <Menu
+              visible={menuVisible}
+              onDismiss={() => setMenuVisible(false)}
+              anchor={
+                <IconButton
+                  icon="dots-horizontal"
+                  mode={technique !== 'standard' ? 'contained' : 'contained-tonal'}
+                  size={16}
+                  onPress={() => setMenuVisible(true)}
+                  disabled={isLocked}
+                  style={styles.compactButton}
+                />
+              }
+            >
+              {onCopyPrevious ? (
+                <Menu.Item
+                  onPress={copyPrevious}
+                  title="Copy previous set"
+                  leadingIcon="content-copy"
+                />
+              ) : null}
+              {supportsTechniques
+                ? TECHNIQUES.map((item) => (
+                    <Menu.Item
+                      key={item}
+                      onPress={() => selectTechnique(item)}
+                      title={TECHNIQUE_LABELS[item]}
+                      leadingIcon={item === technique ? 'check' : undefined}
+                    />
+                  ))
+                : null}
+            </Menu>
           ) : null}
 
           <IconButton
@@ -190,26 +237,61 @@ export function SetRow({
       </View>
 
       <View style={styles.inputGroup}>
-        <TextInput
-          mode="outlined"
-          dense
-          label="kg"
-          value={set.loadKg != null ? String(set.loadKg) : ''}
-          onChangeText={(text) => onChange({ loadKg: parseNumericInput(text) })}
-          keyboardType="decimal-pad"
-          editable={!isLocked}
-          style={styles.input}
-        />
-        <TextInput
-          mode="outlined"
-          dense
-          label="reps"
-          value={set.reps != null ? String(set.reps) : ''}
-          onChangeText={(text) => onChange({ reps: parseNumericInput(text) })}
-          keyboardType="number-pad"
-          editable={!isLocked}
-          style={styles.input}
-        />
+        {supportsLoad ? (
+          <TextInput
+            ref={(instance: FocusableInput | null) => {
+              loadInputRef.current = instance;
+            }}
+            mode="outlined"
+            dense
+            label={
+              trackingType === 'weighted_bodyweight'
+                ? `extra ${unitLabel(units)}`
+                : unitLabel(units)
+            }
+            value={set.loadKg != null ? String(displayLoad(set.loadKg, units)) : ''}
+            onChangeText={(text) => onChange({ loadKg: loadInputToKg(text, units) })}
+            keyboardType="decimal-pad"
+            returnKeyType="next"
+            blurOnSubmit={false}
+            onSubmitEditing={() => resultInputRef.current?.focus()}
+            editable={!isLocked}
+            style={styles.input}
+          />
+        ) : null}
+        {supportsReps ? (
+          <TextInput
+            ref={(instance: FocusableInput | null) => {
+              resultInputRef.current = instance;
+            }}
+            mode="outlined"
+            dense
+            label="reps"
+            value={set.reps != null ? String(set.reps) : ''}
+            onChangeText={(text) => onChange({ reps: parseDecimalInput(text) })}
+            keyboardType="number-pad"
+            returnKeyType="done"
+            onSubmitEditing={onSubmitEditing}
+            editable={!isLocked}
+            style={styles.input}
+          />
+        ) : (
+          <TextInput
+            ref={(instance: FocusableInput | null) => {
+              resultInputRef.current = instance;
+            }}
+            mode="outlined"
+            dense
+            label="seconds"
+            value={set.durationSeconds != null ? String(set.durationSeconds) : ''}
+            onChangeText={(text) => onChange({ durationSeconds: parseDecimalInput(text) })}
+            keyboardType="number-pad"
+            returnKeyType="done"
+            onSubmitEditing={onSubmitEditing}
+            editable={!isLocked}
+            style={styles.input}
+          />
+        )}
         <Pressable
           onPress={onOpenRirPicker}
           disabled={isLocked}
@@ -229,7 +311,7 @@ export function SetRow({
           </Text>
           {!plates.exact ? (
             <Text style={[typography.micro, { color: colors.accent }]}>
-              ≈{plates.achievedWeight} kg closest
+              ≈{plates.achievedWeight} {unitLabel(units)} closest
             </Text>
           ) : null}
         </View>
@@ -258,7 +340,7 @@ export function SetRow({
         </View>
       ) : null}
 
-      {technique !== 'standard' ? (
+      {supportsTechniques && technique !== 'standard' ? (
         <View style={[styles.subEffortPanel, { borderColor: colors.border }]}>
           {subEfforts.map((effort, index) => (
             <View key={index} style={styles.subEffortRow}>
@@ -268,9 +350,11 @@ export function SetRow({
               <TextInput
                 mode="outlined"
                 dense
-                label="kg"
-                value={effort.loadKg != null ? String(effort.loadKg) : ''}
-                onChangeText={(text) => updateSubEffort(index, { loadKg: parseNumericInput(text) })}
+                label={unitLabel(units)}
+                value={effort.loadKg != null ? String(displayLoad(effort.loadKg, units)) : ''}
+                onChangeText={(text) =>
+                  updateSubEffort(index, { loadKg: loadInputToKg(text, units) })
+                }
                 keyboardType="decimal-pad"
                 editable={!isLocked}
                 style={styles.subEffortInput}
@@ -280,7 +364,7 @@ export function SetRow({
                 dense
                 label="reps"
                 value={effort.reps != null ? String(effort.reps) : ''}
-                onChangeText={(text) => updateSubEffort(index, { reps: parseNumericInput(text) })}
+                onChangeText={(text) => updateSubEffort(index, { reps: parseDecimalInput(text) })}
                 keyboardType="number-pad"
                 editable={!isLocked}
                 style={styles.subEffortInput}
@@ -305,23 +389,19 @@ export function SetRow({
           </Text>
         </View>
       ) : null}
+      {validationError ? (
+        <Text style={[typography.micro, { color: colors.danger }]}>{validationError}</Text>
+      ) : null}
     </View>
   );
-}
-
-function parseNumericInput(text: string): number | null {
-  const normalized = text.trim().replace(',', '.');
-  if (!normalized) return null;
-  const value = Number(normalized);
-  return Number.isFinite(value) ? value : null;
-}
+});
 
 const styles = StyleSheet.create({
   row: {
     gap: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 108,
-    paddingVertical: 10,
+    minHeight: 96,
+    paddingVertical: 8,
   },
   rowHeader: {
     flexDirection: 'row',
@@ -332,6 +412,13 @@ const styles = StyleSheet.create({
   setMeta: {
     flex: 1,
     gap: 2,
+  },
+  setNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   setTitleRow: {
     flexDirection: 'row',

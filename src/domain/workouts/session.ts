@@ -46,5 +46,31 @@ export function startWorkoutSession(day: ProgramDay, userId: string): WorkoutSes
     finishedAt: null,
     exercises,
     totalPausedSeconds: 0,
+    pausedAt: null,
+    restTimer: null,
+  };
+}
+
+export function pauseWorkoutSession(session: WorkoutSession, now = new Date()): WorkoutSession {
+  if (session.status === 'paused') return session;
+  return {
+    ...session,
+    status: 'paused',
+    pausedAt: now.toISOString(),
+    restTimer: null,
+  };
+}
+
+export function resumeWorkoutSession(session: WorkoutSession, now = new Date()): WorkoutSession {
+  if (session.status !== 'paused') return session;
+  const pausedAtMs = session.pausedAt ? Date.parse(session.pausedAt) : Number.NaN;
+  const addedSeconds = Number.isFinite(pausedAtMs)
+    ? Math.max(0, (now.getTime() - pausedAtMs) / 1000)
+    : 0;
+  return {
+    ...session,
+    status: 'in_progress',
+    pausedAt: null,
+    totalPausedSeconds: session.totalPausedSeconds + addedSeconds,
   };
 }

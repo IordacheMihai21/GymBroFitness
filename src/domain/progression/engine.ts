@@ -2,11 +2,13 @@ import type {
   PerformedSet,
   ProgressionDecision,
   ProgressionInput,
+  ProgressionReasonCode,
 } from '@/types';
 import { roundToIncrement, smallestIncrementKg } from '@/utils/units';
 
 import { MAX_WEEKLY_SETS_BY_EXPERIENCE, PROGRESSION_CONSTRAINTS as C } from './constraints';
 import { explain } from './explanations';
+import { PROGRESSION_RULE_VERSION } from './rules';
 
 /**
  * Deterministic double-progression engine.
@@ -36,6 +38,7 @@ type SessionMetrics = {
   allAtOrAboveFloor: boolean;
   setsBelowFloor: number;
   avgRir: number | null;
+  rirCount: number;
   hitFailure: boolean;
   sharpIntrasetDrop: boolean;
 };
@@ -62,14 +65,15 @@ function measure(
     allAtOrAboveFloor: efforts.every((r) => r >= minTarget),
     setsBelowFloor: efforts.filter((r) => r < minTarget).length,
     avgRir: rirs.length > 0 ? rirs.reduce((a, b) => a + b, 0) / rirs.length : null,
+    rirCount: rirs.length,
     hitFailure: rirs.some((r) => r === 0),
     sharpIntrasetDrop: working.length >= 2 && first > 0 && last / first < 0.6,
   };
 }
 
 /** True when the session met its prescription (in range at sane RIR). */
-function sessionSuccessful(m: SessionMetrics | null): boolean {
-  return m != null && m.allAtOrAboveFloor;
+function sessionSuccessful(m: SessionMetrics | null, expectedSets: number): boolean {
+  return m != null && m.sets.length >= expectedSets && m.allAtOrAboveFloor;
 }
 
 function readinessPoor(input: ProgressionInput): boolean {
@@ -95,31 +99,47 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
   };
 
   const m = measure(input.performedSets, p.minReps, p.maxReps, isTime);
-  const historyMetrics = previousSessions.map((s) =>
-    measure(s.sets, s.prescription.minReps, s.prescription.maxReps, isTime),
+  const historyMetrics = previousSessions.map((session) => ({
+    metrics: measure(
+      session.sets,
+      session.prescription.minReps,
+      session.prescription.maxReps,
+      isTime,
+    ),
+    expectedSets: session.prescription.workingSets,
+  }));
+  const comparableHistoryMetrics = historyMetrics.filter(
+    ({ metrics, expectedSets }) => metrics != null && metrics.sets.length >= expectedSets,
   );
+  const comparableHistoryCount = comparableHistoryMetrics.length;
   const confidence: ProgressionDecision['confidence'] =
-    previousSessions.length >= 2 ? 'high' : previousSessions.length === 1 ? 'medium' : 'low';
+    comparableHistoryCount >= 2 ? 'high' : comparableHistoryCount === 1 ? 'medium' : 'low';
 
   const supportingMetrics: Record<string, number | string> = m
     ? {
+        comparableHistorySessions: comparableHistoryCount,
         completedSets: m.sets.length,
         avgReps: Math.round(m.avgReps * 10) / 10,
         minReps: m.minReps,
         topLoadKg: m.topLoad,
         avgRir: m.avgRir == null ? 'n/a' : Math.round(m.avgRir * 10) / 10,
+        rirCoverage: `${m.rirCount}/${m.sets.length}`,
+        completedPrescription: m.sets.length >= p.workingSets ? 'yes' : 'no',
         targetRange: `${p.minReps}–${p.maxReps}`,
         targetRir: p.targetRir,
+        nutritionContext: input.nutritionContext ?? 'unknown',
       }
-    : { completedSets: 0 };
+    : { completedSets: 0, comparableHistorySessions: comparableHistoryCount };
 
   const decide = (
-    partial: Pick<ProgressionDecision, 'action' | 'reasonCode'> &
-      Partial<ProgressionDecision>,
+    partial: Pick<ProgressionDecision, 'action'> & {
+      reasonCode: ProgressionReasonCode;
+    } & Partial<ProgressionDecision>,
   ): ProgressionDecision => {
     const d: ProgressionDecision = {
       ...base,
       confidence,
+      ruleVersion: PROGRESSION_RULE_VERSION,
       supportingMetrics,
       explanation: '',
       ...partial,
@@ -127,10 +147,7 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     // Clamp everything to configured constraints.
     d.nextMinReps = Math.max(C.minRepTarget, Math.min(C.maxRepTarget, d.nextMinReps));
     d.nextMaxReps = Math.max(d.nextMinReps, Math.min(C.maxRepTarget, d.nextMaxReps));
-    d.nextWorkingSets = Math.max(
-      C.minWorkingSets,
-      Math.min(C.maxWorkingSets, d.nextWorkingSets),
-    );
+    d.nextWorkingSets = Math.max(C.minWorkingSets, Math.min(C.maxWorkingSets, d.nextWorkingSets));
     if (d.nextLoad != null && m && m.topLoad > 0) {
       const maxAllowed = m.topLoad * (1 + C.maxLoadIncreasePercent / 100);
       d.nextLoad = Math.min(d.nextLoad, roundToIncrement(maxAllowed, 0.5));
@@ -153,15 +170,38 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     });
   }
 
-  // 3. First loadable session without a meaningful load: calibration.
+  // 3. A partial session is useful history, but it does not prove the prescription was achieved.
+  if (m.sets.length < p.workingSets) {
+    return decide({
+      action: 'maintain',
+      reasonCode: 'INCOMPLETE_PRESCRIPTION',
+      nextLoad: isLoadable && m.topLoad > 0 ? m.topLoad : undefined,
+    });
+  }
+
+  // 4. First loadable session without a meaningful load: calibration.
   if (isLoadable && m.topLoad === 0 && previousSessions.length === 0) {
     return decide({ action: 'needs_more_data', reasonCode: 'CALIBRATING_LOAD' });
   }
 
-  // 4. Deload: several aligned fatigue signals, never forced automatically.
-  if (previousSessions.length >= C.sessionsBeforeDeload - 1) {
-    const recent = [...historyMetrics.slice(-(C.sessionsBeforeDeload - 1)), m];
-    const regressions = recent.filter((r) => !sessionSuccessful(r ?? null)).length;
+  // 5. Missing effort data never silently counts as permission to progress.
+  if (m.rirCount < m.sets.length) {
+    return decide({
+      action: 'maintain',
+      reasonCode: 'MISSING_RIR_HOLD',
+      nextLoad: isLoadable && m.topLoad > 0 ? m.topLoad : undefined,
+    });
+  }
+
+  // 6. Deload: several aligned signals, never forced automatically.
+  if (comparableHistoryMetrics.length >= C.sessionsBeforeDeload - 1) {
+    const recent = [
+      ...comparableHistoryMetrics.slice(-(C.sessionsBeforeDeload - 1)),
+      { metrics: m, expectedSets: p.workingSets },
+    ];
+    const regressions = recent.filter(
+      ({ metrics, expectedSets }) => !sessionSuccessful(metrics, expectedSets),
+    ).length;
     const grinding = m.avgRir != null && m.avgRir < 0.5 && !m.allAtOrAboveFloor;
     if (regressions >= C.sessionsBeforeDeload && (readinessPoor(input) || grinding)) {
       return decide({
@@ -178,7 +218,7 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     }
   }
 
-  // 5. Sharp fatigue drop within the session → trim one accessory set.
+  // 7. Sharp performance drop within the session → trim one accessory set.
   if (m.sharpIntrasetDrop && p.workingSets > 2 && exercise.exerciseType === 'isolation') {
     return decide({
       action: 'reduce_sets',
@@ -188,12 +228,14 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     });
   }
 
-  // 6. Below the rep floor.
+  // 8. Below the rep floor.
   if (!m.allAtOrAboveFloor) {
     const extremeMiss = m.avgReps < p.minReps - 2 && m.hitFailure;
-    const previous = historyMetrics[historyMetrics.length - 1];
+    const previous = comparableHistoryMetrics[comparableHistoryMetrics.length - 1];
     const repeatedMiss =
-      previous != null && !sessionSuccessful(previous) && m.setsBelowFloor >= 1;
+      previous != null &&
+      !sessionSuccessful(previous.metrics, previous.expectedSets) &&
+      m.setsBelowFloor >= 1;
     if (isLoadable && m.topLoad > 0 && (extremeMiss || repeatedMiss)) {
       return decide({
         action: 'decrease_load',
@@ -211,8 +253,8 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     });
   }
 
-  // 7. Top of range on every set at (or easier than) target RIR → add load.
-  const rirOk = m.avgRir == null || m.avgRir >= p.targetRir - 0.5;
+  // 9. Top of range on every set at (or easier than) target RIR → add load.
+  const rirOk = m.avgRir != null && m.avgRir >= p.targetRir - 0.5;
   if (m.allAtCeiling && rirOk) {
     if (isLoadable && m.topLoad > 0) {
       const increment = smallestIncrementKg(exercise.equipment);
@@ -232,16 +274,19 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     });
   }
 
-  // 8. Add a set: only for priority muscles after a proven streak with
+  // 10. Add a set: only for priority muscles after a proven streak with
   //    recovery and weekly-volume headroom.
   const successStreak =
-    historyMetrics.slice(-C.sessionsBeforeAddSet + 1).every((h) => sessionSuccessful(h ?? null)) &&
-    historyMetrics.length >= C.sessionsBeforeAddSet - 1 &&
-    sessionSuccessful(m);
+    comparableHistoryMetrics
+      .slice(-C.sessionsBeforeAddSet + 1)
+      .every(({ metrics, expectedSets }) => sessionSuccessful(metrics, expectedSets)) &&
+    comparableHistoryMetrics.length >= C.sessionsBeforeAddSet - 1 &&
+    sessionSuccessful(m, p.workingSets);
   const weeklyCap = MAX_WEEKLY_SETS_BY_EXPERIENCE[input.userExperience];
   if (
     input.isPriorityMuscle &&
     successStreak &&
+    input.nutritionContext !== 'deficit' &&
     !readinessPoor(input) &&
     !m.hitFailure &&
     (input.weeklySetsForPrimaryMuscle ?? weeklyCap) < weeklyCap &&
@@ -255,7 +300,7 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     });
   }
 
-  // 9. Inside the range with sane effort → chase one more rep.
+  // 11. Inside the range with sane effort → chase one more rep.
   if (m.allAtOrAboveFloor && rirOk) {
     return decide({
       action: 'increase_reps',
@@ -264,7 +309,7 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     });
   }
 
-  // 10. In range but harder than intended → consolidate.
+  // 12. In range but harder than intended → consolidate.
   return decide({
     action: 'maintain',
     reasonCode: 'HOLD_STEADY',

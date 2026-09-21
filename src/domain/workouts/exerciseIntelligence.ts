@@ -1,5 +1,7 @@
+import { sameExerciseIdentity } from '@/domain/exercises/catalog';
 import { completedWorkingSets } from '@/domain/progression/engine';
-import type { PerformedSet, WorkoutSession } from '@/types';
+import type { PerformedSet, Units, WorkoutSession } from '@/types';
+import { formatLoad } from '@/utils/units';
 
 import { estimateOneRepMax, setEfforts, volumeLoadKg } from './analytics';
 
@@ -51,10 +53,11 @@ export type ExerciseIntelligence = {
 export function buildExerciseIntelligence(
   history: WorkoutSession[],
   exerciseId: string,
+  units: Units = 'kg',
 ): ExerciseIntelligence {
   const sessions = history
     .filter((session) => session.status === 'completed')
-    .flatMap((session) => buildSessionSummary(session, exerciseId))
+    .flatMap((session) => buildSessionSummary(session, exerciseId, units))
     .sort((a, b) => Date.parse(b.performedAt) - Date.parse(a.performedAt));
   const formScores = sessions
     .map((session) => session.averageFormScore)
@@ -94,8 +97,11 @@ export function buildExerciseIntelligence(
 function buildSessionSummary(
   session: WorkoutSession,
   exerciseId: string,
+  units: Units,
 ): ExerciseSessionSummary[] {
-  const performed = session.exercises.filter((exercise) => exercise.exerciseId === exerciseId);
+  const performed = session.exercises.filter((exercise) =>
+    sameExerciseIdentity(exercise.exerciseId, exerciseId),
+  );
   if (performed.length === 0) return [];
   const workingSets = performed.flatMap((exercise) => completedWorkingSets(exercise.sets));
   if (workingSets.length === 0) return [];
@@ -107,26 +113,31 @@ function buildSessionSummary(
     .map((set) => set.formAnalysis?.averageScore)
     .filter((score): score is number => score != null);
 
-  return [{
-    sessionId: session.id,
-    dayName: session.dayName,
-    performedAt: session.finishedAt ?? session.startedAt,
-    completedSets: workingSets.length,
-    volumeKg: performed.reduce((sum, exercise) => sum + Math.round(volumeLoadKg(exercise.sets)), 0),
-    bestSetLabel: bestSetLabel(workingSets),
-    bestLoadKg: bestLoadedSet(workingSets)?.loadKg ?? null,
-    bestE1rmKg: bestEstimatedOneRepMax(workingSets),
-    averageRir: average(rirValues),
-    averageTargetRir: average(targetRirs),
-    averageFormScore: average(formScores, true),
-    mostCommonIssue: mostCommonIssue(workingSets),
-    sets: workingSets.map((set) => ({
-      setNumber: set.setNumber,
-      label: setLabel(set),
-      rir: set.rir,
-      formScore: set.formAnalysis?.averageScore ?? null,
-    })),
-  }];
+  return [
+    {
+      sessionId: session.id,
+      dayName: session.dayName,
+      performedAt: session.finishedAt ?? session.startedAt,
+      completedSets: workingSets.length,
+      volumeKg: performed.reduce(
+        (sum, exercise) => sum + Math.round(volumeLoadKg(exercise.sets)),
+        0,
+      ),
+      bestSetLabel: bestSetLabel(workingSets, units),
+      bestLoadKg: bestLoadedSet(workingSets)?.loadKg ?? null,
+      bestE1rmKg: bestEstimatedOneRepMax(workingSets),
+      averageRir: average(rirValues),
+      averageTargetRir: average(targetRirs),
+      averageFormScore: average(formScores, true),
+      mostCommonIssue: mostCommonIssue(workingSets),
+      sets: workingSets.map((set) => ({
+        setNumber: set.setNumber,
+        label: setLabel(set, units),
+        rir: set.rir,
+        formScore: set.formAnalysis?.averageScore ?? null,
+      })),
+    },
+  ];
 }
 
 function nextActionForExercise(latest: ExerciseSessionSummary | null): string {
@@ -162,7 +173,7 @@ function bestEstimatedOneRepMax(sets: PerformedSet[]): number | null {
 function bestLoadedEffort(history: WorkoutSession[], exerciseId: string) {
   const efforts = history.flatMap((session) =>
     session.exercises
-      .filter((exercise) => exercise.exerciseId === exerciseId)
+      .filter((exercise) => sameExerciseIdentity(exercise.exerciseId, exerciseId))
       .flatMap((exercise) => completedWorkingSets(exercise.sets).flatMap(setEfforts)),
   );
   return efforts.reduce<(typeof efforts)[number] | null>((best, effort) => {
@@ -175,8 +186,9 @@ function bestLoadedEffort(history: WorkoutSession[], exerciseId: string) {
 }
 
 function bestLoadedSet(sets: PerformedSet[]): { loadKg: number; reps: number | null } | null {
-  const effort = sets.flatMap(setEfforts).reduce<{ loadKg: number; reps: number | null } | null>(
-    (best, item) => {
+  const effort = sets
+    .flatMap(setEfforts)
+    .reduce<{ loadKg: number; reps: number | null } | null>((best, item) => {
       const load = item.loadKg ?? 0;
       if (load <= 0) return best;
       if (!best || load > best.loadKg) return { loadKg: load, reps: item.reps };
@@ -184,24 +196,24 @@ function bestLoadedSet(sets: PerformedSet[]): { loadKg: number; reps: number | n
         return { loadKg: load, reps: item.reps };
       }
       return best;
-    },
-    null,
-  );
+    }, null);
   return effort;
 }
 
-function bestSetLabel(sets: PerformedSet[]): string {
+function bestSetLabel(sets: PerformedSet[], units: Units): string {
   const loaded = bestLoadedSet(sets);
-  if (loaded) return `${loaded.loadKg}kg x ${loaded.reps ?? 0}`;
+  if (loaded) return `${formatLoad(loaded.loadKg, units)} x ${loaded.reps ?? 0}`;
   const bestReps = Math.max(...sets.map((set) => set.reps ?? 0), 0);
   const bestDuration = Math.max(...sets.map((set) => set.durationSeconds ?? 0), 0);
   if (bestDuration > bestReps) return `${bestDuration}s`;
   return `${bestReps} reps`;
 }
 
-function setLabel(set: PerformedSet): string {
+function setLabel(set: PerformedSet, units: Units): string {
   if (set.durationSeconds != null && set.durationSeconds > 0) return `${set.durationSeconds}s`;
-  if (set.loadKg != null && set.loadKg > 0) return `${set.loadKg}kg x ${set.reps ?? 0}`;
+  if (set.loadKg != null && set.loadKg > 0) {
+    return `${formatLoad(set.loadKg, units)} x ${set.reps ?? 0}`;
+  }
   return `${set.reps ?? 0} reps`;
 }
 
@@ -220,7 +232,7 @@ function analyzedRepCount(history: WorkoutSession[], exerciseId: string): number
     (sum, session) =>
       sum +
       session.exercises
-        .filter((exercise) => exercise.exerciseId === exerciseId)
+        .filter((exercise) => sameExerciseIdentity(exercise.exerciseId, exerciseId))
         .flatMap((exercise) => exercise.sets)
         .reduce((setSum, set) => setSum + (set.formAnalysis?.repCount ?? 0), 0),
     0,

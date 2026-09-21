@@ -29,6 +29,7 @@ import {
   type WorkoutTemplate,
 } from '@/domain/programs/templates';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
+import { formatTargetSummary } from '@/domain/workouts/targetToBeat';
 import {
   classifyWeeklyVolume,
   volumeZoneLabel,
@@ -42,6 +43,7 @@ import type {
   ProgramDay,
   TrainingPreferences,
   TrainingProgram,
+  Units,
   WorkoutSession,
 } from '@/types';
 
@@ -80,9 +82,18 @@ export default function ProgramScreen() {
         days: program.days,
         history,
         userExperience: preferences.experience,
+        nutritionContext: preferences.nutritionContext,
         priorityMuscles: preferences.musclePriorities,
+        units: preferences.units,
       }),
-    [history, preferences.experience, preferences.musclePriorities, program.days],
+    [
+      history,
+      preferences.experience,
+      preferences.musclePriorities,
+      preferences.nutritionContext,
+      preferences.units,
+      program.days,
+    ],
   );
   const swapOptions = useMemo(
     () => buildSwapOptions(program, selectedDayIndex, swapTarget, preferences),
@@ -279,10 +290,7 @@ export default function ProgramScreen() {
             <View style={styles.metricGrid}>
               <MetricBlock label="days" value={String(program.days.length)} />
               <MetricBlock label="session" value={`${preferences.sessionMinutes}m`} />
-              <MetricBlock
-                label="focus"
-                value={preferences.musclePriorities.length > 0 ? 'set' : 'balanced'}
-              />
+              <MetricBlock label="goal" value={formatGoal(preferences.goal)} />
             </View>
 
             <View style={styles.chipRow}>
@@ -299,6 +307,10 @@ export default function ProgramScreen() {
               )}
             </View>
 
+            <Text style={[typography.caption, { color: colors.textSecondary }]}>
+              Equipment: {formatEquipmentSummary(preferences.equipment)}
+            </Text>
+
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               {program.rationale}
             </Text>
@@ -310,7 +322,7 @@ export default function ProgramScreen() {
       </Reveal>
 
       <Reveal index={2}>
-        <ProgressionCockpit summary={progressionSummary} />
+        <ProgressionCockpit summary={progressionSummary} units={preferences.units} />
       </Reveal>
 
       <Reveal index={3}>
@@ -513,6 +525,18 @@ export default function ProgramScreen() {
   );
 }
 
+function formatGoal(goal: TrainingPreferences['goal']): string {
+  if (goal === 'hypertrophy') return 'muscle';
+  if (goal === 'strength') return 'strength';
+  return 'mixed';
+}
+
+function formatEquipmentSummary(equipment: TrainingPreferences['equipment']): string {
+  const visible = equipment.slice(0, 4).map((item) => item.replace(/_/g, ' '));
+  const remainder = equipment.length - visible.length;
+  return `${visible.join(', ')}${remainder > 0 ? ` +${remainder}` : ''}`;
+}
+
 function DetailCard({
   eyebrow,
   title,
@@ -558,7 +582,13 @@ function MetricBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProgressionCockpit({ summary }: { summary: ProgramProgressionSummary }) {
+function ProgressionCockpit({
+  summary,
+  units,
+}: {
+  summary: ProgramProgressionSummary;
+  units: Units;
+}) {
   const { colors, radius, spacing, typography } = useTheme();
   const topTargets = summary.priorityTargets.slice(0, 3);
 
@@ -610,7 +640,11 @@ function ProgressionCockpit({ summary }: { summary: ProgramProgressionSummary })
         {topTargets.length > 0 ? (
           <View style={{ gap: spacing.sm }}>
             {topTargets.map((target) => (
-              <ProgressionTargetRow key={`${target.dayId}-${target.exerciseId}`} target={target} />
+              <ProgressionTargetRow
+                key={`${target.dayId}-${target.exerciseId}`}
+                target={target}
+                units={units}
+              />
             ))}
           </View>
         ) : (
@@ -634,7 +668,13 @@ function ProgressionCockpit({ summary }: { summary: ProgramProgressionSummary })
   );
 }
 
-function ProgressionTargetRow({ target }: { target: ProgramProgressionTarget }) {
+function ProgressionTargetRow({
+  target,
+  units,
+}: {
+  target: ProgramProgressionTarget;
+  units: Units;
+}) {
   const { colors, typography } = useTheme();
 
   return (
@@ -654,11 +694,15 @@ function ProgressionTargetRow({ target }: { target: ProgramProgressionTarget }) 
           {target.exerciseName}
         </Text>
         <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={2}>
-          {target.dayName} · {target.targetSummary}
+          {target.dayName} · {formatTargetSummary(target.target, units)}
         </Text>
       </View>
       <Chip compact mode="outlined">
-        {target.confidence}
+        {target.confidence === 'high'
+          ? '2+ sessions'
+          : target.confidence === 'medium'
+            ? '1 session'
+            : 'limited data'}
       </Chip>
     </View>
   );
@@ -884,7 +928,9 @@ function SwapPanel({
     >
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>Ranked swaps</Text>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+            Suggested swaps
+          </Text>
           <Text style={[typography.micro, { color: colors.textMuted }]}>
             Same target first, then mechanics and equipment fit.
           </Text>
@@ -906,7 +952,7 @@ function SwapPanel({
               title={option.exercise.name}
               description={`${option.exercise.primaryMuscles
                 .map((muscle) => MUSCLE_LABELS[muscle])
-                .join(', ')} · score ${option.score}`}
+                .join(', ')} · ${option.exercise.equipment.join(', ')}`}
               onPress={() => onSelect(option)}
               disabled={saving}
               left={(props) => (

@@ -5,12 +5,19 @@ import type {
   MuscleGroup,
   PerformedExercise,
   SetFormAnalysis,
+  Units,
   WorkoutSession,
 } from '@/types';
 
 import { setsByMuscle } from './analytics';
 import { summarizeWorkoutSession, type WorkoutExerciseSummary } from './history';
-import { buildProgressionTarget, progressionActionLabel, type TargetToBeat } from './targetToBeat';
+import {
+  buildProgressionTarget,
+  formatTargetSummary,
+  formatTargetWinCondition,
+  progressionActionLabel,
+  type TargetToBeat,
+} from './targetToBeat';
 
 export type WorkoutMuscleDose = {
   muscle: MuscleGroup;
@@ -57,7 +64,7 @@ export type WorkoutProgressionReview = {
 
 export function buildWorkoutSessionReview(
   session: WorkoutSession,
-  opts: { history?: WorkoutSession[]; userExperience?: ExperienceLevel } = {},
+  opts: { history?: WorkoutSession[]; userExperience?: ExperienceLevel; units?: Units } = {},
 ): WorkoutSessionReview {
   const summary = summarizeWorkoutSession(session);
   const topExercises = [...summary.exerciseSummaries]
@@ -86,6 +93,7 @@ export function buildWorkoutSessionReview(
     session,
     opts.history ?? [session],
     opts.userExperience ?? 'intermediate',
+    opts.units ?? 'kg',
   );
 
   return {
@@ -95,7 +103,13 @@ export function buildWorkoutSessionReview(
     rir,
     form,
     progression,
-    nextAction: nextActionForReview({ rir, form, summary, progression }),
+    nextAction: nextActionForReview({
+      rir,
+      form,
+      summary,
+      progression,
+      units: opts.units ?? 'kg',
+    }),
   };
 }
 
@@ -103,6 +117,7 @@ function buildProgressionReview(
   session: WorkoutSession,
   history: WorkoutSession[],
   userExperience: ExperienceLevel,
+  units: Units,
 ): WorkoutProgressionReview[] {
   return session.exercises
     .filter((exercise) => completedWorkingSets(exercise.sets).length > 0)
@@ -118,7 +133,7 @@ function buildProgressionReview(
         exerciseId: exercise.exerciseId,
         exerciseName: target.exerciseName,
         actionLabel: progressionActionLabel(target.decision.action),
-        targetSummary: target.targetSummary,
+        targetSummary: formatTargetSummary(target, units),
         explanation: target.decision.explanation,
         target,
       };
@@ -202,17 +217,19 @@ function nextActionForReview({
   form,
   summary,
   progression,
+  units,
 }: {
   rir: WorkoutRirReview | null;
   form: WorkoutFormReview | null;
   summary: ReturnType<typeof summarizeWorkoutSession>;
   progression: WorkoutProgressionReview[];
+  units: Units;
 }): string {
   if (form && form.averageScore < 80)
     return `Next run: keep load stable and clean up "${form.cue}".`;
   const loadJump = progression.find((item) => item.target.decision.action === 'increase_load');
   if (loadJump)
-    return `Next run: ${loadJump.exerciseName} is ready. ${loadJump.target.targetText}.`;
+    return `Next run: ${loadJump.exerciseName} is ready. ${formatTargetWinCondition(loadJump.target, units)}`;
   const deload = progression.find((item) => item.target.decision.action === 'suggest_deload');
   if (deload) return `Next run: consider a lighter pass on ${deload.exerciseName}.`;
   if (rir && rir.averageRir > rir.averageTargetRir + 1) {

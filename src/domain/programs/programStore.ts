@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { preserveAsyncStoragePayload } from '@/domain/persistence/asyncStorageRecovery';
+
 import type {
   ExercisePrescription,
   ProgramDay,
@@ -67,7 +69,7 @@ export async function loadActiveProgram(
     // Corrupt active program data should never block the gym flow.
   }
 
-  await AsyncStorage.removeItem(STORAGE_KEY);
+  await preserveAsyncStoragePayload(AsyncStorage, STORAGE_KEY, raw);
   return createGeneratedProgramSnapshot(preferences, userId);
 }
 
@@ -106,7 +108,7 @@ function isStoredActiveProgram(value: unknown): value is StoredActiveProgram {
   );
 }
 
-function isTrainingProgram(value: unknown): value is TrainingProgram {
+export function isTrainingProgram(value: unknown): value is TrainingProgram {
   if (value == null || typeof value !== 'object') return false;
   const candidate = value as Partial<TrainingProgram>;
   return (

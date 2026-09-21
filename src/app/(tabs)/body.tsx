@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
-import { BarChart, type barDataItem } from 'react-native-gifted-charts';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Button, Card, Chip, Divider, List, ProgressBar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,13 +15,12 @@ import {
   BODY_HEAT_COLORS,
   BODY_HEAT_LEGEND,
   DEFAULT_MUSCLE,
-  RANK_TIER_COLORS,
   type BodySide,
-  bodyIntensityForFatigue,
+  bodyIntensityForVolume,
   bodySidesForMuscle,
   bodySlugsForMuscle,
   defaultMuscleForBodySide,
-  heatColorForFatigue,
+  heatColorForVolumeZone,
   muscleFromBodySlug,
   shortVolumeZoneLabel,
 } from '@/domain/muscles/muscleMap';
@@ -31,13 +29,13 @@ import {
   type MuscleIntelligence,
   type MuscleProgramExercise,
   type MuscleRecentSession,
-  type MuscleStrengthRank,
 } from '@/domain/workouts/muscleIntelligence';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { formatDate } from '@/utils/dates';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme, type SemanticColors } from '@/theme';
-import type { MuscleGroup, WorkoutSession } from '@/types';
+import type { MuscleGroup, Units, WorkoutSession } from '@/types';
+import { formatLoad, formatVolumeLoad } from '@/utils/units';
 
 export default function BodyScreen() {
   const { colors, radius, spacing, typography } = useTheme();
@@ -47,7 +45,7 @@ export default function BodyScreen() {
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleGroup>(DEFAULT_MUSCLE);
   const [bodySide, setBodySide] = useState<BodySide>('front');
   const [history, setHistory] = useState<WorkoutSession[]>([]);
-  const { program } = useActiveProgram();
+  const { program, preferences } = useActiveProgram();
   const bodyScale = useMemo(
     () => Math.min(1.1, Math.max(0.9, (width - spacing.x4l * 2) / 240)),
     [spacing.x4l, width],
@@ -66,8 +64,8 @@ export default function BodyScreen() {
   );
 
   const intelligence = useMemo(
-    () => buildMuscleIntelligence(program.days, history),
-    [history, program.days],
+    () => buildMuscleIntelligence(program.days, history, undefined, preferences.units),
+    [history, preferences.units, program.days],
   );
   const selected =
     intelligence.find((item) => item.muscle === selectedMuscle) ??
@@ -80,13 +78,6 @@ export default function BodyScreen() {
   const selectedTone = useMemo(() => muscleTone(selected, colors), [colors, selected]);
   const selectedUiColor =
     selectedTone.fill === BODY_HEAT_COLORS.dormant ? colors.textSecondary : selectedTone.fill;
-  const selectedRankColor = RANK_TIER_COLORS[selected.rank.tier];
-  const rankData = useMemo(
-    () => buildRankChartData(intelligence, selected.muscle, colors),
-    [colors, intelligence, selected.muscle],
-  );
-  const hasRankData = rankData.some((item) => (item.value ?? 0) > 0);
-  const maxRankValue = Math.max(...rankData.map((item) => item.value ?? 0), 1);
 
   const selectMuscle = useCallback((muscle: MuscleGroup) => {
     setSelectedMuscle(muscle);
@@ -200,29 +191,29 @@ export default function BodyScreen() {
 
             <View style={styles.metricGrid}>
               <MetricBlock
-                label="Fatigue"
-                value={`${selected.fatigue.score}%`}
-                detail={shortVolumeZoneLabel(selected.fatigue.volume.zone)}
+                label="Direct sets"
+                value={`${selected.trainingLoad.directSets}`}
+                detail={shortVolumeZoneLabel(selected.trainingLoad.volume.zone)}
               />
               <MetricBlock
-                label="Last time"
-                value={`${selected.fatigue.lastSessionSets}`}
-                detail={selected.fatigue.lastSessionName ?? 'No direct sets'}
+                label="Indirect"
+                value={`${selected.trainingLoad.indirectExposures}`}
+                detail="raw exposures"
               />
               <MetricBlock
-                label="Load rank"
-                value={rankLabel(selected.rank)}
-                detail={rankDetail(selected.rank)}
+                label="Estimated"
+                value={`${selected.trainingLoad.weightedEstimate}`}
+                detail={`mapped · v${selected.trainingLoad.contributionModelVersion}`}
               />
             </View>
             <ProgressBar
-              progress={selected.fatigue.score / 100}
+              progress={Math.min(1, selected.trainingLoad.volume.gaugeFraction)}
               color={selectedTone.fill}
               style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
             />
             <View style={styles.fatigueMetaRow}>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
-                {selected.fatigue.weeklySets} direct sets this week
+                Direct sets drive the reference bar; estimates do not change the physical set total.
               </Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 {lastTrainedLabel(selected)}
@@ -259,7 +250,7 @@ export default function BodyScreen() {
                 style={{ backgroundColor: withAlpha(selectedUiColor, '18') }}
                 textStyle={{ color: selectedUiColor }}
               >
-                {selected.fatigue.label}
+                {selected.trainingLoad.label}
               </Chip>
             </View>
 
@@ -273,10 +264,18 @@ export default function BodyScreen() {
                 {selected.signal.detail}
               </Text>
               <View style={styles.signalFacts}>
-                <SignalFact label="week" value={`${selected.fatigue.weeklySets} sets`} />
+                <SignalFact label="direct" value={`${selected.trainingLoad.directSets} sets`} />
+                <SignalFact
+                  label="indirect"
+                  value={`${selected.trainingLoad.indirectExposures} exposures`}
+                />
                 <SignalFact
                   label="RIR"
-                  value={selected.fatigue.averageRir != null ? String(selected.fatigue.averageRir) : '--'}
+                  value={
+                    selected.trainingLoad.averageRir != null
+                      ? String(selected.trainingLoad.averageRir)
+                      : '--'
+                  }
                 />
                 <SignalFact
                   label="Form"
@@ -290,7 +289,16 @@ export default function BodyScreen() {
             </View>
 
             {selected.recentSessions[0] ? (
-              <RecentSessionBlock session={selected.recentSessions[0]} />
+              <RecentSessionBlock
+                session={selected.recentSessions[0]}
+                units={preferences.units}
+                onOpen={() =>
+                  router.push({
+                    pathname: '/history',
+                    params: { sessionId: selected.recentSessions[0].sessionId },
+                  })
+                }
+              />
             ) : (
               <EmptyListItem
                 icon="history"
@@ -305,7 +313,8 @@ export default function BodyScreen() {
                   Form AI coverage
                 </Text>
                 <Text style={[typography.micro, { color: colors.textMuted }]}>
-                  {selected.formQuality.analyzedSetCount} sets · {selected.formQuality.analyzedRepCount} reps
+                  {selected.formQuality.analyzedSetCount} sets ·{' '}
+                  {selected.formQuality.analyzedRepCount} reps
                 </Text>
               </View>
               <ProgressBar
@@ -367,54 +376,29 @@ export default function BodyScreen() {
           <Card.Content style={{ gap: spacing.md }}>
             <View style={styles.headerRow}>
               <View>
-                <Text style={[typography.micro, { color: selectedRankColor }]}>
-                  Strength leaderboard
-                </Text>
+                <Text style={[typography.micro, { color: selectedUiColor }]}>Interpretation</Text>
                 <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  Heaviest loaded set
+                  What this map can show
                 </Text>
               </View>
               <Chip
                 compact
                 mode="flat"
-                icon="podium"
-                style={{ backgroundColor: withAlpha(selectedRankColor, '18') }}
-                textStyle={{ color: selectedRankColor }}
+                icon="information-outline"
+                style={{ backgroundColor: withAlpha(selectedUiColor, '18') }}
+                textStyle={{ color: selectedUiColor }}
               >
-                Tier {selected.rank.tier}
+                Reference
               </Chip>
             </View>
-
-            {hasRankData ? (
-              <View style={styles.chartFrame}>
-                <BarChart
-                  data={rankData}
-                  height={118}
-                  width={300}
-                  maxValue={maxRankValue + 20}
-                  barWidth={24}
-                  spacing={18}
-                  roundedTop
-                  roundedBottom
-                  hideAxesAndRules
-                  hideYAxisText
-                  xAxisThickness={0}
-                  yAxisThickness={0}
-                  yAxisLabelWidth={0}
-                  disableScroll
-                  backgroundColor="transparent"
-                />
-              </View>
-            ) : (
-              <List.Item
-                title="No loaded records yet"
-                description="Heavy top sets appear here after completed sessions."
-                left={(props) => <List.Icon {...props} icon="chart-bar" color={colors.accent} />}
-                titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-                descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-                style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-              />
-            )}
+            <Text style={[typography.body, { color: colors.textSecondary }]}>
+              Colors summarize direct sets logged this week against general reference ranges. They
+              do not rank muscles, diagnose fatigue, or measure recovery.
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              Strength remains exercise-specific below, because loads from different movements and
+              machines are not directly comparable.
+            </Text>
           </Card.Content>
         </Card>
       </Reveal>
@@ -456,9 +440,11 @@ export default function BodyScreen() {
                   title={record.name}
                   description={[
                     record.bestLoadKg != null
-                      ? `Top ${record.bestLoadKg}kg x ${record.repsAtBestLoad ?? 0}`
+                      ? `Top ${formatLoad(record.bestLoadKg, preferences.units)} x ${record.repsAtBestLoad ?? 0}`
                       : 'No loaded top set',
-                    record.bestE1rmKg != null ? `e1RM ${record.bestE1rmKg.toFixed(1)}kg` : null,
+                    record.bestE1rmKg != null
+                      ? `e1RM ${formatLoad(record.bestE1rmKg, preferences.units)}`
+                      : null,
                     `${record.lastSessionSets} sets last time`,
                   ]
                     .filter(Boolean)
@@ -562,7 +548,15 @@ function SignalFact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RecentSessionBlock({ session }: { session: MuscleRecentSession }) {
+function RecentSessionBlock({
+  session,
+  units,
+  onOpen,
+}: {
+  session: MuscleRecentSession;
+  units: Units;
+  onOpen: () => void;
+}) {
   const { colors, typography } = useTheme();
 
   return (
@@ -586,8 +580,11 @@ function RecentSessionBlock({ session }: { session: MuscleRecentSession }) {
 
       <View style={styles.signalFacts}>
         <SignalFact label="sets" value={String(session.sets)} />
-        <SignalFact label="volume" value={formatVolume(session.volumeKg)} />
-        <SignalFact label="RIR" value={session.averageRir != null ? String(session.averageRir) : '--'} />
+        <SignalFact label="volume" value={formatVolumeLoad(session.volumeKg, units)} />
+        <SignalFact
+          label="RIR"
+          value={session.averageRir != null ? String(session.averageRir) : '--'}
+        />
         <SignalFact
           label="form"
           value={session.averageFormScore != null ? `${session.averageFormScore}/100` : '--'}
@@ -598,7 +595,7 @@ function RecentSessionBlock({ session }: { session: MuscleRecentSession }) {
         <View key={exercise.exerciseId}>
           <List.Item
             title={exercise.name}
-            description={`${exercise.sets} sets · ${formatVolume(exercise.volumeKg)} · best ${exercise.bestSetLabel}`}
+            description={`${exercise.sets} sets · ${formatVolumeLoad(exercise.volumeKg, units)} · best ${exercise.bestSetLabel}`}
             left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
             right={() =>
               exercise.averageFormScore != null ? (
@@ -613,6 +610,10 @@ function RecentSessionBlock({ session }: { session: MuscleRecentSession }) {
           {index < Math.min(session.exercises.length, 3) - 1 ? <Divider /> : null}
         </View>
       ))}
+
+      <Button compact mode="text" icon="open-in-new" onPress={onOpen}>
+        Open source session
+      </Button>
     </View>
   );
 }
@@ -690,57 +691,21 @@ function buildBodyData(
 }
 
 function bodyIntensity(item: MuscleIntelligence): number {
-  return bodyIntensityForFatigue({
-    score: item.fatigue.score,
-    zone: item.fatigue.volume.zone,
+  return bodyIntensityForVolume({
+    zone: item.trainingLoad.volume.zone,
     hasSignal: item.programExercises.length > 0 || item.records.length > 0,
   });
 }
 
 function muscleTone(item: MuscleIntelligence, colors: SemanticColors) {
-  const fill = heatColorForFatigue(item.fatigue.score, item.fatigue.volume.zone);
+  const fill = heatColorForVolumeZone(item.trainingLoad.volume.zone);
+  const intensity = bodyIntensity(item);
 
   return {
     fill,
-    subtleFill: withAlpha(
-      fill,
-      item.fatigue.score >= 48 ? 'BA' : item.fatigue.score >= 18 ? '82' : '58',
-    ),
-    stroke: item.rank.tier === 'S' ? RANK_TIER_COLORS.S : colors.textPrimary,
+    subtleFill: withAlpha(fill, intensity >= 3 ? 'BA' : intensity >= 2 ? '82' : '58'),
+    stroke: colors.textPrimary,
   };
-}
-
-function buildRankChartData(
-  intelligence: MuscleIntelligence[],
-  selectedMuscle: MuscleGroup,
-  colors: SemanticColors,
-): barDataItem[] {
-  return intelligence
-    .filter((item) => item.rank.topLoadKg != null)
-    .sort(
-      (a, b) =>
-        (b.rank.topLoadKg ?? 0) - (a.rank.topLoadKg ?? 0) ||
-        MUSCLE_LABELS[a.muscle].localeCompare(MUSCLE_LABELS[b.muscle]),
-    )
-    .slice(0, 6)
-    .map((item) => ({
-      value: item.rank.topLoadKg ?? 0,
-      label: MUSCLE_LABELS[item.muscle].slice(0, 3),
-      frontColor:
-        item.muscle === selectedMuscle
-          ? muscleTone(item, colors).fill
-          : RANK_TIER_COLORS[item.rank.tier],
-    }));
-}
-
-function rankLabel(rank: MuscleStrengthRank): string {
-  if (rank.rank == null) return '--';
-  return `#${rank.rank}`;
-}
-
-function rankDetail(rank: MuscleStrengthRank): string {
-  if (rank.topLoadKg == null) return 'Unranked';
-  return `${rank.topLoadKg}kg top set`;
 }
 
 function signalIcon(kind: MuscleIntelligence['signal']['kind']): string {
@@ -756,15 +721,11 @@ function signalIcon(kind: MuscleIntelligence['signal']['kind']): string {
   }
 }
 
-function formatVolume(volumeKg: number): string {
-  return volumeKg >= 1000 ? `${(volumeKg / 1000).toFixed(1)}t` : `${Math.round(volumeKg)}kg`;
-}
-
 function lastTrainedLabel(selected: MuscleIntelligence): string {
-  if (!selected.fatigue.lastTrainedAt) return 'No direct session yet';
-  if (selected.fatigue.lastTrainedDaysAgo === 0) return 'Trained today';
-  if (selected.fatigue.lastTrainedDaysAgo === 1) return 'Trained yesterday';
-  return `${selected.fatigue.lastTrainedDaysAgo} days since trained`;
+  if (!selected.trainingLoad.lastTrainedAt) return 'No direct session yet';
+  if (selected.trainingLoad.lastTrainedDaysAgo === 0) return 'Trained today';
+  if (selected.trainingLoad.lastTrainedDaysAgo === 1) return 'Trained yesterday';
+  return `${selected.trainingLoad.lastTrainedDaysAgo} days since trained`;
 }
 
 function withAlpha(hex: string, alpha: string): string {
@@ -856,11 +817,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
-  },
-  chartFrame: {
-    width: '100%',
-    height: 140,
-    overflow: 'hidden',
   },
   listPanel: {
     borderRadius: 14,

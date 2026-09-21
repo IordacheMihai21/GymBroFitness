@@ -4,11 +4,14 @@ import { Card, Divider, Icon, List, ProgressBar } from 'react-native-paper';
 
 import type { WeekLogEntry } from '@/domain/workouts/demoHistory';
 import { useTheme } from '@/theme';
+import type { Units } from '@/types';
+import { formatVolumeLoad, kgToLb } from '@/utils/units';
 
 type WeekLogCardProps = {
   entries: WeekLogEntry[];
   weekVolumeKg: number;
   intensityMatchPct: number;
+  units: Units;
 };
 
 const STATUS_ICON: Record<WeekLogEntry['status'], string> = {
@@ -18,10 +21,14 @@ const STATUS_ICON: Record<WeekLogEntry['status'], string> = {
   rest: 'check-circle',
 };
 
-export function WeekLogCard({ entries, weekVolumeKg, intensityMatchPct }: WeekLogCardProps) {
+export function WeekLogCard({ entries, weekVolumeKg, intensityMatchPct, units }: WeekLogCardProps) {
   const { colors, spacing, typography } = useTheme();
   const completedVolumeT = (entry: WeekLogEntry) =>
-    entry.status === 'done' ? entry.volumeKg / 1000 : 0;
+    entry.status === 'done'
+      ? units === 'kg'
+        ? entry.volumeKg / 1000
+        : kgToLb(entry.volumeKg) / 1000
+      : 0;
   const trendData: lineDataItem[] = entries.map((entry) => ({
     value: Math.max(completedVolumeT(entry), 0.2),
   }));
@@ -32,16 +39,14 @@ export function WeekLogCard({ entries, weekVolumeKg, intensityMatchPct }: WeekLo
       <Card.Content style={{ gap: spacing.md }}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-              Week to date
-            </Text>
+            <Text style={[typography.subheading, { color: colors.textPrimary }]}>Week to date</Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               Real work logged before today&apos;s session
             </Text>
           </View>
           <View style={styles.volumeBlock}>
             <Text style={[typography.display, { color: colors.accent }]}>
-              {(weekVolumeKg / 1000).toFixed(1)}t
+              {formatVolumeLoad(weekVolumeKg, units)}
             </Text>
             <Text style={[typography.micro, { color: colors.textMuted }]}>volume</Text>
           </View>
@@ -70,14 +75,14 @@ export function WeekLogCard({ entries, weekVolumeKg, intensityMatchPct }: WeekLo
           const iconColor =
             entry.status === 'today'
               ? colors.accent
-            : entry.status === 'done'
+              : entry.status === 'done'
                 ? colors.accent
                 : colors.textMuted;
           const description =
             entry.status === 'today'
               ? "Today's session"
               : entry.status === 'done' && entry.volumeKg > 0
-                ? `${(entry.volumeKg / 1000).toFixed(1)}t${entry.isPr ? ' · PR' : ''}`
+                ? `${formatVolumeLoad(entry.volumeKg, units)}${entry.isPr ? ' · PR' : ''}`
                 : entry.status === 'upcoming'
                   ? 'Upcoming'
                   : entry.note;
@@ -87,7 +92,10 @@ export function WeekLogCard({ entries, weekVolumeKg, intensityMatchPct }: WeekLo
               key={entry.label}
               title={`${entry.label} · ${entry.splitName}`}
               description={description}
-              titleStyle={[typography.bodyBold, { color: dim ? colors.textMuted : colors.textPrimary }]}
+              titleStyle={[
+                typography.bodyBold,
+                { color: dim ? colors.textMuted : colors.textPrimary },
+              ]}
               descriptionStyle={[typography.caption, { color: colors.textMuted }]}
               style={styles.listItem}
               right={() => <Icon source={STATUS_ICON[entry.status]} size={18} color={iconColor} />}
@@ -122,7 +130,11 @@ function DayMarker({ entry }: { entry: WeekLogEntry }) {
   const done = entry.status === 'done';
   const rest = entry.status === 'rest';
   const borderColor = active || done ? colors.accent : colors.border;
-  const backgroundColor = active ? colors.accentSoft : done ? colors.surfacePressed : colors.surface;
+  const backgroundColor = active
+    ? colors.accentSoft
+    : done
+      ? colors.surfacePressed
+      : colors.surface;
 
   return (
     <View style={[styles.dayMarker, { borderColor, backgroundColor }]}>

@@ -63,11 +63,11 @@ export const BODY_HEAT_COLORS: Record<MuscleHeatKey, string> = {
 };
 
 export const BODY_HEAT_LEGEND: { key: MuscleHeatKey; color: string; label: string }[] = [
-  { key: 'dormant', color: BODY_HEAT_COLORS.dormant, label: 'Low' },
-  { key: 'ready', color: BODY_HEAT_COLORS.ready, label: 'Ready' },
-  { key: 'growth', color: BODY_HEAT_COLORS.growth, label: 'Growth' },
-  { key: 'loaded', color: BODY_HEAT_COLORS.loaded, label: 'Loaded' },
-  { key: 'excessive', color: BODY_HEAT_COLORS.excessive, label: 'Overreach' },
+  { key: 'dormant', color: BODY_HEAT_COLORS.dormant, label: 'Very low' },
+  { key: 'ready', color: BODY_HEAT_COLORS.ready, label: 'Maintenance ref.' },
+  { key: 'growth', color: BODY_HEAT_COLORS.growth, label: 'Moderate ref.' },
+  { key: 'loaded', color: BODY_HEAT_COLORS.loaded, label: 'High ref.' },
+  { key: 'excessive', color: BODY_HEAT_COLORS.excessive, label: 'Above ref.' },
 ];
 
 export const RANK_TIER_COLORS: Record<RankTier, string> = {
@@ -133,6 +133,26 @@ export function heatColorForVolumeZone(zone: VolumeZone): string {
   return BODY_HEAT_COLORS[heatKeyForVolumeZone(zone)];
 }
 
+export function bodyIntensityForVolume({
+  zone,
+  hasSignal,
+}: {
+  zone: VolumeZone;
+  hasSignal: boolean;
+}): number {
+  switch (zone) {
+    case 'excessive':
+    case 'frontier':
+      return 4;
+    case 'growth':
+      return 3;
+    case 'maintenance':
+      return 2;
+    case 'below_mv':
+      return hasSignal ? 1 : 0;
+  }
+}
+
 export function heatColorForFatigue(score: number, zone: VolumeZone): string {
   return BODY_HEAT_COLORS[heatKeyForFatigue(score, zone)];
 }
@@ -157,14 +177,14 @@ export function bodyIntensityForFatigue({
 export function shortVolumeZoneLabel(zone: VolumeZone): string {
   switch (zone) {
     case 'below_mv':
-      return 'Below MV';
+      return 'Very low ref.';
     case 'maintenance':
-      return 'Maintenance';
+      return 'Maintenance ref.';
     case 'growth':
-      return 'Growth zone';
+      return 'Moderate ref.';
     case 'frontier':
-      return 'Frontier';
+      return 'High ref.';
     case 'excessive':
-      return 'Excessive';
+      return 'Above ref.';
   }
 }

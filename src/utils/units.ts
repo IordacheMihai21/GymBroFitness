@@ -22,8 +22,32 @@ export function inputToKg(value: number, units: Units): number {
   return units === 'kg' ? value : lbToKg(value);
 }
 
+/** Parse decimal user input without accepting infinities or partial garbage. */
+export function parseDecimalInput(text: string): number | null {
+  const normalized = text.trim().replace(',', '.');
+  if (!normalized) return null;
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** Convert a load field from the selected display unit to canonical kg. */
+export function loadInputToKg(text: string, units: Units): number | null {
+  const value = parseDecimalInput(text);
+  return value == null ? null : inputToKg(value, units);
+}
+
 export function unitLabel(units: Units): string {
   return units === 'kg' ? 'kg' : 'lb';
+}
+
+export function formatLoad(kg: number, units: Units): string {
+  return `${displayLoad(kg, units)}${unitLabel(units)}`;
+}
+
+export function formatVolumeLoad(volumeKg: number, units: Units): string {
+  const value = units === 'kg' ? volumeKg : kgToLb(volumeKg);
+  if (units === 'kg' && value >= 1000) return `${(value / 1000).toFixed(1)}t`;
+  return `${Math.round(value)}${unitLabel(units)}`;
 }
 
 /**

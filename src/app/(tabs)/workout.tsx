@@ -17,9 +17,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { PrCelebration } from '@/components/workout/PrCelebration';
+import { ReadinessCheckInCard } from '@/components/workout/ReadinessCheckInCard';
 import { RestTimer } from '@/components/workout/RestTimer';
 import { RirPickerSheet } from '@/components/workout/RirPickerSheet';
-import { SetRow } from '@/components/workout/SetRow';
+import { SetRow, type SetRowHandle } from '@/components/workout/SetRow';
 import { getExercise, requireExercise } from '@/domain/exercises/catalog';
 import { buildManualPrescription, recalculateProgramDay } from '@/domain/programs/programEditing';
 import { saveTemplate, listTemplates } from '@/domain/programs/templateStore';
@@ -39,16 +40,31 @@ import {
   formatPreviousSet,
 } from '@/domain/workouts/lastPerformance';
 import { buildAllPersonalRecordsFromHistory } from '@/domain/workouts/historyInsights';
+import { painMessage } from '@/domain/workouts/readiness';
 import {
   buildSetAutofillSuggestion,
   setAutofillPatch,
   type SetAutofillSuggestion,
 } from '@/domain/workouts/setAutofill';
-import { startWorkoutSession } from '@/domain/workouts/session';
-import { navigateAfterSetCompletion } from '@/domain/workouts/supersetNavigation';
+import { extendRestTimer } from '@/domain/workouts/restTimer';
+import {
+  pauseWorkoutSession,
+  resumeWorkoutSession,
+  startWorkoutSession,
+} from '@/domain/workouts/session';
+import { createWorkoutPersistenceController } from '@/domain/workouts/sessionPersistenceController';
+import {
+  patchWorkoutSet,
+  toggleWorkoutSetCompletion,
+  type SetCompletionResult,
+} from '@/domain/workouts/sessionEditing';
+import { formatTrackingTarget } from '@/domain/workouts/setTracking';
 import {
   buildProgramProgressionTargets,
+  formatDecisionTarget,
   formatProgressionSignal,
+  formatTargetSummary,
+  formatTargetWinCondition,
   progressionActionLabel,
   type TargetToBeat,
 } from '@/domain/workouts/targetToBeat';
@@ -72,8 +88,11 @@ import type {
   ProgramDay,
   SetTechnique,
   TrainingPreferences,
+  ReadinessCheckIn,
+  Units,
   WorkoutSession,
 } from '@/types';
+import { displayLoad, formatVolumeLoad, unitLabel } from '@/utils/units';
 
 type AutosaveState = 'idle' | 'restored' | 'saving' | 'saved' | 'error';
 
@@ -154,9 +173,6 @@ function WorkoutSessionView({
 
   const [session, setSession] = useState(() => startWorkoutSession(day, userId));
   const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
-  const [restSeconds, setRestSeconds] = useState<number | null>(null);
-  const [restDurationSeconds, setRestDurationSeconds] = useState<number | null>(null);
-  const [restToken, setRestToken] = useState(0);
   const [finished, setFinished] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -173,7 +189,19 @@ function WorkoutSessionView({
   const [formAnalysisStatus, setFormAnalysisStatus] = useState<string | null>(null);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
+  const [setValidationErrors, setSetValidationErrors] = useState<Record<string, string>>({});
+  const [checkInSkipped, setCheckInSkipped] = useState(false);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setRowRefs = useRef<Record<string, SetRowHandle | null>>({});
+  const persistence = useMemo(
+    () =>
+      createWorkoutPersistenceController({
+        saveDraft: saveInProgressWorkoutSession,
+        finish: saveWorkoutSession,
+        discard: discardInProgressWorkoutSession,
+      }),
+    [],
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -207,7 +235,8 @@ function WorkoutSessionView({
 
     autosaveTimerRef.current = setTimeout(() => {
       setAutosaveState('saving');
-      saveInProgressWorkoutSession(session)
+      persistence
+        .saveDraft(session)
         .then((saved) => {
           setLastAutosavedAt(new Date().toISOString());
           setAutosaveState(saved.id === session.id ? 'saved' : 'idle');
@@ -220,7 +249,7 @@ function WorkoutSessionView({
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     };
-  }, [finished, isHydratingDraft, session]);
+  }, [finished, isHydratingDraft, persistence, session]);
 
   useFocusEffect(
     useCallback(() => {
@@ -244,7 +273,8 @@ function WorkoutSessionView({
       }
 
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-      saveInProgressWorkoutSession(session)
+      persistence
+        .saveDraft(session)
         .then(() => {
           setLastAutosavedAt(new Date().toISOString());
           setAutosaveState('saved');
@@ -253,7 +283,7 @@ function WorkoutSessionView({
     });
 
     return () => subscription.remove();
-  }, [finished, isHydratingDraft, session]);
+  }, [finished, isHydratingDraft, persistence, session]);
 
   const activeExercise = session.exercises[activeExerciseIndex] ?? session.exercises[0];
   const isPaused = session.status === 'paused';
@@ -267,7 +297,11 @@ function WorkoutSessionView({
   const activeCompletedSets = activeExercise.sets.filter(
     (set) => set.completed && !set.skipped,
   ).length;
-  const targetLabel = `${activePrescription.minReps}-${activePrescription.maxReps} @ RIR ${activePrescription.targetRir}`;
+  const targetLabel = formatTrackingTarget(
+    activePrescription,
+    activeExerciseMeta.trackingType,
+    preferences.units,
+  );
   const previousPerformance = useMemo(
     () => findLastPerformedExercise(history, activeExercise.exerciseId),
     [history, activeExercise.exerciseId],
@@ -276,33 +310,38 @@ function WorkoutSessionView({
   const formTargetSetIndex = nextOpenSetIndex ?? Math.max(0, activeExercise.sets.length - 1);
   const formTargetSet = activeExercise.sets[formTargetSetIndex];
   const openSetCount = activeExercise.sets.filter((set) => !set.completed && !set.skipped).length;
-  const activeAutofillSuggestion = useMemo(
-    () =>
-      nextOpenSetIndex == null
-        ? null
-        : buildSetAutofillSuggestion(activeExercise, previousPerformance, nextOpenSetIndex),
-    [activeExercise, nextOpenSetIndex, previousPerformance],
-  );
+  const activeAutofillSuggestion =
+    nextOpenSetIndex == null
+      ? null
+      : buildSetAutofillSuggestion(
+          activeExercise,
+          previousPerformance,
+          nextOpenSetIndex,
+          preferences.units,
+          activeExerciseMeta.trackingType,
+        );
   const progressionTargets = useMemo(
     () =>
       buildProgramProgressionTargets({
         prescriptions: session.exercises.map((exercise) => exercise.prescription),
         history,
         userExperience: preferences.experience,
+        nutritionContext: preferences.nutritionContext,
       }),
-    [history, preferences.experience, session.exercises],
+    [history, preferences.experience, preferences.nutritionContext, session.exercises],
   );
   const activeProgressionTarget = progressionTargets.get(activeExercise.exerciseId) ?? null;
 
   function updateSet(exerciseIndex: number, setIndex: number, patch: Partial<PerformedSet>) {
-    setSession((prev) => {
-      if (prev.status === 'paused') return prev;
-      const exercises = [...prev.exercises];
-      const sets = [...exercises[exerciseIndex].sets];
-      sets[setIndex] = { ...sets[setIndex], ...patch };
-      exercises[exerciseIndex] = { ...exercises[exerciseIndex], sets };
-      return { ...prev, exercises };
-    });
+    const setId = session.exercises[exerciseIndex]?.sets[setIndex]?.id;
+    if (setId && setValidationErrors[setId]) {
+      setSetValidationErrors((current) => {
+        const next = { ...current };
+        delete next[setId];
+        return next;
+      });
+    }
+    setSession((prev) => patchWorkoutSet(prev, exerciseIndex, setIndex, patch));
   }
 
   function openRirPicker(setIndex: number) {
@@ -311,12 +350,24 @@ function WorkoutSessionView({
     rirSheetRef.current?.present();
   }
 
+  function saveReadiness(readiness: ReadinessCheckIn) {
+    setSession((prev) => ({ ...prev, readiness }));
+    setCheckInSkipped(false);
+    setAutosaveState('saving');
+  }
+
   function confirmRir(value: number) {
     if (isPaused) return;
     if (rirSetIndex != null) {
       updateSet(activeExerciseIndex, rirSetIndex, { rir: value });
       Haptics.selectionAsync();
     }
+    rirSheetRef.current?.dismiss();
+  }
+
+  function clearRir() {
+    if (isPaused) return;
+    if (rirSetIndex != null) updateSet(activeExerciseIndex, rirSetIndex, { rir: null });
     rirSheetRef.current?.dismiss();
   }
 
@@ -352,7 +403,13 @@ function WorkoutSessionView({
 
       nextExercise.sets = nextExercise.sets.map((set, index) => {
         if (set.completed || set.skipped) return set;
-        const suggestion = buildSetAutofillSuggestion(nextExercise, previous, index);
+        const suggestion = buildSetAutofillSuggestion(
+          nextExercise,
+          previous,
+          index,
+          preferences.units,
+          requireExercise(nextExercise.exerciseId).trackingType,
+        );
         const nextSet = { ...set, ...setAutofillPatch(suggestion) };
         nextExercise.sets[index] = nextSet;
         return nextSet;
@@ -363,26 +420,38 @@ function WorkoutSessionView({
     });
   }
 
-  function toggleComplete(exerciseIndex: number, setIndex: number) {
-    if (isPaused) return;
+  function toggleComplete(exerciseIndex: number, setIndex: number): SetCompletionResult | null {
+    if (isPaused) return null;
     const exercise = session.exercises[exerciseIndex];
-    const set = exercise.sets[setIndex];
-    const nowCompleting = !set.completed;
-    updateSet(exerciseIndex, setIndex, {
-      completed: nowCompleting,
-      completedAt: nowCompleting ? new Date().toISOString() : null,
-    });
-
-    if (nowCompleting) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const nav = navigateAfterSetCompletion(session.exercises, exerciseIndex);
-      if (!nav.skipRest) {
-        setRestDurationSeconds(exercise.prescription.restSeconds);
-        setRestSeconds(exercise.prescription.restSeconds);
-        setRestToken((t) => t + 1);
+    if (!exercise) return null;
+    const trackingType = requireExercise(exercise.exerciseId).trackingType;
+    const result = toggleWorkoutSetCompletion(session, exerciseIndex, setIndex, trackingType);
+    if (!result.ok) {
+      if (result.reason === 'invalid_set') {
+        setSetValidationErrors((current) => ({ ...current, [result.setId]: result.message }));
       }
-      if (nav.nextExerciseIndex != null) setActiveExerciseIndex(nav.nextExerciseIndex);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return result;
     }
+    setSession(result.session);
+    if (result.completed) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (result.navigation.nextExerciseIndex != null) {
+      setActiveExerciseIndex(result.navigation.nextExerciseIndex);
+    }
+    return result;
+  }
+
+  function completeAndFocusNext(exerciseIndex: number, setIndex: number) {
+    const result = toggleComplete(exerciseIndex, setIndex);
+    if (!result?.ok || !result.completed) return;
+
+    const nextExerciseIndex = result.navigation.nextExerciseIndex ?? exerciseIndex;
+    const nextExercise = result.session.exercises[nextExerciseIndex];
+    const nextSet = nextExercise?.sets.find(
+      (candidate) => !candidate.completed && !candidate.skipped,
+    );
+    if (!nextSet) return;
+    setTimeout(() => setRowRefs.current[nextSet.id]?.focusPrimaryInput(), 0);
   }
 
   function toggleSupersetWithNext(exerciseIndex: number) {
@@ -403,17 +472,15 @@ function WorkoutSessionView({
 
   function pauseSession() {
     if (isPaused || finished) return;
-    Haptics.selectionAsync();
-    setRestSeconds(null);
-    setRestDurationSeconds(null);
-    setSession((prev) => ({ ...prev, status: 'paused' }));
+    void Haptics.selectionAsync();
+    setSession((prev) => pauseWorkoutSession(prev));
     setAutosaveState('saving');
   }
 
   function resumeSession() {
     if (!isPaused) return;
-    Haptics.selectionAsync();
-    setSession((prev) => ({ ...prev, status: 'in_progress' }));
+    void Haptics.selectionAsync();
+    setSession((prev) => resumeWorkoutSession(prev));
     setAutosaveState('saving');
   }
 
@@ -422,10 +489,13 @@ function WorkoutSessionView({
     setIsDiscarding(true);
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     try {
-      await discardInProgressWorkoutSession(session.id);
-      setSession((prev) => ({ ...prev, status: 'discarded' }));
-      setRestSeconds(null);
-      setRestDurationSeconds(null);
+      await persistence.discard(session.id);
+      setSession((prev) => ({
+        ...prev,
+        status: 'discarded',
+        pausedAt: null,
+        restTimer: null,
+      }));
       setShowDiscardDialog(false);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       router.replace('/');
@@ -436,17 +506,21 @@ function WorkoutSessionView({
 
   async function finishSession() {
     if (isSaving || completedSets === 0) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     setIsSaving(true);
     setSaveError(null);
+    setAutosaveState('saving');
 
     const completedSession: WorkoutSession = {
       ...session,
       status: 'completed',
       finishedAt: new Date().toISOString(),
+      pausedAt: null,
+      restTimer: null,
     };
 
     try {
-      const saved = await saveWorkoutSession(completedSession);
+      const saved = await persistence.finish(completedSession);
       const existingRecords = buildAllPersonalRecordsFromHistory(
         history.filter((item) => item.id !== saved.id),
       );
@@ -454,13 +528,21 @@ function WorkoutSessionView({
       setSession(saved);
       setHistory((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
       setNewRecordCount(records.length);
+      setAutosaveState('saved');
+      setLastAutosavedAt(new Date().toISOString());
       if (records.length > 0) setShowCelebration(true);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      setSession(completedSession);
-      setSaveError('Session finished, but local history could not be updated.');
-    } finally {
       setFinished(true);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      try {
+        await persistence.saveDraft(session);
+        setLastAutosavedAt(new Date().toISOString());
+      } catch {
+        // The in-memory session remains editable even if the DB is still unavailable.
+      }
+      setAutosaveState('error');
+      setSaveError('Saving failed. Your workout is still open — retry to finish safely.');
+    } finally {
       setIsSaving(false);
     }
   }
@@ -490,6 +572,7 @@ function WorkoutSessionView({
     const review = buildWorkoutSessionReview(session, {
       history: [session, ...history.filter((item) => item.id !== session.id)],
       userExperience: preferences.experience,
+      units: preferences.units,
     });
     const summary = review.summary;
 
@@ -522,14 +605,18 @@ function WorkoutSessionView({
                   {day.name} complete
                 </Text>
                 <Text style={[typography.body, { color: colors.textSecondary }]}>
-                  {summary.completedSets} working sets, {formatVolume(summary.volumeKg)} volume, and{' '}
+                  {summary.completedSets} working sets,{' '}
+                  {formatVolumeLoad(summary.volumeKg, preferences.units)} volume, and{' '}
                   {summary.exerciseCount} trained lifts added to your log.
                 </Text>
               </View>
 
               <View style={styles.finishMetricGrid}>
                 <FinishMetric label="duration" value={`${summary.durationMinutes}m`} />
-                <FinishMetric label="volume" value={formatVolume(summary.volumeKg)} />
+                <FinishMetric
+                  label="volume"
+                  value={formatVolumeLoad(summary.volumeKg, preferences.units)}
+                />
                 <FinishMetric label="sets" value={String(summary.completedSets)} />
                 <FinishMetric label="PRs" value={String(newRecordCount)} />
               </View>
@@ -578,7 +665,12 @@ function WorkoutSessionView({
 
               <View style={{ gap: spacing.sm }}>
                 {review.topExercises.map((exercise, index) => (
-                  <TopExerciseRow key={exercise.exerciseId} exercise={exercise} rank={index + 1} />
+                  <TopExerciseRow
+                    key={exercise.exerciseId}
+                    exercise={exercise}
+                    rank={index + 1}
+                    units={preferences.units}
+                  />
                 ))}
               </View>
             </Card.Content>
@@ -600,7 +692,11 @@ function WorkoutSessionView({
 
               <View style={{ gap: spacing.sm }}>
                 {review.progression.map((item) => (
-                  <ProgressionReviewRow key={item.exerciseId} item={item} />
+                  <ProgressionReviewRow
+                    key={item.exerciseId}
+                    item={item}
+                    units={preferences.units}
+                  />
                 ))}
               </View>
             </Card.Content>
@@ -687,8 +783,7 @@ function WorkoutSessionView({
                 setShowCelebration(false);
                 setAutosaveState('idle');
                 setLastAutosavedAt(null);
-                setRestSeconds(null);
-                setRestDurationSeconds(null);
+                setCheckInSkipped(false);
               }}
               style={styles.finishButton}
             >
@@ -703,6 +798,8 @@ function WorkoutSessionView({
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         contentContainerStyle={{
           paddingTop: safeTop + spacing.lg,
           paddingHorizontal: spacing.lg,
@@ -751,11 +848,8 @@ function WorkoutSessionView({
           <Card.Content style={{ gap: spacing.md }}>
             <View style={styles.metricRow}>
               <Metric label="sets" value={`${completedSets}/${plannedSets}`} />
-              <Metric label="volume" value={formatVolume(volume)} />
-              <Metric
-                label="rest"
-                value={restSeconds != null ? formatRest(restSeconds) : 'ready'}
-              />
+              <Metric label="volume" value={formatVolumeLoad(volume, preferences.units)} />
+              <Metric label="rest" value={session.restTimer ? 'running' : 'ready'} />
             </View>
             <ProgressBar
               progress={progress}
@@ -783,11 +877,33 @@ function WorkoutSessionView({
                 </Text>
               ) : null}
             </View>
+            {saveError != null ? (
+              <View style={[styles.saveErrorPanel, { backgroundColor: colors.warningSoft }]}>
+                <Text style={[typography.caption, { color: colors.warning, flex: 1 }]}>
+                  {saveError}
+                </Text>
+                <Button compact mode="outlined" onPress={finishSession} loading={isSaving}>
+                  Retry save
+                </Button>
+              </View>
+            ) : null}
             {formAnalysisStatus ? (
               <Text style={[typography.micro, { color: colors.accent }]}>{formAnalysisStatus}</Text>
             ) : null}
           </Card.Content>
         </Card>
+
+        {!isPaused && completedSets === 0 && session.readiness == null && !checkInSkipped ? (
+          <ReadinessCheckInCard onSave={saveReadiness} onSkip={() => setCheckInSkipped(true)} />
+        ) : null}
+
+        {session.readiness?.hasPain ? (
+          <View style={[styles.saveErrorPanel, { backgroundColor: colors.warningSoft }]}>
+            <Text style={[typography.caption, { color: colors.warning, flex: 1 }]}>
+              {painMessage(session.readiness)}
+            </Text>
+          </View>
+        ) : null}
 
         {isPaused ? (
           <View
@@ -909,7 +1025,7 @@ function WorkoutSessionView({
             ) : null}
 
             {activeProgressionTarget ? (
-              <ProgressionTargetPanel target={activeProgressionTarget} />
+              <ProgressionTargetPanel target={activeProgressionTarget} units={preferences.units} />
             ) : null}
 
             {activeExerciseIndex < session.exercises.length - 1 && (
@@ -984,7 +1100,7 @@ function WorkoutSessionView({
                   label="fill"
                   value={
                     activeAutofillSuggestion
-                      ? compactSuggestionValue(activeAutofillSuggestion)
+                      ? compactSuggestionValue(activeAutofillSuggestion, preferences.units)
                       : 'locked'
                   }
                 />
@@ -1058,14 +1174,22 @@ function WorkoutSessionView({
               {activeExercise.sets.map((set, setIndex) => (
                 <SetRow
                   key={set.id}
+                  ref={(handle) => {
+                    setRowRefs.current[set.id] = handle;
+                  }}
                   set={set}
                   targetLabel={targetLabel}
                   equipment={activeExerciseMeta.equipment}
+                  trackingType={activeExerciseMeta.trackingType}
+                  units={preferences.units}
+                  validationError={setValidationErrors[set.id]}
                   previousLabel={formatPreviousSet(
                     previousSetAtIndex(previousPerformance, setIndex),
+                    preferences.units,
                   )}
                   onChange={(patch) => updateSet(activeExerciseIndex, setIndex, patch)}
                   onToggleComplete={() => toggleComplete(activeExerciseIndex, setIndex)}
+                  onSubmitEditing={() => completeAndFocusNext(activeExerciseIndex, setIndex)}
                   onCopyPrevious={
                     setIndex > 0 ? () => copyPreviousSet(activeExerciseIndex, setIndex) : undefined
                   }
@@ -1101,16 +1225,16 @@ function WorkoutSessionView({
         </Card>
       </ScrollView>
 
-      {restSeconds != null && (
+      {session.restTimer != null && (
         <RestTimer
-          key={restToken}
-          secondsRemaining={restSeconds}
-          initialSeconds={restDurationSeconds ?? restSeconds}
-          onChangeSeconds={setRestSeconds}
-          onDismiss={() => {
-            setRestSeconds(null);
-            setRestDurationSeconds(null);
-          }}
+          timer={session.restTimer}
+          onExtend={(seconds) =>
+            setSession((prev) => ({
+              ...prev,
+              restTimer: prev.restTimer ? extendRestTimer(prev.restTimer, seconds) : null,
+            }))
+          }
+          onDismiss={() => setSession((prev) => ({ ...prev, restTimer: null }))}
           bottomOffset={insets.bottom + 96}
         />
       )}
@@ -1119,6 +1243,7 @@ function WorkoutSessionView({
         modalRef={rirSheetRef}
         value={rirSetIndex != null ? (activeExercise.sets[rirSetIndex]?.rir ?? null) : null}
         onConfirm={confirmRir}
+        onClear={clearRir}
         onDismiss={() => setRirSetIndex(null)}
       />
 
@@ -1191,11 +1316,19 @@ function FinishMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TopExerciseRow({ exercise, rank }: { exercise: WorkoutExerciseSummary; rank: number }) {
+function TopExerciseRow({
+  exercise,
+  rank,
+  units,
+}: {
+  exercise: WorkoutExerciseSummary;
+  rank: number;
+  units: Units;
+}) {
   const { colors, typography } = useTheme();
   const bestLabel =
     exercise.bestE1rmKg != null
-      ? `e1RM ${Math.round(exercise.bestE1rmKg)}kg`
+      ? `e1RM ${displayLoad(exercise.bestE1rmKg, units)}${unitLabel(units)}`
       : exercise.bestSetLabel;
 
   return (
@@ -1213,7 +1346,7 @@ function TopExerciseRow({ exercise, rank }: { exercise: WorkoutExerciseSummary; 
           {exercise.name}
         </Text>
         <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
-          {exercise.completedSets} sets · {formatVolume(exercise.volumeKg)} · {bestLabel}
+          {exercise.completedSets} sets · {formatVolumeLoad(exercise.volumeKg, units)} · {bestLabel}
         </Text>
       </View>
     </View>
@@ -1308,7 +1441,7 @@ function QualityBlock({
   );
 }
 
-function ProgressionTargetPanel({ target }: { target: TargetToBeat }) {
+function ProgressionTargetPanel({ target, units }: { target: TargetToBeat; units: Units }) {
   const { colors, typography } = useTheme();
   const action = progressionActionLabel(target.decision.action);
 
@@ -1323,7 +1456,7 @@ function ProgressionTargetPanel({ target }: { target: TargetToBeat }) {
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[typography.micro, { color: colors.accent }]}>Progression target</Text>
           <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-            {target.targetText}
+            {formatDecisionTarget(target.decision, units)}
           </Text>
         </View>
         <Chip compact mode="flat" icon="trending-up">
@@ -1331,8 +1464,8 @@ function ProgressionTargetPanel({ target }: { target: TargetToBeat }) {
         </Chip>
       </View>
       <View style={styles.progressionFacts}>
-        <AssistantFact label="last" value={formatProgressionSignal(target.lastSignal)} />
-        <AssistantFact label="win" value={target.winCondition} />
+        <AssistantFact label="last" value={formatProgressionSignal(target.lastSignal, units)} />
+        <AssistantFact label="win" value={formatTargetWinCondition(target, units)} />
       </View>
       <Text style={[typography.micro, { color: colors.textSecondary }]} numberOfLines={2}>
         {target.decision.explanation}
@@ -1341,7 +1474,7 @@ function ProgressionTargetPanel({ target }: { target: TargetToBeat }) {
   );
 }
 
-function ProgressionReviewRow({ item }: { item: WorkoutProgressionReview }) {
+function ProgressionReviewRow({ item, units }: { item: WorkoutProgressionReview; units: Units }) {
   const { colors, typography } = useTheme();
 
   return (
@@ -1361,7 +1494,7 @@ function ProgressionReviewRow({ item }: { item: WorkoutProgressionReview }) {
           {item.exerciseName}
         </Text>
         <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={2}>
-          {item.targetSummary}
+          {formatTargetSummary(item.target, units)}
         </Text>
       </View>
     </View>
@@ -1402,10 +1535,6 @@ function formatRest(seconds: number): string {
   return s === 0 ? `${m}m` : `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function formatVolume(volumeKg: number): string {
-  return volumeKg >= 1000 ? `${(volumeKg / 1000).toFixed(1)}t` : `${Math.round(volumeKg)}kg`;
-}
-
 function autosaveIcon(state: AutosaveState): string {
   switch (state) {
     case 'restored':
@@ -1443,10 +1572,10 @@ function formatClock(iso: string): string {
   }).format(new Date(iso));
 }
 
-function compactSuggestionValue(suggestion: SetAutofillSuggestion): string {
+function compactSuggestionValue(suggestion: SetAutofillSuggestion, units: Units): string {
   if (suggestion.durationSeconds != null) return `${suggestion.durationSeconds}s`;
   if (suggestion.loadKg != null && suggestion.reps != null) {
-    return `${suggestion.loadKg} × ${suggestion.reps}`;
+    return `${displayLoad(suggestion.loadKg, units)} ${unitLabel(units)} × ${suggestion.reps}`;
   }
   if (suggestion.reps != null) return `${suggestion.reps} reps`;
   return 'target';
@@ -1676,6 +1805,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     minHeight: 34,
+  },
+  saveErrorPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    padding: 10,
   },
   pausedPanel: {
     borderWidth: StyleSheet.hairlineWidth,

@@ -11,13 +11,9 @@ type Metrics = {
  * Plain-language explanation templates for progression decisions.
  * The numbers come from the deterministic engine; this layer only phrases them.
  */
-export function explain(
-  decision: ProgressionDecision,
-  exercise: Exercise,
-  m?: Metrics,
-): string {
+export function explain(decision: ProgressionDecision, exercise: Exercise, m?: Metrics): string {
   const range = `${decision.nextMinReps}–${decision.nextMaxReps}`;
-  const load = decision.nextLoad != null ? `${decision.nextLoad} kg` : 'the same load';
+  const load = decision.nextLoad != null ? 'the proposed load' : 'the same load';
 
   switch (decision.reasonCode) {
     case 'NO_COMPLETED_SETS':
@@ -26,6 +22,10 @@ export function explain(
       return `First session for ${exercise.name}: pick a load you could do for about ${decision.nextMaxReps} reps with ${decision.nextMaxReps > 12 ? 'a couple' : '2–3'} reps left in the tank. Once logged, progression starts from there.`;
     case 'PAIN_HOLD':
       return `You flagged discomfort, so the load on ${exercise.name} stays put. Progressing through pain is how small issues become big ones — if it persists, swap the exercise and consider seeing a qualified professional.`;
+    case 'INCOMPLETE_PRESCRIPTION':
+      return `Only part of the prescribed work for ${exercise.name} was completed. That session stays in history, but it is not treated as proof that the full prescription was achieved, so the target holds.`;
+    case 'MISSING_RIR_HOLD':
+      return `At least one working set for ${exercise.name} has no RIR. The workout still counts, but effort is unknown, so the app holds the target instead of assuming the load was ready to progress.`;
     case 'TOP_OF_RANGE_ALL_SETS':
       return `You hit the top of the rep range on every working set of ${exercise.name} with reps to spare — that load is officially beaten. Next time: ${load}, aiming for ${range} reps.`;
     case 'BODYWEIGHT_TOP_OF_RANGE':
@@ -41,11 +41,11 @@ export function explain(
     case 'EXTREME_MISS':
       return `Reps on ${exercise.name} came in far below target at maximal effort, which means the load outran you. It drops to ${load} so every set lands back in the productive ${range} zone.`;
     case 'SHARP_INTRASET_DROP':
-      return `Your reps on ${exercise.name} fell off sharply across sets — a sign the later sets were mostly fatigue, not stimulus. One set comes off (${decision.nextWorkingSets} sets next time) to keep quality high.`;
+      return `Your reps on ${exercise.name} fell off sharply across sets, so the later sets are less comparable with the opening work. One set comes off (${decision.nextWorkingSets} sets next time) to keep execution consistent.`;
     case 'PRIORITY_VOLUME_HEADROOM':
-      return `${exercise.name} targets a priority muscle, you've strung together several strong sessions, and weekly volume has headroom — so a set is added (${decision.nextWorkingSets} total). More good sets, more growth.`;
+      return `${exercise.name} targets a priority muscle, several complete sessions met the prescription, and the programmed weekly-set cap has room — so one set is proposed (${decision.nextWorkingSets} total). You can keep the current dose instead.`;
     case 'DELOAD_SIGNALS':
-      return `Several signals line up on ${exercise.name}: repeated missed targets and high strain. A lighter week (~${decision.nextLoad != null ? `${decision.nextLoad} kg` : '40% less load'}) is suggested — not forced — to let recovery catch up. Fatigue masks fitness; a deload reveals it.`;
+      return `Several logged signals line up on ${exercise.name}: repeated complete sessions missed the target and effort or check-in data was unusually hard. A lighter pass is suggested, not forced; this is not a recovery measurement.`;
     default:
       return `Prescription for ${exercise.name}: ${range} reps at ${load}.`;
   }

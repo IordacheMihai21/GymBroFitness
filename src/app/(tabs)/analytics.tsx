@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import {
   BarChart,
@@ -8,34 +8,29 @@ import {
   type lineDataItem,
 } from 'react-native-gifted-charts';
 import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
-import { Card, Chip, List, ProgressBar } from 'react-native-paper';
+import { Button, Card, Chip, List, ProgressBar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { bodySlugsForMuscle, heatColorForVolumeZone } from '@/domain/muscles/muscleMap';
-import { computeMesocycleStatus } from '@/domain/programs/mesocycle';
 import {
   classifyWeeklyVolume,
   volumeZoneLabel,
   type VolumeZone,
 } from '@/domain/workouts/volumeLandmarks';
 import { buildActivityHeatmap } from '@/domain/workouts/activityHeatmap';
-import {
-  buildPlannedWeek,
-  buildWorkoutHistoryInsights,
-  fallbackSetsByProgram,
-} from '@/domain/workouts/historyInsights';
+import { buildPlannedWeek, buildWorkoutHistoryInsights } from '@/domain/workouts/historyInsights';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { ActivityHeatmapCard } from '@/components/progress/ActivityHeatmapCard';
 import { LevelCard } from '@/components/profile/LevelCard';
 import { PersonalRecordCard } from '@/components/profile/PersonalRecordCard';
 import { StreakCard } from '@/components/profile/StreakCard';
 import { Reveal } from '@/components/ui/Reveal';
-import { DEMO_MESOCYCLE_BLOCK } from '@/domain/workouts/demoHistory';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type { MuscleGroup, WorkoutSession } from '@/types';
+import { displayLoad, unitLabel } from '@/utils/units';
 
 type Period = '4w' | '12w' | 'block';
 
@@ -52,14 +47,17 @@ type MuscleLoad = {
 const PERIODS: { label: string; value: Period }[] = [
   { label: '4W', value: '4w' },
   { label: '12W', value: '12w' },
-  { label: 'Block', value: 'block' },
+  { label: 'All', value: 'block' },
 ];
 
 export default function AnalyticsScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [period, setPeriod] = useState<Period>('4w');
   const [history, setHistory] = useState<WorkoutSession[]>([]);
+  const [lineChartWidth, setLineChartWidth] = useState(0);
+  const [barChartWidth, setBarChartWidth] = useState(0);
   const { preferences, program } = useActiveProgram();
 
   useFocusEffect(
@@ -84,15 +82,9 @@ export default function AnalyticsScreen() {
   const activityHeatmap = useMemo(() => buildActivityHeatmap(history), [history]);
   const streakDays = insights.streakDays;
   const level = insights.level;
-  const mesocycleStatus = computeMesocycleStatus(DEMO_MESOCYCLE_BLOCK);
-  const muscleSetMap = useMemo(() => {
-    if (insights.weekVolumeKg > 0) return insights.weeklySetsByMuscle;
-    const completedDayNames = new Set(
-      insights.weekLog.filter((entry) => entry.status === 'done').map((entry) => entry.splitName),
-    );
-    return fallbackSetsByProgram(program.days, completedDayNames);
-  }, [insights.weekLog, insights.weekVolumeKg, insights.weeklySetsByMuscle, program.days]);
+  const muscleSetMap = insights.weeklySetsByMuscle;
   const muscleLoads = useMemo(() => computeMuscleLoads(muscleSetMap), [muscleSetMap]);
+  const hasMuscleLoads = muscleLoads.length > 0;
   const maxMuscleSets = Math.max(...muscleLoads.map((item) => item.sets), 1);
   const bodyData: ExtendedBodyPart[] = muscleLoads.flatMap((item) => {
     const fill = heatColorForVolumeZone(item.zone);
@@ -108,6 +100,7 @@ export default function AnalyticsScreen() {
   });
   const trendValues = valuesForPeriod(
     insights.strengthTrend?.points.map((point) => ({
+      sessionId: point.sessionId,
       date: point.date,
       value: point.e1rmKg,
     })) ?? [],
@@ -115,9 +108,14 @@ export default function AnalyticsScreen() {
   );
   const hasAnyStrengthPoint = trendValues.length > 0;
   const hasTrend = trendValues.length >= 2;
-  const chartValues = hasTrend ? trendValues.map((point) => point.value) : [0, 0, 0, 0];
+  const chartValues = hasTrend
+    ? trendValues.map((point) => displayLoad(point.value, preferences.units) ?? 0)
+    : [0, 0, 0, 0];
   const lineBaseline = Math.min(...chartValues) - 2;
-  const lineData = buildLineData(chartValues, lineBaseline);
+  const lineData = buildLineData(chartValues, lineBaseline, (index) => {
+    const source = trendValues[index];
+    if (source) router.push({ pathname: '/history', params: { sessionId: source.sessionId } });
+  });
   const lineMaxValue = Math.max(...chartValues) - lineBaseline + 2;
   const barData = buildBarData(muscleLoads);
   const trendDelta = hasTrend
@@ -126,7 +124,7 @@ export default function AnalyticsScreen() {
   const trendMetricText = hasTrend
     ? `${trendDelta >= 0 ? '+' : ''}${trendDelta.toFixed(1)}`
     : hasAnyStrengthPoint
-      ? trendValues[trendValues.length - 1].value.toFixed(1)
+      ? (displayLoad(trendValues[trendValues.length - 1].value, preferences.units) ?? 0).toFixed(1)
       : '0.0';
   const decisionItems = buildDecisionItems({
     trendName: insights.strengthTrend?.exerciseName,
@@ -134,7 +132,7 @@ export default function AnalyticsScreen() {
     hasAnyStrengthPoint,
     trendDelta,
     muscleLoads,
-    daysToDeload: mesocycleStatus.daysToDeload,
+    units: preferences.units,
   });
 
   return (
@@ -156,24 +154,32 @@ export default function AnalyticsScreen() {
             </Text>
             <Text style={[typography.title, { color: colors.textPrimary }]}>Analytics</Text>
           </View>
-          <Chip compact mode="flat" icon="calendar-clock">
-            W{mesocycleStatus.currentWeek}/{mesocycleStatus.totalWeeks}
-          </Chip>
+          <View style={styles.headerActions}>
+            <Chip compact mode="flat" icon="calendar-clock">
+              {insights.totalWorkouts} sessions
+            </Chip>
+            <Button compact mode="outlined" icon="body" onPress={() => router.push('/body')}>
+              Body
+            </Button>
+          </View>
         </View>
       </Reveal>
 
       <Reveal index={1}>
-        <View style={styles.periodRow}>
-          {PERIODS.map((item) => (
-            <Chip
-              key={item.value}
-              selected={period === item.value}
-              onPress={() => setPeriod(item.value)}
-              mode={period === item.value ? 'flat' : 'outlined'}
-            >
-              {item.label}
-            </Chip>
-          ))}
+        <View style={{ gap: spacing.xs }}>
+          <Text style={[typography.micro, { color: colors.textMuted }]}>Strength window</Text>
+          <View style={styles.periodRow}>
+            {PERIODS.map((item) => (
+              <Chip
+                key={item.value}
+                selected={period === item.value}
+                onPress={() => setPeriod(item.value)}
+                mode={period === item.value ? 'flat' : 'outlined'}
+              >
+                {item.label}
+              </Chip>
+            ))}
+          </View>
         </View>
       </Reveal>
 
@@ -203,18 +209,23 @@ export default function AnalyticsScreen() {
                 <Text style={[typography.display, { color: colors.textPrimary }]}>
                   {trendMetricText}
                 </Text>
-                <Text style={[typography.micro, { color: colors.textMuted }]}>kg e1RM</Text>
+                <Text style={[typography.micro, { color: colors.textMuted }]}>
+                  {unitLabel(preferences.units)} e1RM
+                </Text>
               </View>
             </View>
 
-            <View style={styles.lineChartFrame}>
-              {hasTrend ? (
+            <View
+              style={styles.lineChartFrame}
+              onLayout={(event) => setLineChartWidth(event.nativeEvent.layout.width)}
+            >
+              {hasTrend && lineChartWidth > 0 ? (
                 <LineChart
                   data={lineData}
                   height={130}
-                  width={300}
+                  width={Math.max(1, lineChartWidth - 8)}
                   maxValue={lineMaxValue}
-                  spacing={period === '4w' ? 58 : 32}
+                  spacing={Math.max(24, (lineChartWidth - 16) / Math.max(1, lineData.length - 1))}
                   initialSpacing={0}
                   endSpacing={0}
                   thickness={3}
@@ -259,7 +270,7 @@ export default function AnalyticsScreen() {
               }
               description={
                 hasTrend
-                  ? 'The chart now uses saved workout history, not demo projection data.'
+                  ? 'The chart uses saved workout history. Tap a point to open its source session.'
                   : 'A real line appears after two comparable loaded sessions for the same exercise.'
               }
               left={(props) => <List.Icon {...props} icon="trending-up" color={colors.accent} />}
@@ -288,13 +299,13 @@ export default function AnalyticsScreen() {
               <View>
                 <Text style={[typography.micro, { color: colors.accent }]}>Volume landmarks</Text>
                 <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  {insights.weekVolumeKg > 0
-                    ? 'Logged sets vs. MEV–MRV'
-                    : 'Programmed sets vs. MEV–MRV'}
+                  Logged direct sets this week
                 </Text>
               </View>
               <Chip compact mode="flat" icon="target">
-                {Math.round(insights.intensityMatchPct * 100)}% RIR
+                {insights.rirSetCount > 0
+                  ? `${Math.round(insights.intensityMatchPct * 100)}% RIR match`
+                  : 'No RIR data'}
               </Chip>
             </View>
 
@@ -319,24 +330,43 @@ export default function AnalyticsScreen() {
               />
             </View>
 
-            <View style={styles.barChartFrame}>
-              <BarChart
-                data={barData}
-                height={130}
-                width={300}
-                maxValue={maxMuscleSets + 2}
-                barWidth={24}
-                spacing={18}
-                roundedTop
-                roundedBottom
-                hideAxesAndRules
-                hideYAxisText
-                xAxisThickness={0}
-                yAxisThickness={0}
-                yAxisLabelWidth={0}
-                disableScroll
-                backgroundColor="transparent"
-              />
+            <View
+              style={styles.barChartFrame}
+              onLayout={(event) => setBarChartWidth(event.nativeEvent.layout.width)}
+            >
+              {hasMuscleLoads && barChartWidth > 0 ? (
+                <BarChart
+                  data={barData}
+                  height={130}
+                  width={Math.max(1, barChartWidth - 8)}
+                  maxValue={maxMuscleSets + 2}
+                  barWidth={24}
+                  spacing={Math.max(
+                    8,
+                    (barChartWidth - barData.length * 24) / Math.max(1, barData.length + 1),
+                  )}
+                  roundedTop
+                  roundedBottom
+                  hideAxesAndRules
+                  hideYAxisText
+                  xAxisThickness={0}
+                  yAxisThickness={0}
+                  yAxisLabelWidth={0}
+                  disableScroll
+                  backgroundColor="transparent"
+                />
+              ) : (
+                <View style={[styles.emptyChartPanel, { backgroundColor: colors.surfaceRaised }]}>
+                  <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
+                    No direct sets this week
+                  </Text>
+                  <Text
+                    style={[typography.caption, { color: colors.textMuted, textAlign: 'center' }]}
+                  >
+                    Finish a workout to compare logged direct sets with general weekly references.
+                  </Text>
+                </View>
+              )}
             </View>
 
             <View style={{ gap: spacing.sm }}>
@@ -369,7 +399,7 @@ export default function AnalyticsScreen() {
       </Reveal>
 
       <Reveal index={4}>
-        <ActivityHeatmapCard heatmap={activityHeatmap} />
+        <ActivityHeatmapCard heatmap={activityHeatmap} units={preferences.units} />
       </Reveal>
 
       <Reveal index={5}>
@@ -417,7 +447,7 @@ export default function AnalyticsScreen() {
           ) : null}
           {insights.personalRecords.map((record, i) => (
             <Reveal key={record.id} index={9 + i} style={styles.prSlot}>
-              <PersonalRecordCard record={record} />
+              <PersonalRecordCard record={record} units={preferences.units} />
             </Reveal>
           ))}
         </View>
@@ -467,7 +497,7 @@ function computeMuscleLoads(setsByMuscle: Partial<Record<MuscleGroup, number>>):
     );
 }
 
-type TrendValue = { date: string; value: number };
+type TrendValue = { sessionId: string; date: string; value: number };
 
 function valuesForPeriod(points: TrendValue[], period: Period): TrendValue[] {
   if (period === 'block') return points;
@@ -485,14 +515,14 @@ function buildDecisionItems({
   hasAnyStrengthPoint,
   trendDelta,
   muscleLoads,
-  daysToDeload,
+  units,
 }: {
   trendName?: string;
   hasTrend: boolean;
   hasAnyStrengthPoint: boolean;
   trendDelta: number;
   muscleLoads: MuscleLoad[];
-  daysToDeload: number;
+  units: 'kg' | 'lb';
 }) {
   const doseFlag =
     muscleLoads.find((item) => item.zone === 'below_mv' || item.zone === 'maintenance') ??
@@ -508,7 +538,7 @@ function buildDecisionItems({
             ? `${trendName}: baseline set`
             : 'Strength trend: needs data',
       description: hasTrend
-        ? `${trendDelta >= 0 ? '+' : ''}${trendDelta.toFixed(1)}kg e1RM across the selected window.`
+        ? `${trendDelta >= 0 ? '+' : ''}${trendDelta.toFixed(1)}${unitLabel(units)} e1RM across the selected window.`
         : hasAnyStrengthPoint
           ? 'One loaded session is saved. Repeat the lift to unlock direction, not just a snapshot.'
           : 'Complete repeated loaded sessions for one lift to unlock trend-based decisions.',
@@ -519,14 +549,8 @@ function buildDecisionItems({
         ? `${MUSCLE_LABELS[doseFlag.muscle]}: ${volumeZoneLabel(doseFlag.zone)}`
         : 'Weekly volume: no hard sets logged',
       description: doseFlag
-        ? `${doseFlag.sets} sets this week against MEV ${doseFlag.mev} and MRV ${doseFlag.mrv}.`
-        : 'Log this week’s sessions to compare actual muscle dose against landmarks.',
-    },
-    {
-      icon: 'calendar-sync',
-      title: `Deload in ${daysToDeload} days`,
-      description:
-        'Use this as a planned checkpoint, then let performance and recovery signals override it.',
+        ? `${doseFlag.sets} direct sets this week against a general ${doseFlag.mev}-${doseFlag.mrv} set reference; this is not a personalized recovery limit.`
+        : 'Log this week’s sessions to compare direct sets with general reference ranges.',
     },
   ];
 }
@@ -535,10 +559,15 @@ function zoneColor(zone: VolumeZone): string {
   return heatColorForVolumeZone(zone);
 }
 
-function buildLineData(values: number[], baseline: number): lineDataItem[] {
+function buildLineData(
+  values: number[],
+  baseline: number,
+  onSelect: (index: number) => void,
+): lineDataItem[] {
   return values.map((value, index) => ({
     value: value - baseline,
     label: '',
+    onPress: () => onSelect(index),
   }));
 }
 
@@ -560,6 +589,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  headerActions: {
+    alignItems: 'flex-end',
+    gap: 6,
   },
   periodRow: {
     flexDirection: 'row',

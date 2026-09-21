@@ -1,19 +1,9 @@
 import { getExercise } from '@/domain/exercises/catalog';
 import { completedWorkingSets } from '@/domain/progression/engine';
 import { DAY_LABELS, dayOfWeek } from '@/utils/dates';
-import type {
-  DayOfWeek,
-  MuscleGroup,
-  PersonalRecord,
-  ProgramDay,
-  WorkoutSession,
-} from '@/types';
+import type { DayOfWeek, MuscleGroup, PersonalRecord, ProgramDay, WorkoutSession } from '@/types';
 
-import {
-  detectPersonalRecords,
-  sessionVolumeKg,
-  setsByMuscle,
-} from './analytics';
+import { detectPersonalRecords, sessionVolumeKg, setsByMuscle } from './analytics';
 import { buildExerciseTrend, type ExerciseTrendPoint } from './exerciseTrend';
 import { computeLevel, computeStreak } from './gamification';
 import type { WeekLogEntry } from './demoHistory';
@@ -41,6 +31,7 @@ export type WorkoutHistoryInsights = {
   weekVolumeKg: number;
   weeklySetsByMuscle: Partial<Record<MuscleGroup, number>>;
   intensityMatchPct: number;
+  rirSetCount: number;
   personalRecords: PersonalRecord[];
   strengthTrend: StrengthTrend | null;
 };
@@ -53,11 +44,16 @@ export function buildWorkoutHistoryInsights(
   const completedSessions = history
     .filter((session) => session.status === 'completed')
     .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
-  const completedDates = completedSessions.map((session) => session.finishedAt ?? session.startedAt);
+  const completedDates = completedSessions.map(
+    (session) => session.finishedAt ?? session.startedAt,
+  );
   const personalRecords = buildPersonalRecordsFromHistory(completedSessions);
   const weekLog = buildWeekLog(completedSessions, plannedWeek, now, personalRecords);
   const currentWeekSessions = sessionsInCurrentWeek(completedSessions, now);
-  const weekVolumeKg = currentWeekSessions.reduce((total, session) => total + sessionVolumeKg(session), 0);
+  const weekVolumeKg = currentWeekSessions.reduce(
+    (total, session) => total + sessionVolumeKg(session),
+    0,
+  );
   const weeklySetsByMuscle = currentWeekSessions.reduce<Partial<Record<MuscleGroup, number>>>(
     (total, session) => mergeSetMaps(total, setsByMuscle(session, getExercise)),
     {},
@@ -73,12 +69,16 @@ export function buildWorkoutHistoryInsights(
     weekVolumeKg,
     weeklySetsByMuscle,
     intensityMatchPct: computeIntensityMatchPct(completedSessions),
+    rirSetCount: countSetsWithRir(completedSessions),
     personalRecords,
     strengthTrend: buildPrimaryStrengthTrend(completedSessions),
   };
 }
 
-export function buildPlannedWeek(programDays: ProgramDay[], preferredDays: DayOfWeek[]): PlannedWeekDay[] {
+export function buildPlannedWeek(
+  programDays: ProgramDay[],
+  preferredDays: DayOfWeek[],
+): PlannedWeekDay[] {
   return preferredDays.map((preferredDay, index) => ({
     dayOfWeek: preferredDay,
     splitName: programDays[index % Math.max(1, programDays.length)]?.name ?? 'Training',
@@ -93,7 +93,9 @@ export function buildPersonalRecordsFromHistory(history: WorkoutSession[]): Pers
 
 export function buildAllPersonalRecordsFromHistory(history: WorkoutSession[]): PersonalRecord[] {
   const records: PersonalRecord[] = [];
-  const oldestFirst = [...history].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+  const oldestFirst = [...history].sort(
+    (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt),
+  );
   for (const session of oldestFirst) {
     records.push(...detectPersonalRecords(session, records, getExercise));
   }
@@ -135,7 +137,10 @@ export function buildWeekLog(
       label: DAY_LABELS[dayIndex],
       splitName,
       volumeKg,
-      note: status === 'done' ? `${sessions.length} session${sessions.length === 1 ? '' : 's'}` : 'Rest & recover',
+      note:
+        status === 'done'
+          ? `${sessions.length} session${sessions.length === 1 ? '' : 's'}`
+          : 'Rest & recover',
       isPr: hasPr,
       status,
     };
@@ -157,6 +162,20 @@ export function computeIntensityMatchPct(history: WorkoutSession[]): number {
   }
 
   return total === 0 ? 0 : matched / total;
+}
+
+export function countSetsWithRir(history: WorkoutSession[]): number {
+  return history.reduce(
+    (total, session) =>
+      total +
+      session.exercises.reduce(
+        (exerciseTotal, exercise) =>
+          exerciseTotal +
+          completedWorkingSets(exercise.sets).filter((set) => set.rir != null).length,
+        0,
+      ),
+    0,
+  );
 }
 
 export function buildPrimaryStrengthTrend(history: WorkoutSession[]): StrengthTrend | null {
@@ -183,14 +202,20 @@ export function buildPrimaryStrengthTrend(history: WorkoutSession[]): StrengthTr
     })
     .filter((candidate): candidate is StrengthTrend => candidate != null);
 
-  return candidates.sort(
-    (a, b) =>
-      b.points.length - a.points.length ||
-      Date.parse(b.points[b.points.length - 1].date) - Date.parse(a.points[a.points.length - 1].date),
-  )[0] ?? null;
+  return (
+    candidates.sort(
+      (a, b) =>
+        b.points.length - a.points.length ||
+        Date.parse(b.points[b.points.length - 1].date) -
+          Date.parse(a.points[a.points.length - 1].date),
+    )[0] ?? null
+  );
 }
 
-export function fallbackSetsByProgram(days: ProgramDay[], completedDayNames: Set<string>): Partial<Record<MuscleGroup, number>> {
+export function fallbackSetsByProgram(
+  days: ProgramDay[],
+  completedDayNames: Set<string>,
+): Partial<Record<MuscleGroup, number>> {
   const result: Partial<Record<MuscleGroup, number>> = {};
   for (const day of days) {
     const multiplier = completedDayNames.has(day.name) ? 1 : 0.55;
@@ -240,5 +265,9 @@ function addDays(date: Date, days: number): Date {
 
 function isSameLocalDay(iso: string, date: Date): boolean {
   const d = new Date(iso);
-  return d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth() && d.getDate() === date.getDate();
+  return (
+    d.getFullYear() === date.getFullYear() &&
+    d.getMonth() === date.getMonth() &&
+    d.getDate() === date.getDate()
+  );
 }

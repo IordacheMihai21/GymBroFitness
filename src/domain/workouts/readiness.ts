@@ -30,7 +30,7 @@ export function readinessAdjustments(
       adjustments.push({
         exerciseId: lastAccessory.exerciseId,
         kind: 'reduce_set',
-        message: `Low readiness today — dropping one set of ${name} keeps quality high without losing the session. You can ignore this.`,
+        message: `Your check-in was low today. Consider one fewer set of ${name}; this is optional and based only on your self-report.`,
       });
     }
   }
@@ -46,7 +46,7 @@ export function readinessAdjustments(
       adjustments.push({
         exerciseId: p.exerciseId,
         kind: 'suggest_swap',
-        message: `${exercise.name} hits a muscle you rated very sore. Consider an equivalent swap or lighter loads — training through severe soreness usually just borrows recovery from later sessions.`,
+        message: `${exercise.name} hits a muscle you rated very sore. Consider an equivalent swap or lighter load, and use your own symptoms to decide.`,
       });
     }
   }
@@ -58,6 +58,6 @@ export function painMessage(readiness: ReadinessCheckIn): string | null {
   if (!readiness.hasPain) return null;
   return (
     'You reported pain. GymBro will not increase any loads today. ' +
-    'Skip movements that hurt — soreness is normal, sharp pain is not — and if it persists, see a qualified professional.'
+    'Avoid movements that reproduce it; if you are unsure or it persists, seek advice from a qualified professional.'
   );
 }

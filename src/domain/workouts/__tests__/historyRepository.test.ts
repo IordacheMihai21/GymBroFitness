@@ -1,4 +1,5 @@
 import { createTestDb } from '@/db/createTestDb';
+import { dataRecoveryTable, workoutSessionsTable } from '@/db/schema';
 import type { WorkoutSession } from '@/types';
 
 import {
@@ -46,15 +47,18 @@ describe('saveWorkoutSessionSql', () => {
     expect(history[0].dayName).toBe('Upper A (edited)');
   });
 
-  it('prunes beyond the max stored session count, keeping the newest', () => {
+  it('preserves history beyond 100 sessions', () => {
     const db = createTestDb();
     for (let i = 0; i < 105; i++) {
       saveWorkoutSessionSql(
         db,
-        makeSession({ id: `session-${i}`, startedAt: `2026-01-${String((i % 28) + 1).padStart(2, '0')}T00:00:00.000Z` }),
+        makeSession({
+          id: `session-${i}`,
+          startedAt: `2026-01-${String((i % 28) + 1).padStart(2, '0')}T00:00:00.000Z`,
+        }),
       );
     }
-    expect(countWorkoutHistorySql(db)).toBe(100);
+    expect(countWorkoutHistorySql(db)).toBe(105);
   });
 });
 
@@ -75,6 +79,25 @@ describe('listWorkoutHistorySql', () => {
     saveWorkoutSessionSql(db, makeSession({ id: 'complete' }));
 
     expect(listWorkoutHistorySql(db).map((s) => s.id)).toEqual(['complete']);
+  });
+
+  it('supports stable limit/offset pagination without deleting older sessions', () => {
+    const db = createTestDb();
+    for (let i = 0; i < 5; i++) {
+      saveWorkoutSessionSql(
+        db,
+        makeSession({ id: `session-${i}`, startedAt: `2026-09-0${i + 1}T00:00:00.000Z` }),
+      );
+    }
+
+    expect(listWorkoutHistorySql(db, { limit: 2 }).map((session) => session.id)).toEqual([
+      'session-4',
+      'session-3',
+    ]);
+    expect(listWorkoutHistorySql(db, { limit: 2, offset: 2 }).map((session) => session.id)).toEqual(
+      ['session-2', 'session-1'],
+    );
+    expect(countWorkoutHistorySql(db)).toBe(5);
   });
 });
 
@@ -129,6 +152,16 @@ describe('in-progress workout drafts', () => {
     expect(getInProgressWorkoutSessionSql(db)?.id).toBe('draft-b');
   });
 
+  it('rolls back deletion of the old draft if writing the replacement fails', () => {
+    const db = createTestDb();
+    saveInProgressWorkoutSessionSql(db, makeSession({ id: 'draft-a' }));
+    const invalid = makeSession({ id: 'draft-b' }) as WorkoutSession & { self?: unknown };
+    invalid.self = invalid;
+
+    expect(() => saveInProgressWorkoutSessionSql(db, invalid)).toThrow();
+    expect(getInProgressWorkoutSessionSql(db)?.id).toBe('draft-a');
+  });
+
   it('discards an in-progress draft by id', () => {
     const db = createTestDb();
     saveInProgressWorkoutSessionSql(db, makeSession({ id: 'draft' }));
@@ -152,6 +185,14 @@ describe('importSessionsSql', () => {
     importSessionsSql(db, [session]);
     expect(countWorkoutHistorySql(db)).toBe(1);
   });
+
+  it('rolls back the whole batch when a later insert fails', () => {
+    const db = createTestDb();
+    const twoActiveDrafts = [makeSession({ id: 'draft-a' }), makeSession({ id: 'draft-b' })];
+
+    expect(() => importSessionsSql(db, twoActiveDrafts)).toThrow();
+    expect(countWorkoutHistorySql(db)).toBe(0);
+  });
 });
 
 describe('clearWorkoutHistorySql', () => {
@@ -160,5 +201,46 @@ describe('clearWorkoutHistorySql', () => {
     saveWorkoutSessionSql(db, makeSession());
     clearWorkoutHistorySql(db);
     expect(listWorkoutHistorySql(db)).toHaveLength(0);
+  });
+});
+
+describe('versioned workout payloads', () => {
+  it('upgrades a valid legacy payload when it is read', () => {
+    const db = createTestDb();
+    const session = makeSession({ id: 'legacy', status: 'completed' });
+    db.insert(workoutSessionsTable)
+      .values({
+        id: session.id,
+        startedAt: session.startedAt,
+        status: session.status,
+        payload: session,
+      })
+      .run();
+
+    expect(listWorkoutHistorySql(db).map((item) => item.id)).toEqual(['legacy']);
+    const row = db.select().from(workoutSessionsTable).all()[0];
+    expect(row.payload).toMatchObject({ schemaVersion: 1, data: { id: 'legacy' } });
+  });
+
+  it('quarantines an unknown payload version without deleting its source row', () => {
+    const db = createTestDb();
+    const session = makeSession({ id: 'future', status: 'completed' });
+    db.insert(workoutSessionsTable)
+      .values({
+        id: session.id,
+        startedAt: session.startedAt,
+        status: session.status,
+        payload: { schemaVersion: 99, data: session } as never,
+      })
+      .run();
+
+    expect(listWorkoutHistorySql(db)).toEqual([]);
+    expect(countWorkoutHistorySql(db)).toBe(1);
+    expect(db.select().from(dataRecoveryTable).all()).toEqual([
+      expect.objectContaining({
+        entityId: 'future',
+        reason: 'unknown_payload_version',
+      }),
+    ]);
   });
 });

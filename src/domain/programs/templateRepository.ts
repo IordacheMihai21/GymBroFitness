@@ -1,6 +1,12 @@
 import { desc, eq } from 'drizzle-orm';
 
-import { workoutTemplatesTable } from '@/db/schema';
+import {
+  decodePayload,
+  encodePayload,
+  workoutTemplatePayloadSchema,
+  type PersistedPayload,
+} from '@/db/payload';
+import { dataRecoveryTable, workoutTemplatesTable } from '@/db/schema';
 import type { GymBroDb } from '@/db/types';
 
 import type { WorkoutTemplate } from './templates';
@@ -15,15 +21,18 @@ export function listTemplatesSql(db: GymBroDb): WorkoutTemplate[] {
     .from(workoutTemplatesTable)
     .orderBy(desc(workoutTemplatesTable.createdAt))
     .all()
-    .map((row) => row.payload);
+    .flatMap((row) => {
+      const template = decodeWorkoutTemplateRow(db, row.id, row.payload);
+      return template ? [template] : [];
+    });
 }
 
 export function saveTemplateSql(db: GymBroDb, template: WorkoutTemplate): WorkoutTemplate {
   db.insert(workoutTemplatesTable)
-    .values({ id: template.id, createdAt: template.createdAt, payload: template })
+    .values({ id: template.id, createdAt: template.createdAt, payload: encodePayload(template) })
     .onConflictDoUpdate({
       target: workoutTemplatesTable.id,
-      set: { createdAt: template.createdAt, payload: template },
+      set: { createdAt: template.createdAt, payload: encodePayload(template) },
     })
     .run();
 
@@ -37,12 +46,18 @@ export function deleteTemplateSql(db: GymBroDb, id: string): void {
 
 /** Inserts templates as-is — for importing pre-existing data, not the save flow. */
 export function importTemplatesSql(db: GymBroDb, templates: WorkoutTemplate[]): void {
-  for (const template of templates) {
-    db.insert(workoutTemplatesTable)
-      .values({ id: template.id, createdAt: template.createdAt, payload: template })
-      .onConflictDoNothing()
-      .run();
-  }
+  db.transaction((tx) => {
+    for (const template of templates) {
+      tx.insert(workoutTemplatesTable)
+        .values({
+          id: template.id,
+          createdAt: template.createdAt,
+          payload: encodePayload(template),
+        })
+        .onConflictDoNothing({ target: workoutTemplatesTable.id })
+        .run();
+    }
+  });
 }
 
 export function countTemplatesSql(db: GymBroDb): number {
@@ -59,4 +74,36 @@ function pruneOldTemplates(db: GymBroDb): void {
   for (const id of staleIds) {
     db.delete(workoutTemplatesTable).where(eq(workoutTemplatesTable.id, id)).run();
   }
+}
+
+function decodeWorkoutTemplateRow(
+  db: GymBroDb,
+  id: string,
+  payload: PersistedPayload<WorkoutTemplate>,
+): WorkoutTemplate | null {
+  const decoded = decodePayload(payload, workoutTemplatePayloadSchema);
+  if (!decoded.ok || decoded.data.id !== id) {
+    const reason = decoded.ok ? 'payload_id_mismatch' : decoded.reason;
+    db.insert(dataRecoveryTable)
+      .values({
+        id: `workout-template-read-${id}`,
+        entityType: 'workout_template',
+        entityId: id,
+        reason,
+        payload: JSON.stringify(payload),
+        createdAt: new Date().toISOString(),
+        migrationVersion: 1,
+      })
+      .onConflictDoNothing({ target: dataRecoveryTable.id })
+      .run();
+    return null;
+  }
+
+  if (decoded.legacy) {
+    db.update(workoutTemplatesTable)
+      .set({ payload: encodePayload(decoded.data) })
+      .where(eq(workoutTemplatesTable.id, id))
+      .run();
+  }
+  return decoded.data;
 }

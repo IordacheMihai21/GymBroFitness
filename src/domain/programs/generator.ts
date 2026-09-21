@@ -12,13 +12,13 @@ import { availableExercises } from '../exercises/catalog';
 import {
   DEFAULT_SETS,
   estimateExerciseMinutes,
+  GOAL_REP_RANGES,
+  GOAL_REST_SECONDS,
   HIGH_REP_MUSCLES,
   HIGH_REP_RANGE,
   MAX_WEEKLY_SETS,
   MAX_WORKING_SETS_PER_EXERCISE,
   PRIORITY_EXTRA_WEEKLY_SETS,
-  REP_RANGES,
-  REST_SECONDS,
   TARGET_RIR,
   TIME_MODEL,
   TIME_RANGE_SECONDS,
@@ -51,12 +51,10 @@ function scoreCandidate(
     if (exercise.difficulty === 'advanced') score -= 100;
   } else if (experience === 'intermediate') {
     if (exercise.difficulty === 'advanced') score -= 10;
-  } else {
-    if (exercise.difficulty !== 'beginner') score += 5;
   }
 
-  // Variety: penalize exercises already programmed this week.
-  score -= (weeklyUsage.get(exercise.id) ?? 0) * 20;
+  // Repetition is a weak tie-breaker only; matching and comparability win.
+  score -= (weeklyUsage.get(exercise.id) ?? 0) * 4;
   return score;
 }
 
@@ -81,30 +79,32 @@ function pickExercise(
     score: scoreCandidate(exercise, slot, prefs, weeklyUsage),
   }));
   // Deterministic: score desc, then slug asc.
-  scored.sort(
-    (a, b) => b.score - a.score || a.exercise.slug.localeCompare(b.exercise.slug),
-  );
+  scored.sort((a, b) => b.score - a.score || a.exercise.slug.localeCompare(b.exercise.slug));
   return scored[0].exercise;
 }
 
-function repRangeFor(exercise: Exercise, muscle: MuscleGroup) {
+function repRangeFor(exercise: Exercise, muscle: MuscleGroup, prefs: TrainingPreferences) {
   if (exercise.trackingType === 'time') return TIME_RANGE_SECONDS;
-  if (HIGH_REP_MUSCLES.includes(muscle) && exercise.exerciseType === 'isolation') {
+  if (
+    prefs.goal !== 'strength' &&
+    HIGH_REP_MUSCLES.includes(muscle) &&
+    exercise.exerciseType === 'isolation'
+  ) {
     return HIGH_REP_RANGE;
   }
-  return REP_RANGES[exercise.exerciseType];
+  return GOAL_REP_RANGES[prefs.goal][exercise.exerciseType];
 }
 
-function buildSelectionReason(
-  exercise: Exercise,
-  slot: Slot,
-  prefs: TrainingPreferences,
-): string {
+function buildSelectionReason(exercise: Exercise, slot: Slot, prefs: TrainingPreferences): string {
   const parts: string[] = [];
   const muscleLabel = slot.muscle.replace('_', ' ');
-  parts.push(`Covers ${muscleLabel} with a ${exercise.movementPattern.replace(/_/g, ' ')} movement you have equipment for.`);
+  parts.push(
+    `Covers ${muscleLabel} with a ${exercise.movementPattern.replace(/_/g, ' ')} movement you have equipment for.`,
+  );
   if (prefs.musclePriorities.includes(slot.muscle)) {
-    parts.push(`${muscleLabel[0].toUpperCase()}${muscleLabel.slice(1)} is one of your priority muscles, so it gets extra weekly volume.`);
+    parts.push(
+      `${muscleLabel[0].toUpperCase()}${muscleLabel.slice(1)} is one of your priority muscles, so it gets extra weekly volume.`,
+    );
   }
   if (prefs.preferredExerciseSlugs.includes(exercise.slug)) {
     parts.push('You marked this as a preferred exercise.');
@@ -119,7 +119,7 @@ function buildPrescription(
   order: number,
   prefs: TrainingPreferences,
 ): ExercisePrescription {
-  const range = repRangeFor(exercise, slot.muscle);
+  const range = repRangeFor(exercise, slot.muscle, prefs);
   const sets = DEFAULT_SETS[prefs.experience][exercise.exerciseType];
   return {
     exerciseId: exercise.id,
@@ -128,7 +128,7 @@ function buildPrescription(
     minReps: range.min,
     maxReps: range.max,
     targetRir: TARGET_RIR[prefs.experience],
-    restSeconds: REST_SECONDS[exercise.exerciseType],
+    restSeconds: GOAL_REST_SECONDS[prefs.goal][exercise.exerciseType],
     selectionReason: buildSelectionReason(exercise, slot, prefs),
   };
 }
@@ -162,10 +162,7 @@ function weeklySetsByMuscle(
 }
 
 export function generateProgram(prefs: TrainingPreferences, userId: string): TrainingProgram {
-  const excluded = [
-    ...prefs.excludedExerciseSlugs,
-    ...prefs.discomfortExerciseSlugs,
-  ];
+  const excluded = [...prefs.excludedExerciseSlugs, ...prefs.discomfortExerciseSlugs];
   const pool = availableExercises(prefs.equipment, excluded);
   if (pool.length === 0) {
     throw new ProgramGenerationError(
@@ -202,10 +199,7 @@ export function generateProgram(prefs: TrainingPreferences, userId: string): Tra
     }
 
     // Fit the session into the time budget: drop the most optional slots first.
-    while (
-      prescriptions.length > 1 &&
-      estimateDayMinutes(prescriptions) > prefs.sessionMinutes
-    ) {
+    while (prescriptions.length > 1 && estimateDayMinutes(prescriptions) > prefs.sessionMinutes) {
       let dropIndex = -1;
       let maxTrim = -1;
       prescriptions.forEach((p, i) => {
@@ -282,6 +276,11 @@ export function generateProgram(prefs: TrainingPreferences, userId: string): Tra
     prefs.musclePriorities.length > 0
       ? ` Extra weekly sets go to ${prefs.musclePriorities.map((m) => m.replace('_', ' ')).join(', ')}.`
       : '';
+  const goalNote = {
+    hypertrophy: 'Rep ranges emphasize muscle growth with moderate-to-high repetitions.',
+    strength: 'Compound lifts use lower rep ranges and longer rests; accessories stay moderate.',
+    mixed: 'Compound lifts balance strength practice with hypertrophy-focused accessory work.',
+  }[prefs.goal];
 
   return {
     id: uuid(),
@@ -294,8 +293,8 @@ export function generateProgram(prefs: TrainingPreferences, userId: string): Tra
     active: true,
     rationale:
       `A ${split.name} split fits ${prefs.daysPerWeek} training days of about ` +
-      `${prefs.sessionMinutes} minutes. Each muscle is trained with enough weekly sets to grow ` +
-      `at your ${prefs.experience} level, using only equipment you selected.${priorityNote} ` +
+      `${prefs.sessionMinutes} minutes. It uses your ${prefs.goal} goal and ${prefs.experience} ` +
+      `experience level with only the equipment you selected.${priorityNote} ${goalNote} ` +
       'Loads start conservative; the progression engine tightens recommendations from your logged sets.',
   };
 }

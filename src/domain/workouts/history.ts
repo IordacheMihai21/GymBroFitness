@@ -1,6 +1,7 @@
 import { requireExercise } from '@/domain/exercises/catalog';
 import { completedWorkingSets } from '@/domain/progression/engine';
-import type { WorkoutSession } from '@/types';
+import type { Units, WorkoutSession } from '@/types';
+import { displayLoad, unitLabel } from '@/utils/units';
 
 import { estimateOneRepMax, sessionVolumeKg, setEfforts, volumeLoadKg } from './analytics';
 
@@ -28,7 +29,10 @@ export type WorkoutHistorySummary = {
   exerciseSummaries: WorkoutExerciseSummary[];
 };
 
-export function summarizeWorkoutSession(session: WorkoutSession): WorkoutHistorySummary {
+export function summarizeWorkoutSession(
+  session: WorkoutSession,
+  units: Units = 'kg',
+): WorkoutHistorySummary {
   const exerciseSummaries = session.exercises.map((exercise) => {
     const meta = requireExercise(exercise.exerciseId);
     const completed = completedWorkingSets(exercise.sets);
@@ -37,7 +41,7 @@ export function summarizeWorkoutSession(session: WorkoutSession): WorkoutHistory
       name: meta.name,
       completedSets: completed.length,
       volumeKg: volumeLoadKg(exercise.sets),
-      bestSetLabel: bestSetLabel(completed),
+      bestSetLabel: bestSetLabel(completed, units),
       bestE1rmKg: bestEstimatedOneRepMax(completed),
     };
   });
@@ -88,7 +92,7 @@ type LabelCandidate = {
   durationSeconds: number | null;
 };
 
-function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>): string {
+function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>, units: Units): string {
   const candidates: LabelCandidate[] = sets.flatMap((s) => [
     { loadKg: s.loadKg, reps: s.reps, durationSeconds: s.durationSeconds },
     ...(s.subEfforts ?? []).map((e) => ({ loadKg: e.loadKg, reps: e.reps, durationSeconds: null })),
@@ -101,6 +105,8 @@ function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>): string {
     return candidateScore > currentScore ? candidate : current;
   });
   if (best.durationSeconds != null && best.durationSeconds > 0) return `${best.durationSeconds}s`;
-  if (best.loadKg != null && best.loadKg > 0) return `${best.loadKg} kg x ${best.reps ?? 0}`;
+  if (best.loadKg != null && best.loadKg > 0) {
+    return `${displayLoad(best.loadKg, units)} ${unitLabel(units)} x ${best.reps ?? 0}`;
+  }
   return `${best.reps ?? 0} reps`;
 }

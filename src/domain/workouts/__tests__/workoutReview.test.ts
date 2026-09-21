@@ -95,7 +95,7 @@ describe('workout session review', () => {
     });
     expect(review.progression[0]).toMatchObject({
       exerciseId: 'barbell-bench-press',
-      actionLabel: 'Add reps',
+      actionLabel: 'Repeat',
     });
     expect(review.nextAction).toContain('repeat this setup');
   });

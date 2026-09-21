@@ -1,13 +1,16 @@
-import { requireExercise } from '@/domain/exercises/catalog';
+import { requireExercise, sameExerciseIdentity } from '@/domain/exercises/catalog';
 import { completedWorkingSets, runProgression } from '@/domain/progression/engine';
 import type {
   ExercisePerformanceHistory,
   ExercisePrescription,
   ExperienceLevel,
+  NutritionContext,
   PerformedSet,
   ProgressionDecision,
   WorkoutSession,
+  Units,
 } from '@/types';
+import { displayLoad, unitLabel } from '@/utils/units';
 
 export type ProgressionSignal = {
   sessionId: string;
@@ -22,7 +25,6 @@ export type TargetToBeat = {
   exerciseId: string;
   exerciseName: string;
   decision: ProgressionDecision;
-  lastSession: { loadKg: number; reps: number; rir: number };
   lastSignal: ProgressionSignal | null;
   previousSessionCount: number;
   targetText: string;
@@ -34,6 +36,7 @@ type BuildTargetInput = {
   prescription: ExercisePrescription;
   history: WorkoutSession[];
   userExperience: ExperienceLevel;
+  nutritionContext?: NutritionContext;
   isPriorityMuscle?: boolean;
   weeklySetsForPrimaryMuscle?: number;
   reportedDiscomfort?: boolean;
@@ -52,18 +55,18 @@ export function buildProgressionTarget(input: BuildTargetInput): TargetToBeat {
     previousSessions,
     exercise,
     userExperience: input.userExperience,
+    nutritionContext: input.nutritionContext,
     isPriorityMuscle: input.isPriorityMuscle,
     weeklySetsForPrimaryMuscle: input.weeklySetsForPrimaryMuscle,
     reportedDiscomfort: input.reportedDiscomfort,
+    readiness: latest?.readiness,
   });
   const lastSignal = latest ? bestSignal(latest) : null;
-  const lastSession = lastSignalToLegacy(lastSignal, input.prescription);
 
   return {
     exerciseId: exercise.id,
     exerciseName: exercise.name,
     decision,
-    lastSession,
     lastSignal,
     previousSessionCount: histories.length,
     targetText: targetText(decision, input.prescription, lastSignal),
@@ -72,58 +75,21 @@ export function buildProgressionTarget(input: BuildTargetInput): TargetToBeat {
   };
 }
 
-/**
- * Back-compat wrapper for the Home hero. Prefer buildProgressionTarget when
- * history is available.
- */
-export function computeTargetToBeat(
-  topPrescription: ExercisePrescription,
-  userExperience: ExperienceLevel,
-  lastSession: { loadKg: number; reps: number; rir: number },
-): TargetToBeat {
-  const decision = runProgression({
-    prescription: topPrescription,
-    performedSets: fabricatedSets(lastSession),
-    previousSessions: [],
-    exercise: requireExercise(topPrescription.exerciseId),
-    userExperience,
-  });
-  const exercise = requireExercise(topPrescription.exerciseId);
-  const lastSignal = {
-    sessionId: 'seed',
-    date: new Date().toISOString(),
-    loadKg: lastSession.loadKg,
-    reps: lastSession.reps,
-    durationSeconds: null,
-    rir: lastSession.rir,
-  };
-
-  return {
-    exerciseId: exercise.id,
-    exerciseName: exercise.name,
-    decision,
-    lastSession,
-    lastSignal,
-    previousSessionCount: 1,
-    targetText: targetText(decision, topPrescription, lastSignal),
-    targetSummary: targetSummary(decision, lastSignal),
-    winCondition: winCondition(decision, topPrescription),
-  };
-}
-
 export function buildProgramProgressionTargets({
   prescriptions,
   history,
   userExperience,
+  nutritionContext,
 }: {
   prescriptions: ExercisePrescription[];
   history: WorkoutSession[];
   userExperience: ExperienceLevel;
+  nutritionContext?: NutritionContext;
 }): Map<string, TargetToBeat> {
   return new Map(
     prescriptions.map((prescription) => [
       prescription.exerciseId,
-      buildProgressionTarget({ prescription, history, userExperience }),
+      buildProgressionTarget({ prescription, history, userExperience, nutritionContext }),
     ]),
   );
 }
@@ -132,10 +98,12 @@ export function buildLatestExerciseProgressionTarget({
   exerciseId,
   history,
   userExperience,
+  nutritionContext,
 }: {
   exerciseId: string;
   history: WorkoutSession[];
   userExperience: ExperienceLevel;
+  nutritionContext?: NutritionContext;
 }): TargetToBeat | null {
   const latest = exerciseHistory(history, exerciseId).at(-1);
   if (!latest) return null;
@@ -143,6 +111,7 @@ export function buildLatestExerciseProgressionTarget({
     prescription: latest.prescription,
     history,
     userExperience,
+    nutritionContext,
   });
 }
 
@@ -167,24 +136,44 @@ export function progressionActionLabel(action: ProgressionDecision['action']): s
   }
 }
 
-export function formatProgressionSignal(signal: ProgressionSignal | null): string {
+export function formatProgressionSignal(
+  signal: ProgressionSignal | null,
+  units: Units = 'kg',
+): string {
   if (!signal) return 'No saved benchmark yet';
   if (signal.durationSeconds != null && signal.durationSeconds > 0) {
     return `${signal.durationSeconds}s${signal.rir != null ? ` @ RIR ${signal.rir}` : ''}`;
   }
   if (signal.loadKg != null && signal.loadKg > 0) {
-    return `${signal.loadKg} kg x ${signal.reps ?? 0}${signal.rir != null ? ` @ RIR ${signal.rir}` : ''}`;
+    return `${displayLoad(signal.loadKg, units)} ${unitLabel(units)} x ${signal.reps ?? 0}${signal.rir != null ? ` @ RIR ${signal.rir}` : ''}`;
   }
   return `${signal.reps ?? 0} reps${signal.rir != null ? ` @ RIR ${signal.rir}` : ''}`;
 }
 
-export function formatDecisionTarget(decision: ProgressionDecision): string {
-  const load = decision.nextLoad != null ? `${decision.nextLoad} kg` : null;
+export function formatDecisionTarget(decision: ProgressionDecision, units: Units = 'kg'): string {
+  const load =
+    decision.nextLoad != null
+      ? `${displayLoad(decision.nextLoad, units)} ${unitLabel(units)}`
+      : null;
   const reps =
     decision.nextMinReps === decision.nextMaxReps
       ? `${decision.nextMaxReps}`
       : `${decision.nextMinReps}-${decision.nextMaxReps}`;
   return load ? `${load} x ${reps}` : `${reps} reps`;
+}
+
+export function formatTargetSummary(target: TargetToBeat, units: Units = 'kg'): string {
+  const label = progressionActionLabel(target.decision.action);
+  if (!target.lastSignal) return `${label}: establish a clean first benchmark.`;
+  return `${label}: ${formatDecisionTarget(target.decision, units)}. Last: ${formatProgressionSignal(target.lastSignal, units)}.`;
+}
+
+export function formatTargetWinCondition(target: TargetToBeat, units: Units = 'kg'): string {
+  const { decision } = target;
+  if (decision.action === 'increase_load' && decision.nextLoad != null) {
+    return `Own ${displayLoad(decision.nextLoad, units)} ${unitLabel(units)} inside ${decision.nextMinReps}-${decision.nextMaxReps} reps.`;
+  }
+  return target.winCondition;
 }
 
 function exerciseHistory(
@@ -195,7 +184,7 @@ function exerciseHistory(
     .filter((session) => session.status === 'completed')
     .flatMap((session) =>
       session.exercises
-        .filter((exercise) => exercise.exerciseId === exerciseId)
+        .filter((exercise) => sameExerciseIdentity(exercise.exerciseId, exerciseId))
         .flatMap((exercise) => {
           const sets = completedWorkingSets(exercise.sets);
           if (sets.length === 0) return [];
@@ -205,6 +194,7 @@ function exerciseHistory(
               date: session.finishedAt ?? session.startedAt,
               prescription: exercise.prescription,
               sets,
+              readiness: session.readiness,
             },
           ];
         }),
@@ -238,17 +228,6 @@ function signalScore(set: PerformedSet): number {
   const reps = set.reps ?? 0;
   if (load > 0) return load * Math.max(1, reps);
   return reps;
-}
-
-function lastSignalToLegacy(
-  signal: ProgressionSignal | null,
-  prescription: ExercisePrescription,
-): { loadKg: number; reps: number; rir: number } {
-  return {
-    loadKg: signal?.loadKg ?? 0,
-    reps: signal?.reps ?? prescription.minReps,
-    rir: signal?.rir ?? prescription.targetRir,
-  };
 }
 
 function targetText(
@@ -294,25 +273,4 @@ function winCondition(decision: ProgressionDecision, prescription: ExercisePresc
     case 'needs_more_data':
       return `Log all working sets and RIR to establish the baseline.`;
   }
-}
-
-function fabricatedSets(lastSession: {
-  loadKg: number;
-  reps: number;
-  rir: number;
-}): PerformedSet[] {
-  return [
-    {
-      id: 'fabricated-top-set',
-      setNumber: 1,
-      kind: 'working',
-      loadKg: lastSession.loadKg,
-      reps: lastSession.reps,
-      durationSeconds: null,
-      rir: lastSession.rir,
-      completed: true,
-      skipped: false,
-      completedAt: null,
-    },
-  ];
 }

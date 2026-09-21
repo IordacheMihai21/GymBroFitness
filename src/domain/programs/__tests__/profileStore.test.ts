@@ -28,6 +28,7 @@ describe('profileStore', () => {
       },
       preferences: {
         ...DEMO_PREFERENCES,
+        nutritionContext: 'deficit',
         daysPerWeek: 5,
         sessionMinutes: 75,
         coachingTone: 'science',
@@ -38,7 +39,12 @@ describe('profileStore', () => {
     await expect(loadTrainingProfile()).resolves.toMatchObject({
       source: 'local',
       user: { id: 'local-user', displayName: 'Mihai' },
-      preferences: { daysPerWeek: 5, sessionMinutes: 75, coachingTone: 'science' },
+      preferences: {
+        daysPerWeek: 5,
+        sessionMinutes: 75,
+        coachingTone: 'science',
+        nutritionContext: 'deficit',
+      },
     });
   });
 
@@ -54,10 +60,26 @@ describe('profileStore', () => {
     expect(updated.preferences.musclePriorities).toEqual(['chest', 'shoulders', 'biceps']);
   });
 
-  it('clears corrupt local payloads and returns fallback', async () => {
-    await AsyncStorage.setItem('@GymBroFitness/training-profile/v1', '{"version":1,"user":null}');
+  it.each(['strength', 'mixed'] as const)('reloads the %s training goal', async (goal) => {
+    await saveTrainingProfile({
+      user: DEFAULT_TRAINING_PROFILE.user,
+      preferences: { ...DEMO_PREFERENCES, goal },
+    });
+
+    await expect(loadTrainingProfile()).resolves.toMatchObject({
+      source: 'local',
+      preferences: { goal },
+    });
+  });
+
+  it('preserves corrupt local payloads for recovery and returns fallback', async () => {
+    const raw = '{"version":1,"user":null}';
+    await AsyncStorage.setItem('@GymBroFitness/training-profile/v1', raw);
     await expect(loadTrainingProfile()).resolves.toEqual(DEFAULT_TRAINING_PROFILE);
-    await expect(AsyncStorage.getItem('@GymBroFitness/training-profile/v1')).resolves.toBeNull();
+    await expect(AsyncStorage.getItem('@GymBroFitness/training-profile/v1')).resolves.toBe(raw);
+    await expect(AsyncStorage.getItem('@GymBroFitness/training-profile/v1/recovery')).resolves.toBe(
+      raw,
+    );
   });
 
   it('can reset to fallback explicitly', async () => {

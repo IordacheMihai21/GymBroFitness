@@ -1,5 +1,7 @@
 # GymBroFitness - Research, Product Plan si Roadmap
 
+> Document istoric. Ordinea curentă de implementare și revizuirea propunerilor despre scoruri, recuperare și volum sunt în [planul integrat din 20 septembrie 2026](IMPLEMENTATION_MASTER_PLAN.md). Funcțiile descrise mai jos trebuie confruntate cu auditul actual înainte de implementare.
+
 Data: 2026-09-15  
 Scope: starea actuala a aplicatiei, research pe aplicatii similare, repo-uri GitHub, widget-uri/librarii utile, principii de hypertrophy/strength training, apoi plan concret de creat, imbunatatit, rutat si conectat.
 

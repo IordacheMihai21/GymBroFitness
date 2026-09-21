@@ -1,3 +1,4 @@
+import { sameExerciseIdentity } from '@/domain/exercises/catalog';
 import { completedWorkingSets } from '@/domain/progression/engine';
 import type { WorkoutSession } from '@/types';
 
@@ -24,7 +25,9 @@ export function buildExerciseTrend(
   const points: ExerciseTrendPoint[] = [];
 
   for (const session of history) {
-    const performed = session.exercises.find((ex) => ex.exerciseId === exerciseId);
+    const performed = session.exercises.find((ex) =>
+      sameExerciseIdentity(ex.exerciseId, exerciseId),
+    );
     if (!performed) continue;
     const completed = completedWorkingSets(performed.sets);
     if (completed.length === 0) continue;

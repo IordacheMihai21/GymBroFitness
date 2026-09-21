@@ -119,9 +119,7 @@ describe('muscle intelligence', () => {
         ]),
       ]),
       makeSession('old', '2026-09-07T10:00:00.000Z', [
-        makeExercise('barbell-bench-press', [
-          makeSet('c', { loadKg: 100, reps: 8 }),
-        ]),
+        makeExercise('barbell-bench-press', [makeSet('c', { loadKg: 100, reps: 8 })]),
       ]),
     ];
 
@@ -136,7 +134,7 @@ describe('muscle intelligence', () => {
     expect(records[0].bestE1rmKg).toBeGreaterThan(120);
   });
 
-  it('computes fatigue and strength rank from completed workout data', () => {
+  it('summarizes recent exposure without ranking incomparable muscle loads', () => {
     const history = [
       makeSession('upper', '2026-09-14T10:00:00.000Z', [
         makeExercise('barbell-bench-press', [
@@ -145,9 +143,7 @@ describe('muscle intelligence', () => {
         ]),
       ]),
       makeSession('lower', '2026-09-13T10:00:00.000Z', [
-        makeExercise('barbell-back-squat', [
-          makeSet('c', { loadKg: 140, reps: 5, rir: 2 }),
-        ]),
+        makeExercise('barbell-back-squat', [makeSet('c', { loadKg: 140, reps: 5, rir: 2 })]),
       ]),
     ];
 
@@ -157,13 +153,48 @@ describe('muscle intelligence', () => {
       new Date('2026-09-14T12:00:00.000Z'),
     );
     const chest = intelligence.find((item) => item.muscle === 'chest');
-    const quads = intelligence.find((item) => item.muscle === 'quadriceps');
 
-    expect(chest?.fatigue.weeklySets).toBe(2);
-    expect(chest?.fatigue.lastSessionSets).toBe(2);
-    expect(chest?.fatigue.label).not.toBe('Fresh');
-    expect(quads?.rank.rank).toBe(1);
-    expect(chest?.rank.rank).toBe(2);
+    expect(chest?.trainingLoad.weeklySets).toBe(2);
+    expect(chest?.trainingLoad.lastSessionSets).toBe(2);
+    expect(chest?.trainingLoad.label).toBe('Recent exposure');
+    expect(chest?.trainingLoad).toMatchObject({
+      directSets: 2,
+      indirectExposures: 0,
+      weightedEstimate: 2,
+      contributionModelVersion: 1,
+    });
+    const triceps = intelligence.find((item) => item.muscle === 'triceps');
+    expect(triceps?.trainingLoad).toMatchObject({
+      directSets: 0,
+      indirectExposures: 2,
+      estimatedSecondarySets: 1,
+      weightedEstimate: 1,
+      label: 'Indirect exposure',
+    });
+    expect(triceps?.signal.label).toBe('Indirect exposure logged');
+    expect(intelligence.every((item) => !('rank' in item))).toBe(true);
+  });
+
+  it('keeps unmapped secondary work visible without assigning a global half-set', () => {
+    const history = [
+      makeSession('upper', '2026-09-14T10:00:00.000Z', [
+        makeExercise('machine-chest-press', [makeSet('a'), makeSet('b'), makeSet('c')]),
+      ]),
+    ];
+    const intelligence = buildMuscleIntelligence(
+      [programDay()],
+      history,
+      new Date('2026-09-14T12:00:00.000Z'),
+    );
+    const triceps = intelligence.find((item) => item.muscle === 'triceps');
+
+    expect(triceps?.trainingLoad).toMatchObject({
+      directSets: 0,
+      indirectExposures: 3,
+      estimatedSecondarySets: 0,
+      weightedEstimate: 0,
+      unmappedIndirectExposures: 3,
+    });
   });
 
   it('builds recent work, form quality, and training signal for each muscle', () => {

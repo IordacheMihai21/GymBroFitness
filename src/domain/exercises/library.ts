@@ -1,5 +1,6 @@
-import type { MuscleGroup } from '@/types';
+import type { Exercise, MuscleGroup } from '@/types';
 
+import { getExercise } from './catalog';
 import libraryData from './seed/library.json';
 
 /**
@@ -22,6 +23,34 @@ export type LibraryExercise = {
 };
 
 export const EXERCISE_LIBRARY = libraryData as LibraryExercise[];
+
+/**
+ * Explicit bridge from reference-only data to the smaller loggable catalog.
+ * Entries are reviewed manually; absence means "reference only", never an
+ * automatic fuzzy conversion.
+ */
+export const REFERENCE_TO_CATALOG_ID: Readonly<Record<string, string>> = {
+  Barbell_Squat: 'barbell-back-squat',
+  Bent_Over_Barbell_Row: 'barbell-row',
+  Cable_Crossover: 'cable-fly',
+  'Chin-Up': 'chin-up',
+  'Dips_-_Chest_Version': 'dip',
+  Dumbbell_Bench_Press: 'dumbbell-bench-press',
+  Incline_Dumbbell_Press: 'incline-dumbbell-press',
+  Leg_Press: 'leg-press',
+  Machine_Bench_Press: 'machine-chest-press',
+  Plank: 'plank',
+  Pullups: 'pull-up',
+  Pushups: 'push-up',
+  Romanian_Deadlift: 'romanian-deadlift',
+  Seated_Calf_Raise: 'seated-calf-raise',
+  Standing_Military_Press: 'overhead-press',
+};
+
+export function loggableExerciseForReference(reference: LibraryExercise): Exercise | null {
+  const catalogId = REFERENCE_TO_CATALOG_ID[reference.id];
+  return catalogId ? (getExercise(catalogId) ?? null) : null;
+}
 
 export function searchLibrary(
   query: string,

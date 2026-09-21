@@ -4,7 +4,7 @@ import type { MuscleGroup } from '@/types';
  * Weekly hard-set volume landmarks (MV/MEV/MAV/MRV) per muscle group, in the
  * style popularized by Renaissance Periodization: the minimum to maintain
  * size, the minimum effective dose to grow, the zone that produces the best
- * return, and the recoverable ceiling before junk volume. Ranges below are
+ * return, and an upper reference for unusually high direct-set counts. Ranges below are
  * commonly published approximations for an intermediate/advanced natural
  * lifter — they are a starting point for autoregulation, not a hard rule,
  * which is why the classifier always returns a zone alongside the raw
@@ -48,18 +48,21 @@ export type VolumeClassification = {
 };
 
 const ZONE_LABELS: Record<VolumeZone, string> = {
-  below_mv: 'Below maintenance',
-  maintenance: 'Maintaining, not growing',
-  growth: 'Growth zone',
-  frontier: 'Frontier — watch recovery',
-  excessive: 'Excessive — likely junk volume',
+  below_mv: 'Below general reference',
+  maintenance: 'Maintenance reference',
+  growth: 'Moderate reference range',
+  frontier: 'High reference range',
+  excessive: 'Above general reference',
 };
 
 export function volumeZoneLabel(zone: VolumeZone): string {
   return ZONE_LABELS[zone];
 }
 
-export function classifyWeeklyVolume(muscle: MuscleGroup, weeklySets: number): VolumeClassification {
+export function classifyWeeklyVolume(
+  muscle: MuscleGroup,
+  weeklySets: number,
+): VolumeClassification {
   const landmarks = VOLUME_LANDMARKS[muscle];
   let zone: VolumeZone;
   if (weeklySets < landmarks.mv) zone = 'below_mv';

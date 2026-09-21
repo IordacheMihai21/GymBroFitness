@@ -116,6 +116,16 @@ describe('programEditing', () => {
     expect(next.days[0].prescriptions.at(-1)?.order).toBe(2);
   });
 
+  it('uses goal-specific defaults for manually added compound exercises', () => {
+    const benchPress = requireExercise('barbell-bench-press');
+    const manual = buildManualPrescription(benchPress, 0, {
+      ...preferences,
+      goal: 'strength',
+    });
+
+    expect(manual).toMatchObject({ minReps: 3, maxReps: 6, restSeconds: 240 });
+  });
+
   it('removes an exercise without accidentally bridging supersets', () => {
     const next = removeProgramPrescription(
       program([

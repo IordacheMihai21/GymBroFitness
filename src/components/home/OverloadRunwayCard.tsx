@@ -3,25 +3,31 @@ import { Card, Icon } from 'react-native-paper';
 
 import {
   formatProgressionSignal,
+  formatDecisionTarget,
   progressionActionLabel,
   type TargetToBeat,
 } from '@/domain/workouts/targetToBeat';
 import { useTheme } from '@/theme';
+import type { Units } from '@/types';
 
 type OverloadRunwayCardProps = {
   target: TargetToBeat;
+  units: Units;
 };
 
-export function OverloadRunwayCard({ target }: OverloadRunwayCardProps) {
+export function OverloadRunwayCard({ target, units }: OverloadRunwayCardProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const { decision } = target;
+  const comparableSessions = Number(decision.supportingMetrics.comparableHistorySessions ?? 0);
   const confidenceCopy =
-    decision.confidence === 'high'
-      ? 'High confidence'
-      : decision.confidence === 'medium'
-        ? 'Medium confidence'
-        : 'Needs one more signal';
-  const lastValue = target.lastSignal ? formatProgressionSignal(target.lastSignal) : 'Baseline';
+    comparableSessions >= 2
+      ? `${comparableSessions} comparable sessions`
+      : comparableSessions === 1
+        ? '1 comparable session'
+        : 'Limited history';
+  const lastValue = target.lastSignal
+    ? formatProgressionSignal(target.lastSignal, units)
+    : 'Baseline';
 
   return (
     <Card
@@ -52,7 +58,7 @@ export function OverloadRunwayCard({ target }: OverloadRunwayCardProps) {
         <View style={styles.runway}>
           <RunwayStep label="Last signal" value={lastValue} />
           <View style={[styles.connector, { backgroundColor: colors.borderStrong }]} />
-          <RunwayStep label="Today target" value={target.targetText} active />
+          <RunwayStep label="Today target" value={formatDecisionTarget(decision, units)} active />
           <View style={[styles.connector, { backgroundColor: colors.borderStrong }]} />
           <RunwayStep label="Decision" value={progressionActionLabel(decision.action)} />
         </View>

@@ -29,6 +29,7 @@ import {
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
 import {
   buildLatestExerciseProgressionTarget,
+  formatDecisionTarget,
   formatProgressionSignal,
   progressionActionLabel,
   type TargetToBeat,
@@ -36,7 +37,8 @@ import {
 import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
-import type { EquipmentType, Exercise, MuscleGroup, WorkoutSession } from '@/types';
+import type { EquipmentType, Exercise, MuscleGroup, Units, WorkoutSession } from '@/types';
+import { displayLoad, formatLoad, formatVolumeLoad, unitLabel } from '@/utils/units';
 
 export default function ExerciseDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -67,8 +69,8 @@ export default function ExerciseDetailScreen() {
 
   const resolved = useMemo(() => resolveExercise(exerciseId), [exerciseId]);
   const intelligence = useMemo(
-    () => buildExerciseIntelligence(history, exerciseId),
-    [exerciseId, history],
+    () => buildExerciseIntelligence(history, exerciseId, preferences.units),
+    [exerciseId, history, preferences.units],
   );
   const trend = useMemo(() => buildExerciseTrend(history, exerciseId), [history, exerciseId]);
   const progressionTarget = useMemo(
@@ -77,13 +79,18 @@ export default function ExerciseDetailScreen() {
         exerciseId,
         history,
         userExperience: preferences.experience,
+        nutritionContext: preferences.nutritionContext,
       }),
-    [exerciseId, history, preferences.experience],
+    [exerciseId, history, preferences.experience, preferences.nutritionContext],
   );
   const e1rmPoints = trend.filter(
     (p): p is ExerciseTrendPoint & { e1rmKg: number } => p.e1rmKg != null,
   );
   const chartPoints = e1rmPoints.slice(-8);
+  const chartDisplayPoints = chartPoints.map((point) => ({
+    ...point,
+    e1rmKg: displayLoad(point.e1rmKg, preferences.units) ?? 0,
+  }));
   const latest = e1rmPoints.at(-1) ?? null;
   const first = e1rmPoints[0] ?? null;
   const trendDelta = latest && first ? latest.e1rmKg - first.e1rmKg : null;
@@ -97,12 +104,15 @@ export default function ExerciseDetailScreen() {
   };
 
   const lineBaseline =
-    chartPoints.length > 0 ? Math.min(...chartPoints.map((p) => p.e1rmKg)) - 2 : 0;
+    chartDisplayPoints.length > 0 ? Math.min(...chartDisplayPoints.map((p) => p.e1rmKg)) - 2 : 0;
   const lineMax =
-    chartPoints.length > 0 ? Math.max(...chartPoints.map((p) => p.e1rmKg)) - lineBaseline + 2 : 1;
-  const lineData: lineDataItem[] = chartPoints.map((p) => ({
+    chartDisplayPoints.length > 0
+      ? Math.max(...chartDisplayPoints.map((p) => p.e1rmKg)) - lineBaseline + 2
+      : 1;
+  const lineData: lineDataItem[] = chartDisplayPoints.map((p) => ({
     value: p.e1rmKg - lineBaseline,
     label: '',
+    onPress: () => router.push({ pathname: '/history', params: { sessionId: p.sessionId } }),
   }));
 
   return (
@@ -117,7 +127,12 @@ export default function ExerciseDetailScreen() {
       }}
     >
       <View style={styles.headerRow}>
-        <IconButton mode="contained-tonal" icon="chevron-left" onPress={leave} />
+        <IconButton
+          mode="contained-tonal"
+          icon="chevron-left"
+          accessibilityLabel="Back"
+          onPress={leave}
+        />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[typography.caption, { color: colors.textMuted }]}>Exercise dossier</Text>
           <Text style={[typography.title, { color: colors.textPrimary }]} numberOfLines={1}>
@@ -140,6 +155,7 @@ export default function ExerciseDetailScreen() {
             catalogExercise={resolved.catalogExercise}
             libraryExercise={resolved.libraryExercise}
             intelligence={intelligence}
+            units={preferences.units}
             formAiReady={!!formConfig}
             onStartLift={() =>
               resolved.catalogExercise &&
@@ -167,11 +183,12 @@ export default function ExerciseDetailScreen() {
             latest={latest}
             trendDelta={trendDelta}
             hasAnyTrend={trend.length > 0}
+            units={preferences.units}
           />
 
-          <ProgressionCard target={progressionTarget} />
+          <ProgressionCard target={progressionTarget} units={preferences.units} />
 
-          <LatestSessionCard session={intelligence.latestSession} />
+          <LatestSessionCard session={intelligence.latestSession} units={preferences.units} />
 
           <FormCard intelligence={intelligence} />
 
@@ -185,7 +202,13 @@ export default function ExerciseDetailScreen() {
             onOpenExercise={(nextId) => router.push(`/exercise/${nextId}`)}
           />
 
-          <SessionsCard sessions={intelligence.sessions} />
+          <SessionsCard
+            sessions={intelligence.sessions}
+            units={preferences.units}
+            onOpenSession={(sourceSessionId) =>
+              router.push({ pathname: '/history', params: { sessionId: sourceSessionId } })
+            }
+          />
         </>
       )}
     </Animated.ScrollView>
@@ -197,6 +220,7 @@ function HeroCard({
   catalogExercise,
   libraryExercise,
   intelligence,
+  units,
   formAiReady,
   onStartLift,
   onFormCheck,
@@ -205,6 +229,7 @@ function HeroCard({
   catalogExercise: Exercise | null;
   libraryExercise: LibraryExercise | null;
   intelligence: ExerciseIntelligence;
+  units: Units;
   formAiReady: boolean;
   onStartLift: () => void;
   onFormCheck: () => void;
@@ -269,15 +294,17 @@ function HeroCard({
           <MetricBlock label="sessions" value={String(intelligence.totalSessions)} />
           <MetricBlock
             label="best load"
-            value={intelligence.bestLoadKg != null ? `${intelligence.bestLoadKg}kg` : '--'}
+            value={
+              intelligence.bestLoadKg != null ? formatLoad(intelligence.bestLoadKg, units) : '--'
+            }
           />
           <MetricBlock
             label="e1RM"
             value={
-              intelligence.bestE1rmKg != null ? `${Math.round(intelligence.bestE1rmKg)}kg` : '--'
+              intelligence.bestE1rmKg != null ? formatLoad(intelligence.bestE1rmKg, units) : '--'
             }
           />
-          <MetricBlock label="volume" value={formatVolume(intelligence.totalVolumeKg)} />
+          <MetricBlock label="volume" value={formatVolumeLoad(intelligence.totalVolumeKg, units)} />
         </View>
 
         <View
@@ -325,14 +352,17 @@ function TrendCard({
   latest,
   trendDelta,
   hasAnyTrend,
+  units,
 }: {
   points: lineDataItem[];
   lineMax: number;
   latest: (ExerciseTrendPoint & { e1rmKg: number }) | null;
   trendDelta: number | null;
   hasAnyTrend: boolean;
+  units: Units;
 }) {
   const { colors, radius, spacing, typography } = useTheme();
+  const [chartWidth, setChartWidth] = useState(0);
 
   return (
     <Card
@@ -352,43 +382,48 @@ function TrendCard({
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={[typography.display, { color: colors.textPrimary }]}>
-              {latest ? Math.round(latest.e1rmKg) : '--'}
+              {latest ? displayLoad(latest.e1rmKg, units) : '--'}
             </Text>
             <Text style={[typography.micro, { color: colors.textMuted }]}>
               {trendDelta != null
-                ? `${trendDelta >= 0 ? '+' : ''}${trendDelta.toFixed(1)} kg`
-                : 'kg'}
+                ? `${trendDelta >= 0 ? '+' : ''}${displayLoad(trendDelta, units)} ${unitLabel(units)}`
+                : unitLabel(units)}
             </Text>
           </View>
         </View>
 
         {points.length > 0 ? (
-          <View style={styles.lineChartFrame}>
-            <LineChart
-              data={points}
-              height={130}
-              width={300}
-              maxValue={lineMax}
-              spacing={points.length > 1 ? 280 / (points.length - 1) : 0}
-              initialSpacing={0}
-              endSpacing={0}
-              thickness={3}
-              color={colors.accent}
-              curved={points.length > 2}
-              areaChart
-              startFillColor={colors.accent}
-              endFillColor={colors.accent}
-              startOpacity={0.2}
-              endOpacity={0.02}
-              hideYAxisText
-              xAxisThickness={0}
-              yAxisThickness={0}
-              yAxisLabelWidth={0}
-              dataPointsColor={colors.accent}
-              dataPointsRadius={4}
-              disableScroll
-              backgroundColor="transparent"
-            />
+          <View
+            style={styles.lineChartFrame}
+            onLayout={(event) => setChartWidth(event.nativeEvent.layout.width)}
+          >
+            {chartWidth > 0 ? (
+              <LineChart
+                data={points}
+                height={130}
+                width={Math.max(1, chartWidth - 8)}
+                maxValue={lineMax}
+                spacing={points.length > 1 ? (chartWidth - 16) / (points.length - 1) : 0}
+                initialSpacing={0}
+                endSpacing={0}
+                thickness={3}
+                color={colors.accent}
+                curved={points.length > 2}
+                areaChart
+                startFillColor={colors.accent}
+                endFillColor={colors.accent}
+                startOpacity={0.2}
+                endOpacity={0.02}
+                hideYAxisText
+                xAxisThickness={0}
+                yAxisThickness={0}
+                yAxisLabelWidth={0}
+                dataPointsColor={colors.accent}
+                dataPointsRadius={4}
+                disableScroll
+                backgroundColor="transparent"
+              />
+            ) : null}
           </View>
         ) : (
           <EmptyPanel
@@ -401,12 +436,17 @@ function TrendCard({
             }
           />
         )}
+        {points.length > 0 ? (
+          <Text style={[typography.micro, { color: colors.textMuted }]}>
+            Tap a point to open its source session.
+          </Text>
+        ) : null}
       </Card.Content>
     </Card>
   );
 }
 
-function ProgressionCard({ target }: { target: TargetToBeat | null }) {
+function ProgressionCard({ target, units }: { target: TargetToBeat | null; units: Units }) {
   const { colors, radius, spacing, typography } = useTheme();
 
   return (
@@ -438,10 +478,10 @@ function ProgressionCard({ target }: { target: TargetToBeat | null }) {
             >
               <Text style={[typography.micro, { color: colors.accent }]}>Target</Text>
               <Text style={[typography.heading, { color: colors.textPrimary }]}>
-                {target.targetText}
+                {formatDecisionTarget(target.decision, units)}
               </Text>
               <Text style={[typography.caption, { color: colors.textSecondary }]}>
-                Last: {formatProgressionSignal(target.lastSignal)}
+                Last: {formatProgressionSignal(target.lastSignal, units)}
               </Text>
             </View>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
@@ -460,7 +500,13 @@ function ProgressionCard({ target }: { target: TargetToBeat | null }) {
   );
 }
 
-function LatestSessionCard({ session }: { session: ExerciseSessionSummary | null }) {
+function LatestSessionCard({
+  session,
+  units,
+}: {
+  session: ExerciseSessionSummary | null;
+  units: Units;
+}) {
   const { colors, radius, spacing, typography } = useTheme();
 
   return (
@@ -490,7 +536,7 @@ function LatestSessionCard({ session }: { session: ExerciseSessionSummary | null
           <>
             <View style={styles.metricGrid}>
               <MetricBlock label="sets" value={String(session.completedSets)} />
-              <MetricBlock label="volume" value={formatVolume(session.volumeKg)} />
+              <MetricBlock label="volume" value={formatVolumeLoad(session.volumeKg, units)} />
               <MetricBlock label="best" value={session.bestSetLabel} />
               <MetricBlock
                 label="RIR"
@@ -671,7 +717,15 @@ function AlternativesCard({
   );
 }
 
-function SessionsCard({ sessions }: { sessions: ExerciseSessionSummary[] }) {
+function SessionsCard({
+  sessions,
+  units,
+  onOpenSession,
+}: {
+  sessions: ExerciseSessionSummary[];
+  units: Units;
+  onOpenSession: (sessionId: string) => void;
+}) {
   const { colors, radius, spacing, typography } = useTheme();
 
   return (
@@ -692,8 +746,12 @@ function SessionsCard({ sessions }: { sessions: ExerciseSessionSummary[] }) {
             <View key={session.sessionId}>
               <List.Item
                 title={`${session.dayName} · ${formatDate(session.performedAt)}`}
-                description={`${session.completedSets} sets · ${formatVolume(session.volumeKg)} · best ${session.bestSetLabel}`}
+                description={`${session.completedSets} sets · ${formatVolumeLoad(session.volumeKg, units)} · best ${session.bestSetLabel}`}
+                onPress={() => onOpenSession(session.sessionId)}
                 left={(props) => <List.Icon {...props} icon="history" color={colors.accent} />}
+                right={(props) => (
+                  <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+                )}
                 titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
                 descriptionStyle={[typography.caption, { color: colors.textMuted }]}
               />
@@ -834,10 +892,6 @@ function formatDate(iso: string): string {
     month: 'short',
     day: 'numeric',
   }).format(date);
-}
-
-function formatVolume(volumeKg: number): string {
-  return volumeKg >= 1000 ? `${(volumeKg / 1000).toFixed(1)}t` : `${Math.round(volumeKg)}kg`;
 }
 
 const styles = StyleSheet.create({

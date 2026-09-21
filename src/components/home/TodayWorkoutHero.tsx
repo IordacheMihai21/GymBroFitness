@@ -5,14 +5,19 @@ import { Button, Card, Chip, Icon } from 'react-native-paper';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { EXERCISE_LIBRARY } from '@/domain/exercises/library';
-import { formatProgressionSignal, type TargetToBeat } from '@/domain/workouts/targetToBeat';
+import {
+  formatDecisionTarget,
+  formatProgressionSignal,
+  type TargetToBeat,
+} from '@/domain/workouts/targetToBeat';
 import { useTheme } from '@/theme';
-import type { ProgramDay } from '@/types';
+import type { ProgramDay, Units } from '@/types';
 
 type TodayWorkoutHeroProps = {
   day: ProgramDay;
   targetRir: number;
   target: TargetToBeat;
+  units: Units;
   hasPreviousTopSet: boolean;
   swapLabel: string;
   onStart: () => void;
@@ -25,6 +30,7 @@ export function TodayWorkoutHero({
   day,
   targetRir,
   target,
+  units,
   hasPreviousTopSet,
   swapLabel,
   onStart,
@@ -36,7 +42,9 @@ export function TodayWorkoutHero({
   const totalSets = day.prescriptions.reduce((sum, p) => sum + p.workingSets, 0);
   const { decision } = target;
   const heroImage = useMemo(() => resolveExerciseImage(target.exerciseName), [target.exerciseName]);
-  const targetText = !hasPreviousTopSet ? 'Calibrate live' : target.targetText;
+  const targetText = !hasPreviousTopSet
+    ? 'Calibrate live'
+    : formatDecisionTarget(target.decision, units);
   const decisionCopy = !hasPreviousTopSet
     ? 'Log the first honest top set today. The next run will use saved history for the overload target.'
     : decision.action === 'increase_load'
@@ -119,7 +127,7 @@ export function TodayWorkoutHero({
           <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{targetText}</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             {hasPreviousTopSet
-              ? `Last session: ${formatProgressionSignal(target.lastSignal)}`
+              ? `Last session: ${formatProgressionSignal(target.lastSignal, units)}`
               : 'No saved benchmark for this lift yet'}
           </Text>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>{decisionCopy}</Text>

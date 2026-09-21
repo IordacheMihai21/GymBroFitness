@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getDb } from '@/db/client';
+import { workoutSessionPayloadSchema } from '@/db/payload';
+import type { GymBroDb } from '@/db/types';
 import type { WorkoutSession } from '@/types';
 
 import {
@@ -9,12 +11,15 @@ import {
   getInProgressWorkoutSessionSql,
   importSessionsSql,
   listWorkoutHistorySql,
+  type WorkoutHistoryPage,
   saveInProgressWorkoutSessionSql,
   saveWorkoutSessionSql,
 } from './historyRepository';
 
 /** The pre-SQLite key this app used to store history under (see the migration below). */
 const LEGACY_STORAGE_KEY = '@GymBroFitness/workout-history/v1';
+
+type LegacyHistoryStorage = Pick<typeof AsyncStorage, 'getItem' | 'removeItem'>;
 
 /**
  * SQLite (via `db/client.ts`) is now the source of truth for workout history
@@ -34,30 +39,53 @@ const LEGACY_STORAGE_KEY = '@GymBroFitness/workout-history/v1';
 let migration: Promise<void> | null = null;
 
 function ensureMigrated(): Promise<void> {
-  if (!migration) migration = migrateLegacyHistory();
+  if (!migration) {
+    migration = migrateLegacyHistory(AsyncStorage, getDb()).catch((error: unknown) => {
+      // A transient storage/DB failure must remain retryable in the same app process.
+      migration = null;
+      throw error;
+    });
+  }
   return migration;
 }
 
-async function migrateLegacyHistory(): Promise<void> {
-  const raw = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
+export async function migrateLegacyHistory(
+  storage: LegacyHistoryStorage,
+  db: GymBroDb,
+): Promise<void> {
+  const raw = await storage.getItem(LEGACY_STORAGE_KEY);
   if (!raw) return;
 
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      const sessions = parsed.filter(isWorkoutSessionLike);
-      if (sessions.length > 0) importSessionsSql(getDb(), sessions);
-    }
+    parsed = JSON.parse(raw);
   } catch {
-    // Corrupt legacy data — nothing usable to migrate, nothing to crash over.
-  } finally {
-    await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+    // Preserve unparseable data for a future recovery/export path.
+    return;
   }
+
+  if (!Array.isArray(parsed)) {
+    // Partial imports would make it impossible to know which legacy records
+    // were intentionally omitted. Keep the original untouched instead.
+    return;
+  }
+
+  const sessions: WorkoutSession[] = [];
+  for (const candidate of parsed) {
+    const result = workoutSessionPayloadSchema.safeParse(candidate);
+    if (!result.success) return;
+    sessions.push(result.data);
+  }
+
+  // The repository imports the entire batch in one SQLite transaction and
+  // ignores existing ids. If removing the legacy key fails, retrying is safe.
+  importSessionsSql(db, sessions);
+  await storage.removeItem(LEGACY_STORAGE_KEY);
 }
 
-export async function listWorkoutHistory(): Promise<WorkoutSession[]> {
+export async function listWorkoutHistory(page?: WorkoutHistoryPage): Promise<WorkoutSession[]> {
   await ensureMigrated();
-  return listWorkoutHistorySql(getDb());
+  return listWorkoutHistorySql(getDb(), page);
 }
 
 export async function getInProgressWorkoutSession(): Promise<WorkoutSession | null> {
@@ -87,14 +115,7 @@ export async function clearWorkoutHistory(): Promise<void> {
   clearWorkoutHistorySql(getDb());
 }
 
-function isWorkoutSessionLike(value: unknown): value is WorkoutSession {
-  if (value == null || typeof value !== 'object') return false;
-  const candidate = value as Partial<WorkoutSession>;
-  return (
-    typeof candidate.id === 'string' &&
-    typeof candidate.userId === 'string' &&
-    typeof candidate.dayName === 'string' &&
-    typeof candidate.startedAt === 'string' &&
-    Array.isArray(candidate.exercises)
-  );
+export async function importWorkoutSessions(sessions: WorkoutSession[]): Promise<void> {
+  await ensureMigrated();
+  importSessionsSql(getDb(), sessions);
 }

@@ -11,10 +11,10 @@ import { availableExercises, requireExercise } from '../exercises/catalog';
 import {
   DEFAULT_SETS,
   estimateExerciseMinutes,
+  GOAL_REP_RANGES,
+  GOAL_REST_SECONDS,
   HIGH_REP_MUSCLES,
   HIGH_REP_RANGE,
-  REP_RANGES,
-  REST_SECONDS,
   TARGET_RIR,
   TIME_MODEL,
   TIME_RANGE_SECONDS,
@@ -86,7 +86,7 @@ export function buildManualPrescription(
   preferences: TrainingPreferences,
 ): ExercisePrescription {
   const muscle = exercise.primaryMuscles[0] ?? 'chest';
-  const repRange = repRangeFor(exercise, muscle);
+  const repRange = repRangeFor(exercise, muscle, preferences);
 
   return {
     exerciseId: exercise.id,
@@ -95,7 +95,7 @@ export function buildManualPrescription(
     minReps: repRange.min,
     maxReps: repRange.max,
     targetRir: TARGET_RIR[preferences.experience],
-    restSeconds: REST_SECONDS[exercise.exerciseType],
+    restSeconds: GOAL_REST_SECONDS[preferences.goal][exercise.exerciseType],
     selectionReason: `Added manually for ${muscle.replace(/_/g, ' ')} work. ${exercise.scienceExplanation}`,
   };
 }
@@ -184,12 +184,16 @@ function focusFromPrescriptions(prescriptions: ExercisePrescription[]): MuscleGr
   return [...seen];
 }
 
-function repRangeFor(exercise: Exercise, muscle: MuscleGroup) {
+function repRangeFor(exercise: Exercise, muscle: MuscleGroup, preferences: TrainingPreferences) {
   if (exercise.trackingType === 'time') return TIME_RANGE_SECONDS;
-  if (HIGH_REP_MUSCLES.includes(muscle) && exercise.exerciseType === 'isolation') {
+  if (
+    preferences.goal !== 'strength' &&
+    HIGH_REP_MUSCLES.includes(muscle) &&
+    exercise.exerciseType === 'isolation'
+  ) {
     return HIGH_REP_RANGE;
   }
-  return REP_RANGES[exercise.exerciseType];
+  return GOAL_REP_RANGES[preferences.goal][exercise.exerciseType];
 }
 
 function matchesQuery(exercise: Exercise, query: string): boolean {

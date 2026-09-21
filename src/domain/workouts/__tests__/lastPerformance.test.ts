@@ -1,7 +1,15 @@
-import { findLastPerformedExercise, formatPreviousSet, previousSetAtIndex } from '../lastPerformance';
+import {
+  findLastPerformedExercise,
+  formatPreviousSet,
+  previousSetAtIndex,
+} from '../lastPerformance';
 import type { PerformedExercise, WorkoutSession } from '@/types';
 
-function makeSession(id: string, startedAt: string, exercises: PerformedExercise[]): WorkoutSession {
+function makeSession(
+  id: string,
+  startedAt: string,
+  exercises: PerformedExercise[],
+): WorkoutSession {
   return {
     id,
     userId: 'user-1',
@@ -16,7 +24,10 @@ function makeSession(id: string, startedAt: string, exercises: PerformedExercise
   };
 }
 
-function makeExercise(exerciseId: string, sets: Partial<PerformedExercise['sets'][number]>[]): PerformedExercise {
+function makeExercise(
+  exerciseId: string,
+  sets: Partial<PerformedExercise['sets'][number]>[],
+): PerformedExercise {
   return {
     id: `performed-${exerciseId}`,
     exerciseId,
@@ -57,11 +68,25 @@ describe('findLastPerformedExercise', () => {
 
   it('returns the first (newest) match given pre-sorted history', () => {
     const history = [
-      makeSession('s1', '2026-09-10T00:00:00.000Z', [makeExercise('bench', [{ loadKg: 100, reps: 8 }])]),
-      makeSession('s2', '2026-09-03T00:00:00.000Z', [makeExercise('bench', [{ loadKg: 90, reps: 8 }])]),
+      makeSession('s1', '2026-09-10T00:00:00.000Z', [
+        makeExercise('bench', [{ loadKg: 100, reps: 8 }]),
+      ]),
+      makeSession('s2', '2026-09-03T00:00:00.000Z', [
+        makeExercise('bench', [{ loadKg: 90, reps: 8 }]),
+      ]),
     ];
     const result = findLastPerformedExercise(history, 'bench');
     expect(result?.sets[0].loadKg).toBe(100);
+  });
+
+  it('matches a historical alias to the canonical exercise id', () => {
+    const history = [
+      makeSession('legacy', '2026-09-10T00:00:00.000Z', [
+        makeExercise('Flat Bench Press', [{ loadKg: 95, reps: 8 }]),
+      ]),
+    ];
+
+    expect(findLastPerformedExercise(history, 'barbell-bench-press')?.sets[0].loadKg).toBe(95);
   });
 });
 
@@ -70,6 +95,7 @@ describe('previousSetAtIndex + formatPreviousSet', () => {
     const exercise = makeExercise('bench', [{ loadKg: 100, reps: 8, rir: 2 }]);
     const set = previousSetAtIndex(exercise, 0);
     expect(formatPreviousSet(set)).toBe('Last: 100 kg × 8 @ RIR 2');
+    expect(formatPreviousSet(set, 'lb')).toBe('Last: 220.5 lb × 8 @ RIR 2');
   });
 
   it('formats a time-tracked set', () => {

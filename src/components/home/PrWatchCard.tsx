@@ -6,13 +6,15 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { requireExercise } from '@/domain/exercises/catalog';
 import { useTheme } from '@/theme';
 import { formatDate } from '@/utils/dates';
-import type { PersonalRecord } from '@/types';
+import type { PersonalRecord, Units } from '@/types';
+import { displayLoad, formatLoad, unitLabel } from '@/utils/units';
 
 type PrWatchCardProps = {
   records: PersonalRecord[];
+  units: Units;
 };
 
-export function PrWatchCard({ records }: PrWatchCardProps) {
+export function PrWatchCard({ records, units }: PrWatchCardProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const watchlist = [...records].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
@@ -41,10 +43,12 @@ export function PrWatchCard({ records }: PrWatchCardProps) {
         </View>
 
         {hero ? (
-          <HeroRecord record={hero} />
+          <HeroRecord record={hero} units={units} />
         ) : (
           <View style={[styles.emptyPanel, { backgroundColor: colors.surfaceRaised }]}>
-            <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>No PRs logged yet</Text>
+            <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
+              No PRs logged yet
+            </Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               Finish a loaded workout and this card will track your best e1RM records.
             </Text>
@@ -54,7 +58,7 @@ export function PrWatchCard({ records }: PrWatchCardProps) {
         {rest.length > 0 && (
           <View style={{ gap: spacing.sm }}>
             {rest.map((record, index) => (
-              <RecordRow key={record.id} record={record} rank={index + 2} />
+              <RecordRow key={record.id} record={record} rank={index + 2} units={units} />
             ))}
           </View>
         )}
@@ -63,12 +67,12 @@ export function PrWatchCard({ records }: PrWatchCardProps) {
   );
 }
 
-function HeroRecord({ record }: { record: PersonalRecord }) {
+function HeroRecord({ record, units }: { record: PersonalRecord; units: Units }) {
   const { colors, radius, spacing, typography } = useTheme();
   const exercise = requireExercise(record.exerciseId);
   const targetLift =
     record.loadKg != null && record.reps != null
-      ? `${record.loadKg}kg × ${record.reps}`
+      ? `${formatLoad(record.loadKg, units)} × ${record.reps}`
       : null;
 
   return (
@@ -92,11 +96,13 @@ function HeroRecord({ record }: { record: PersonalRecord }) {
         </Text>
         <View style={styles.heroValueRow}>
           <AnimatedNumber
-            value={record.value}
+            value={displayLoad(record.value, units) ?? 0}
             decimals={1}
             style={[typography.jumbo, { fontSize: 40, lineHeight: 44, color: '#FFFFFF' }]}
           />
-          <Text style={[typography.caption, { color: 'rgba(255,255,255,0.8)' }]}> kg e1RM</Text>
+          <Text style={[typography.caption, { color: 'rgba(255,255,255,0.8)' }]}>
+            {unitLabel(units)} e1RM
+          </Text>
         </View>
         <Text style={[typography.micro, { color: 'rgba(255,255,255,0.75)' }]}>
           {targetLift ? `${targetLift} · ` : ''}
@@ -107,13 +113,21 @@ function HeroRecord({ record }: { record: PersonalRecord }) {
   );
 }
 
-function RecordRow({ record, rank }: { record: PersonalRecord; rank: number }) {
+function RecordRow({
+  record,
+  rank,
+  units,
+}: {
+  record: PersonalRecord;
+  rank: number;
+  units: Units;
+}) {
   const { colors, typography } = useTheme();
   const exercise = requireExercise(record.exerciseId);
   const targetLift =
     record.loadKg != null && record.reps != null
-      ? `${record.loadKg}kg × ${record.reps}`
-      : `${record.value.toFixed(1)} e1RM`;
+      ? `${formatLoad(record.loadKg, units)} × ${record.reps}`
+      : `${displayLoad(record.value, units)} e1RM`;
 
   return (
     <View style={styles.recordRow}>
@@ -125,7 +139,7 @@ function RecordRow({ record, rank }: { record: PersonalRecord; rank: number }) {
           {exercise.name}
         </Text>
         <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
-          {targetLift} · {record.value.toFixed(1)}kg e1RM
+          {targetLift} · {formatLoad(record.value, units)} e1RM
         </Text>
       </View>
       <Text style={[typography.captionBold, { color: colors.accent }]}>near</Text>

@@ -18,10 +18,17 @@ type RirPickerSheetProps = {
   /** RIR currently logged for the set being edited, or null if unset. */
   value: number | null;
   onConfirm: (value: number) => void;
+  onClear: () => void;
   onDismiss: () => void;
 };
 
-export function RirPickerSheet({ modalRef, value, onConfirm, onDismiss }: RirPickerSheetProps) {
+export function RirPickerSheet({
+  modalRef,
+  value,
+  onConfirm,
+  onClear,
+  onDismiss,
+}: RirPickerSheetProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const [draft, setDraft] = useState(value ?? 2);
   // Reset the draft whenever the target set's RIR changes (a different set was
@@ -49,7 +56,9 @@ export function RirPickerSheet({ modalRef, value, onConfirm, onDismiss }: RirPic
       handleIndicatorStyle={{ backgroundColor: colors.borderStrong }}
       backdropComponent={renderBackdrop}
     >
-      <BottomSheetView style={[styles.sheet, { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl }]}>
+      <BottomSheetView
+        style={[styles.sheet, { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl }]}
+      >
         <Text style={[typography.subheading, { color: colors.textPrimary, textAlign: 'center' }]}>
           Reps in reserve
         </Text>
@@ -65,11 +74,17 @@ export function RirPickerSheet({ modalRef, value, onConfirm, onDismiss }: RirPic
           visibleItemCount={5}
           width="60%"
           itemTextStyle={[typography.heading, { color: colors.textPrimary }]}
-          overlayItemStyle={[styles.overlayItem, { backgroundColor: colors.accentSoft, borderRadius: radius.md }]}
+          overlayItemStyle={[
+            styles.overlayItem,
+            { backgroundColor: colors.accentSoft, borderRadius: radius.md },
+          ]}
         />
 
         <Button mode="contained" onPress={() => onConfirm(draft)} style={{ marginTop: spacing.sm }}>
           Set RIR {formatRir(draft)}
+        </Button>
+        <Button mode="text" onPress={onClear}>
+          Not sure · leave RIR empty
         </Button>
       </BottomSheetView>
     </BottomSheetModal>

@@ -130,4 +130,13 @@ describe('detectPersonalRecords with sub-efforts', () => {
     const maxLoad = records.find((r) => r.kind === 'max_load');
     expect(maxLoad?.value).toBe(110);
   });
+
+  it('writes new records with the canonical exercise id returned by the catalog lookup', () => {
+    const performed = makeExercise([makeSet({ loadKg: 100, reps: 5 })]);
+    performed.exerciseId = 'legacy-bench-name';
+    const records = detectPersonalRecords(makeSession([performed]), [], () => exercise);
+
+    expect(records.length).toBeGreaterThan(0);
+    expect(records.every((record) => record.exerciseId === 'bench')).toBe(true);
+  });
 });

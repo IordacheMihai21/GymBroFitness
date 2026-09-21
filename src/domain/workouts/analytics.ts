@@ -1,10 +1,4 @@
-import type {
-  Exercise,
-  MuscleGroup,
-  PerformedSet,
-  PersonalRecord,
-  WorkoutSession,
-} from '@/types';
+import type { Exercise, MuscleGroup, PerformedSet, PersonalRecord, WorkoutSession } from '@/types';
 import { uuid } from '@/utils/ids';
 
 import { completedWorkingSets } from '../progression/engine';
@@ -45,10 +39,7 @@ export function volumeLoadKg(sets: PerformedSet[]): number {
 }
 
 export function totalWorkingSets(session: WorkoutSession): number {
-  return session.exercises.reduce(
-    (total, ex) => total + completedWorkingSets(ex.sets).length,
-    0,
-  );
+  return session.exercises.reduce((total, ex) => total + completedWorkingSets(ex.sets).length, 0);
 }
 
 export function sessionVolumeKg(session: WorkoutSession): number {
@@ -85,7 +76,11 @@ export function detectPersonalRecords(
   const best = (exerciseId: string, kind: PersonalRecord['kind']) =>
     existing
       .concat(newRecords)
-      .filter((r) => r.exerciseId === exerciseId && r.kind === kind)
+      .filter(
+        (record) =>
+          (exerciseLookup(record.exerciseId)?.id ?? record.exerciseId) === exerciseId &&
+          record.kind === kind,
+      )
       .reduce<number>((max, r) => Math.max(max, r.value), 0);
 
   for (const ex of session.exercises) {
@@ -93,16 +88,17 @@ export function detectPersonalRecords(
     if (!exercise) continue;
     const working = completedWorkingSets(ex.sets);
     if (working.length === 0) continue;
-    const loaded = exercise.trackingType === 'weight_reps' || exercise.trackingType === 'weighted_bodyweight';
+    const loaded =
+      exercise.trackingType === 'weight_reps' || exercise.trackingType === 'weighted_bodyweight';
 
     if (loaded) {
       const allEfforts = working.flatMap(setEfforts);
       const topEffort = allEfforts.reduce((a, b) => ((b.loadKg ?? 0) > (a.loadKg ?? 0) ? b : a));
       const topLoad = topEffort.loadKg ?? 0;
-      if (topLoad > best(ex.exerciseId, 'max_load')) {
+      if (topLoad > best(exercise.id, 'max_load')) {
         newRecords.push({
           id: uuid(),
-          exerciseId: ex.exerciseId,
+          exerciseId: exercise.id,
           kind: 'max_load',
           value: topLoad,
           loadKg: topLoad,
@@ -116,10 +112,10 @@ export function detectPersonalRecords(
         .filter((v): v is number => v != null);
       if (e1rms.length > 0) {
         const bestE1rm = Math.max(...e1rms);
-        if (bestE1rm > best(ex.exerciseId, 'best_e1rm')) {
+        if (bestE1rm > best(exercise.id, 'best_e1rm')) {
           newRecords.push({
             id: uuid(),
-            exerciseId: ex.exerciseId,
+            exerciseId: exercise.id,
             kind: 'best_e1rm',
             value: bestE1rm,
             date: session.startedAt,
@@ -128,10 +124,10 @@ export function detectPersonalRecords(
         }
       }
       const volume = volumeLoadKg(ex.sets);
-      if (volume > 0 && volume > best(ex.exerciseId, 'max_volume')) {
+      if (volume > 0 && volume > best(exercise.id, 'max_volume')) {
         newRecords.push({
           id: uuid(),
-          exerciseId: ex.exerciseId,
+          exerciseId: exercise.id,
           kind: 'max_volume',
           value: Math.round(volume),
           date: session.startedAt,
@@ -143,10 +139,10 @@ export function detectPersonalRecords(
       const bestEffort = Math.max(
         ...working.map((s) => (isTime ? s.durationSeconds : s.reps) ?? 0),
       );
-      if (bestEffort > best(ex.exerciseId, 'max_reps_at_load')) {
+      if (bestEffort > best(exercise.id, 'max_reps_at_load')) {
         newRecords.push({
           id: uuid(),
-          exerciseId: ex.exerciseId,
+          exerciseId: exercise.id,
           kind: 'max_reps_at_load',
           value: bestEffort,
           reps: isTime ? undefined : bestEffort,

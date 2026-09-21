@@ -1,6 +1,12 @@
 import type { Exercise } from '@/types';
 
-import { availableExercises, EXERCISE_CATALOG, isExerciseAvailable } from '../catalog';
+import {
+  availableExercises,
+  canonicalExerciseId,
+  EXERCISE_CATALOG,
+  getExercise,
+  isExerciseAvailable,
+} from '../catalog';
 
 describe('exercise catalog integrity', () => {
   it('contains 80–120 exercises', () => {
@@ -16,11 +22,7 @@ describe('exercise catalog integrity', () => {
   it('every alternative slug references a real exercise', () => {
     const slugs = new Set(EXERCISE_CATALOG.map((e) => e.slug));
     for (const e of EXERCISE_CATALOG) {
-      const refs = [
-        ...e.easierAlternatives,
-        ...e.harderAlternatives,
-        ...e.equivalentAlternatives,
-      ];
+      const refs = [...e.easierAlternatives, ...e.harderAlternatives, ...e.equivalentAlternatives];
       for (const ref of refs) {
         expect({ exercise: e.slug, ref, exists: slugs.has(ref) }).toEqual({
           exercise: e.slug,
@@ -63,6 +65,14 @@ describe('exercise catalog integrity', () => {
       expect(patterns.has(pattern as Exercise['movementPattern'])).toBe(true);
     }
   });
+
+  it('resolves stable ids, slugs, names, and unambiguous legacy aliases canonically', () => {
+    expect(canonicalExerciseId('barbell-bench-press')).toBe('barbell-bench-press');
+    expect(canonicalExerciseId('Barbell Bench Press')).toBe('barbell-bench-press');
+    expect(canonicalExerciseId('Flat Bench Press')).toBe('barbell-bench-press');
+    expect(getExercise('flat_bench_press')?.name).toBe('Barbell Bench Press');
+    expect(canonicalExerciseId('not-a-real-exercise')).toBeNull();
+  });
 });
 
 describe('equipment filtering', () => {
@@ -70,9 +80,7 @@ describe('equipment filtering', () => {
     const pool = availableExercises(['bodyweight', 'resistance_band']);
     expect(pool.length).toBeGreaterThan(10);
     for (const e of pool) {
-      expect(
-        e.equipment.some((eq) => eq === 'bodyweight' || eq === 'resistance_band'),
-      ).toBe(true);
+      expect(e.equipment.some((eq) => eq === 'bodyweight' || eq === 'resistance_band')).toBe(true);
     }
     expect(pool.some((e) => e.slug === 'barbell-bench-press')).toBe(false);
   });

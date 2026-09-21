@@ -158,7 +158,8 @@ export const chestExercises = [
     commonMistakes: ['Bench positioned so the bar path hits the wrong chest point.'],
     scienceExplanation:
       'The fixed path trades some stabilizer work for the ability to safely train close to failure without a spotter.',
-    progressionInstructions: 'Add 2.5 kg when all sets top the rep range at target RIR.',
+    progressionInstructions:
+      'Add the smallest available load increment when all sets top the rep range at target RIR.',
     equivalentAlternatives: ['barbell-bench-press', 'machine-chest-press'],
   }),
   defineExercise({
@@ -266,7 +267,10 @@ export const chestExercises = [
       'With a slight elbow bend, open your arms until you feel a pec stretch.',
       'Sweep the handles together in a hugging arc.',
     ],
-    commonMistakes: ['Turning it into a press by bending the elbows.', 'Using momentum from the torso.'],
+    commonMistakes: [
+      'Turning it into a press by bending the elbows.',
+      'Using momentum from the torso.',
+    ],
     scienceExplanation:
       'Cables keep resistance on the pecs even at the squeezed position, complementing presses which lose tension at lockout.',
     progressionInstructions: 'Progress load in small stack increments; prioritize a deep stretch.',
@@ -307,7 +311,10 @@ export const chestExercises = [
       'Lower in a wide arc with a fixed slight elbow bend.',
       'Stop at a strong stretch, then sweep back up.',
     ],
-    commonMistakes: ['Going too heavy and pressing instead of flying.', 'Overstretching at the bottom.'],
+    commonMistakes: [
+      'Going too heavy and pressing instead of flying.',
+      'Overstretching at the bottom.',
+    ],
     scienceExplanation:
       'Maximally loads the pec stretch; keep loads moderate since tension at the bottom is highest exactly where you are weakest.',
     progressionInstructions: 'Small dumbbell steps; add reps before load.',
@@ -330,7 +337,10 @@ export const chestExercises = [
       'Lower until your upper arms are about parallel to the floor.',
       'Press back up without fully locking out harshly.',
     ],
-    commonMistakes: ['Descending too fast and too deep for your shoulder mobility.', 'Staying bolt upright (shifts load to triceps).'],
+    commonMistakes: [
+      'Descending too fast and too deep for your shoulder mobility.',
+      'Staying bolt upright (shifts load to triceps).',
+    ],
     scienceExplanation:
       'A big-range press loading the pecs deep in the stretch; easily overloaded with a dip belt for years of progression.',
     progressionInstructions: 'Add reps to the top of the range, then add weight with a belt.',

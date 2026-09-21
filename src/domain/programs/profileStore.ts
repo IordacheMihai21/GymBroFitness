@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { preserveAsyncStoragePayload } from '@/domain/persistence/asyncStorageRecovery';
+
 import {
   EQUIPMENT_TYPES,
   MUSCLE_GROUPS,
@@ -8,6 +10,7 @@ import {
   type EquipmentType,
   type ExperienceLevel,
   type MuscleGroup,
+  type NutritionContext,
   type TrainingEnvironment,
   type TrainingGoal,
   type TrainingPreferences,
@@ -21,7 +24,8 @@ const STORAGE_KEY = '@GymBroFitness/training-profile/v1';
 const PROFILE_VERSION = 1;
 
 const EXPERIENCE_LEVELS: ExperienceLevel[] = ['beginner', 'intermediate', 'advanced'];
-const TRAINING_GOALS: TrainingGoal[] = ['hypertrophy'];
+const TRAINING_GOALS: TrainingGoal[] = ['hypertrophy', 'strength', 'mixed'];
+const NUTRITION_CONTEXTS: NutritionContext[] = ['unknown', 'maintenance', 'surplus', 'deficit'];
 const TRAINING_ENVIRONMENTS: TrainingEnvironment[] = [
   'commercial_gym',
   'home_gym',
@@ -74,7 +78,7 @@ export async function loadTrainingProfile(): Promise<TrainingProfileSnapshot> {
     // Corrupt user preferences should never block the app shell.
   }
 
-  await AsyncStorage.removeItem(STORAGE_KEY);
+  await preserveAsyncStoragePayload(AsyncStorage, STORAGE_KEY, raw);
   return DEFAULT_TRAINING_PROFILE;
 }
 
@@ -121,7 +125,7 @@ function isStoredTrainingProfile(value: unknown): value is StoredTrainingProfile
   );
 }
 
-function isUserProfile(value: unknown): value is UserProfile {
+export function isUserProfile(value: unknown): value is UserProfile {
   if (value == null || typeof value !== 'object') return false;
   const candidate = value as Partial<UserProfile>;
   return (
@@ -134,11 +138,13 @@ function isUserProfile(value: unknown): value is UserProfile {
   );
 }
 
-function isTrainingPreferences(value: unknown): value is TrainingPreferences {
+export function isTrainingPreferences(value: unknown): value is TrainingPreferences {
   if (value == null || typeof value !== 'object') return false;
   const candidate = value as Partial<TrainingPreferences>;
   return (
     isOneOf(candidate.goal, TRAINING_GOALS) &&
+    (candidate.nutritionContext == null ||
+      isOneOf(candidate.nutritionContext, NUTRITION_CONTEXTS)) &&
     isOneOf(candidate.experience, EXPERIENCE_LEVELS) &&
     isOneOf(candidate.environment, TRAINING_ENVIRONMENTS) &&
     isArrayOf(candidate.equipment, isEquipment) &&

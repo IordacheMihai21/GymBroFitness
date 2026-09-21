@@ -1,24 +1,55 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Card, Chip, HelperText, IconButton, TextInput } from 'react-native-paper';
+import {
+  Button,
+  Card,
+  Chip,
+  Dialog,
+  HelperText,
+  IconButton,
+  Portal,
+  TextInput,
+} from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { ENVIRONMENT_EQUIPMENT } from '@/domain/exercises/catalog';
 import { generateProgram } from '@/domain/programs/generator';
 import {
+  createBackupSnapshot,
+  parseBackup,
+  previewBackupRestore,
+  restoreBackup,
+  serializeBackup,
+  workoutHistoryToCsv,
+  type BackupPreview,
+  type GymBroBackup,
+} from '@/domain/portability/backup';
+import {
+  pickBackupText,
+  pickWorkoutCsvText,
+  shareTextFile,
+} from '@/domain/portability/backupFiles';
+import {
+  parseExternalWorkoutCsv,
+  type WorkoutImportResult,
+} from '@/domain/portability/workoutImport';
+import {
   resetTrainingProfile,
   saveTrainingProfile,
   type TrainingProfileSnapshot,
 } from '@/domain/programs/profileStore';
 import { resetActiveProgram, saveActiveProgram } from '@/domain/programs/programStore';
+import { importWorkoutSessions, listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { useTrainingProfile } from '@/hooks/useTrainingProfile';
 import { useTheme } from '@/theme';
 import type {
   CoachingTone,
   ExperienceLevel,
   MuscleGroup,
+  NutritionContext,
   TrainingEnvironment,
+  TrainingGoal,
   TrainingPreferences,
   TrainingProgram,
   Units,
@@ -26,6 +57,8 @@ import type {
 import { PRIORITY_MUSCLES } from '@/types';
 
 const EXPERIENCE_OPTIONS: ExperienceLevel[] = ['beginner', 'intermediate', 'advanced'];
+const GOAL_OPTIONS: TrainingGoal[] = ['hypertrophy', 'strength', 'mixed'];
+const NUTRITION_OPTIONS: NutritionContext[] = ['unknown', 'maintenance', 'surplus', 'deficit'];
 const UNIT_OPTIONS: Units[] = ['kg', 'lb'];
 const TONE_OPTIONS: CoachingTone[] = ['supportive', 'direct', 'hype', 'science'];
 const ENVIRONMENT_OPTIONS: TrainingEnvironment[] = [
@@ -40,6 +73,7 @@ const SESSION_OPTIONS: TrainingPreferences['sessionMinutes'][] = [30, 45, 60, 75
 type StatusTone = 'success' | 'danger' | 'neutral';
 
 type SaveMode = 'profile' | 'regenerate';
+type PortabilityMode = 'backup' | 'csv' | 'import' | 'restore' | 'workout_import';
 
 export default function SettingsScreen() {
   const profile = useTrainingProfile();
@@ -56,7 +90,10 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState(profile.user.displayName);
-  const [email, setEmail] = useState(profile.user.email ?? '');
+  const [goal, setGoal] = useState(profile.preferences.goal);
+  const [nutritionContext, setNutritionContext] = useState<NutritionContext>(
+    profile.preferences.nutritionContext ?? 'unknown',
+  );
   const [experience, setExperience] = useState(profile.preferences.experience);
   const [units, setUnits] = useState(profile.preferences.units);
   const [coachingTone, setCoachingTone] = useState(profile.preferences.coachingTone);
@@ -65,12 +102,25 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
   const [sessionMinutes, setSessionMinutes] = useState(profile.preferences.sessionMinutes);
   const [musclePriorities, setMusclePriorities] = useState(profile.preferences.musclePriorities);
   const [savingMode, setSavingMode] = useState<SaveMode | null>(null);
+  const [portabilityMode, setPortabilityMode] = useState<PortabilityMode | null>(null);
+  const [importCandidate, setImportCandidate] = useState<{
+    backup: GymBroBackup;
+    preview: BackupPreview;
+  } | null>(null);
+  const [workoutImportCandidate, setWorkoutImportCandidate] = useState<{
+    result: WorkoutImportResult;
+    newSessionCount: number;
+    duplicateSessionCount: number;
+  } | null>(null);
+  const [strongImportUnit, setStrongImportUnit] = useState<Units>(profile.preferences.units);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string } | null>(null);
-  const [fieldIssues, setFieldIssues] = useState<{ displayName?: string; email?: string }>({});
+  const [fieldIssues, setFieldIssues] = useState<{ displayName?: string }>({});
 
   const draftPreferences = useMemo<TrainingPreferences>(
     () => ({
       ...profile.preferences,
+      goal,
+      nutritionContext,
       experience,
       units,
       coachingTone,
@@ -86,7 +136,9 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
       daysPerWeek,
       environment,
       experience,
+      goal,
       musclePriorities,
+      nutritionContext,
       profile.preferences,
       sessionMinutes,
       units,
@@ -108,6 +160,7 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
   }, [draftPreferences, profile.user.id]);
 
   const programAffectingChanged =
+    goal !== profile.preferences.goal ||
     experience !== profile.preferences.experience ||
     environment !== profile.preferences.environment ||
     daysPerWeek !== profile.preferences.daysPerWeek ||
@@ -115,7 +168,7 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
     !sameArray(musclePriorities, profile.preferences.musclePriorities);
 
   async function persistProfile(mode: SaveMode) {
-    const issues = validateProfileFields(displayName, email);
+    const issues = validateProfileFields(displayName);
     setFieldIssues(issues);
     setStatus(null);
     if (Object.keys(issues).length > 0) return;
@@ -125,7 +178,6 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
       const user = {
         ...profile.user,
         displayName: displayName.trim(),
-        email: email.trim().toLowerCase(),
         onboardingCompleted: true,
       };
       await saveTrainingProfile({ user, preferences: draftPreferences });
@@ -163,7 +215,7 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
       setFieldIssues({});
       setStatus({
         tone: 'neutral',
-        text: 'Reset complete. Home will ask for account setup again.',
+        text: 'Reset complete. Home will ask for local profile setup again.',
       });
     } catch {
       setStatus({ tone: 'danger', text: 'Could not reset profile. Try again.' });
@@ -174,7 +226,8 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
 
   function syncEditor(next: TrainingProfileSnapshot) {
     setDisplayName(next.user.displayName);
-    setEmail(next.user.email ?? '');
+    setGoal(next.preferences.goal);
+    setNutritionContext(next.preferences.nutritionContext ?? 'unknown');
     setExperience(next.preferences.experience);
     setUnits(next.preferences.units);
     setCoachingTone(next.preferences.coachingTone);
@@ -190,6 +243,148 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
       if (current.length >= 3) return current;
       return [...current, muscle];
     });
+  }
+
+  async function exportBackup() {
+    setPortabilityMode('backup');
+    setStatus(null);
+    try {
+      const backup = await createBackupSnapshot();
+      await shareTextFile({
+        contents: serializeBackup(backup),
+        filename: `gymbro-backup-${backup.exportedAt.slice(0, 10)}.json`,
+        mimeType: 'application/json',
+      });
+      setStatus({ tone: 'success', text: 'Versioned JSON backup created.' });
+    } catch (error) {
+      setStatus({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not export the backup.',
+      });
+    } finally {
+      setPortabilityMode(null);
+    }
+  }
+
+  async function exportCsv() {
+    setPortabilityMode('csv');
+    setStatus(null);
+    try {
+      const sessions = await listWorkoutHistory();
+      await shareTextFile({
+        contents: workoutHistoryToCsv(sessions),
+        filename: `gymbro-history-${new Date().toISOString().slice(0, 10)}.csv`,
+        mimeType: 'text/csv',
+      });
+      setStatus({ tone: 'success', text: 'Workout CSV created in canonical kg units.' });
+    } catch (error) {
+      setStatus({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not export workout history.',
+      });
+    } finally {
+      setPortabilityMode(null);
+    }
+  }
+
+  async function chooseBackup() {
+    setPortabilityMode('import');
+    setStatus(null);
+    try {
+      const raw = await pickBackupText();
+      if (raw == null) return;
+      const backup = parseBackup(raw);
+      const nextPreview = await previewBackupRestore(backup);
+      setImportCandidate({ backup, preview: nextPreview });
+    } catch (error) {
+      setStatus({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not read this backup.',
+      });
+    } finally {
+      setPortabilityMode(null);
+    }
+  }
+
+  async function confirmRestore() {
+    if (!importCandidate) return;
+    setPortabilityMode('restore');
+    setStatus(null);
+    try {
+      await restoreBackup(importCandidate.backup);
+      syncEditor({
+        version: 1,
+        ...importCandidate.backup.profile,
+        updatedAt: new Date().toISOString(),
+        source: 'local',
+      });
+      setImportCandidate(null);
+      setStatus({
+        tone: 'success',
+        text: 'Backup restored. Existing matching IDs were kept without duplication.',
+      });
+    } catch (error) {
+      setStatus({
+        tone: 'danger',
+        text:
+          error instanceof Error
+            ? `${error.message} The pre-restore snapshot was kept for recovery.`
+            : 'Restore failed. The pre-restore snapshot was kept for recovery.',
+      });
+    } finally {
+      setPortabilityMode(null);
+    }
+  }
+
+  async function chooseWorkoutCsv() {
+    setPortabilityMode('workout_import');
+    setStatus(null);
+    try {
+      const raw = await pickWorkoutCsvText();
+      if (raw == null) return;
+      const result = parseExternalWorkoutCsv(raw, {
+        userId: profile.user.id,
+        strongWeightUnit: strongImportUnit,
+      });
+      const existing = new Set((await listWorkoutHistory()).map((session) => session.id));
+      const duplicateSessionCount = result.sessions.filter((session) =>
+        existing.has(session.id),
+      ).length;
+      setWorkoutImportCandidate({
+        result,
+        duplicateSessionCount,
+        newSessionCount: result.sessions.length - duplicateSessionCount,
+      });
+    } catch (error) {
+      setStatus({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not read this workout CSV.',
+      });
+    } finally {
+      setPortabilityMode(null);
+    }
+  }
+
+  async function confirmWorkoutImport() {
+    if (!workoutImportCandidate) return;
+    setPortabilityMode('workout_import');
+    setStatus(null);
+    try {
+      await importWorkoutSessions(workoutImportCandidate.result.sessions);
+      const imported = workoutImportCandidate.newSessionCount;
+      setWorkoutImportCandidate(null);
+      setStatus({
+        tone: 'success',
+        text: `${imported} workout${imported === 1 ? '' : 's'} imported without duplicating existing history.`,
+      });
+    } catch (error) {
+      setStatus({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Workout import failed.',
+      });
+    } finally {
+      setPortabilityMode(null);
+    }
   }
 
   return (
@@ -247,25 +442,6 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
           <HelperText type="error" visible={Boolean(fieldIssues.displayName)}>
             {fieldIssues.displayName}
           </HelperText>
-          <TextInput
-            mode="outlined"
-            label="Email"
-            value={email}
-            onChangeText={(value) => {
-              setEmail(value);
-              setFieldIssues((current) => ({ ...current, email: undefined }));
-            }}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            textColor={colors.textPrimary}
-            outlineColor={colors.border}
-            activeOutlineColor={colors.accent}
-            error={Boolean(fieldIssues.email)}
-            style={{ backgroundColor: colors.surfaceRaised }}
-          />
-          <HelperText type="error" visible={Boolean(fieldIssues.email)}>
-            {fieldIssues.email}
-          </HelperText>
           <SegmentedChips
             label="Units"
             options={UNIT_OPTIONS}
@@ -293,12 +469,29 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
             detail="These fields control the generated split, available exercises and weekly volume."
           />
           <SegmentedChips
+            label="Primary goal"
+            options={GOAL_OPTIONS}
+            selected={goal}
+            onSelect={setGoal}
+            format={formatGoal}
+          />
+          <SegmentedChips
             label="Experience"
             options={EXPERIENCE_OPTIONS}
             selected={experience}
             onSelect={setExperience}
             format={formatExperience}
           />
+          <SegmentedChips
+            label="Current nutrition context"
+            options={NUTRITION_OPTIONS}
+            selected={nutritionContext}
+            onSelect={setNutritionContext}
+            format={formatNutritionContext}
+          />
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            This is optional context for conservative volume suggestions, not a calorie target.
+          </Text>
           <SegmentedChips
             label="Training environment"
             options={ENVIRONMENT_OPTIONS}
@@ -387,6 +580,161 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
         onRegenerate={() => persistProfile('regenerate')}
       />
 
+      <Card
+        mode="contained"
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: radius.xl,
+          },
+        ]}
+      >
+        <Card.Content style={{ gap: spacing.md }}>
+          <SectionHeader
+            eyebrow="Data portability"
+            title="Backup, restore, export"
+            detail="JSON includes your local profile, plan, history, active draft, and templates. CSV contains completed sets in canonical kg."
+          />
+          <View style={styles.portabilityActions}>
+            <Button
+              mode="contained-tonal"
+              icon="database-export-outline"
+              onPress={exportBackup}
+              loading={portabilityMode === 'backup'}
+              disabled={portabilityMode !== null}
+            >
+              Backup JSON
+            </Button>
+            <Button
+              mode="outlined"
+              icon="file-delimited-outline"
+              onPress={exportCsv}
+              loading={portabilityMode === 'csv'}
+              disabled={portabilityMode !== null}
+            >
+              Export CSV
+            </Button>
+            <Button
+              mode="outlined"
+              icon="database-import-outline"
+              onPress={chooseBackup}
+              loading={portabilityMode === 'import'}
+              disabled={portabilityMode !== null}
+            >
+              Restore JSON
+            </Button>
+            <Button
+              mode="outlined"
+              icon="file-import-outline"
+              onPress={chooseWorkoutCsv}
+              loading={portabilityMode === 'workout_import'}
+              disabled={portabilityMode !== null}
+            >
+              Import Hevy/Strong
+            </Button>
+          </View>
+          <SegmentedChips
+            label="Strong CSV weight unit"
+            options={UNIT_OPTIONS}
+            selected={strongImportUnit}
+            onSelect={setStrongImportUnit}
+          />
+          <Text style={[typography.micro, { color: colors.textMuted }]}>
+            Before restore, the current local data is saved to a recovery snapshot. A current active
+            draft is never overwritten.
+          </Text>
+        </Card.Content>
+      </Card>
+
+      <Portal>
+        <Dialog visible={importCandidate != null} onDismiss={() => setImportCandidate(null)}>
+          <Dialog.Title>Review restore</Dialog.Title>
+          <Dialog.Content style={{ gap: spacing.sm }}>
+            {importCandidate ? (
+              <>
+                <Text style={[typography.body, { color: colors.textPrimary }]}>
+                  This replaces the local profile and active plan, then merges history and templates
+                  by stable ID.
+                </Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  {importCandidate.preview.newSessionCount} new sessions ·{' '}
+                  {importCandidate.preview.duplicateSessionCount} already present ·{' '}
+                  {importCandidate.preview.newTemplateCount} new templates
+                </Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  Active draft: {formatDraftAction(importCandidate.preview.draftAction)}
+                </Text>
+              </>
+            ) : null}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => setImportCandidate(null)}
+              disabled={portabilityMode === 'restore'}
+            >
+              Cancel
+            </Button>
+            <Button
+              onPress={confirmRestore}
+              loading={portabilityMode === 'restore'}
+              disabled={portabilityMode === 'restore'}
+            >
+              Restore
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <Portal>
+        <Dialog
+          visible={workoutImportCandidate != null}
+          onDismiss={() => setWorkoutImportCandidate(null)}
+        >
+          <Dialog.Title>Review workout import</Dialog.Title>
+          <Dialog.Content style={{ gap: spacing.sm }}>
+            {workoutImportCandidate ? (
+              <>
+                <Text style={[typography.body, { color: colors.textPrimary }]}>
+                  {workoutImportCandidate.result.source === 'hevy' ? 'Hevy' : 'Strong'} export ·{' '}
+                  {workoutImportCandidate.newSessionCount} new sessions ·{' '}
+                  {workoutImportCandidate.duplicateSessionCount} already present
+                </Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  {workoutImportCandidate.result.importedRows}/
+                  {workoutImportCandidate.result.totalRows} set rows are importable. Strong weights
+                  are interpreted as {strongImportUnit}.
+                </Text>
+                {workoutImportCandidate.result.unmappedExercises.length > 0 ? (
+                  <Text style={[typography.caption, { color: colors.warning }]}>
+                    Skipped until mapped:{' '}
+                    {workoutImportCandidate.result.unmappedExercises
+                      .map((item) => `${item.name} (${item.rowCount})`)
+                      .join(', ')}
+                  </Text>
+                ) : null}
+              </>
+            ) : null}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => setWorkoutImportCandidate(null)}
+              disabled={portabilityMode === 'workout_import'}
+            >
+              Cancel
+            </Button>
+            <Button
+              onPress={confirmWorkoutImport}
+              loading={portabilityMode === 'workout_import'}
+              disabled={portabilityMode === 'workout_import'}
+            >
+              Import
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
       {status ? (
         <Text
           style={[
@@ -406,7 +754,12 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
       ) : null}
 
       <View style={styles.actionRow}>
-        <Button mode="outlined" icon="restart" onPress={resetProfile} disabled={savingMode !== null}>
+        <Button
+          mode="outlined"
+          icon="restart"
+          onPress={resetProfile}
+          disabled={savingMode !== null}
+        >
           Reset
         </Button>
         <Button
@@ -488,14 +841,13 @@ function PlanPreviewCard({
           </Chip>
         </View>
 
-        {error ? (
-          <Text style={[typography.caption, { color: colors.danger }]}>{error}</Text>
-        ) : null}
+        {error ? <Text style={[typography.caption, { color: colors.danger }]}>{error}</Text> : null}
 
         {program ? (
           <>
             <View style={styles.summaryGrid}>
               <SummaryCell label="split" value={program.name} />
+              <SummaryCell label="goal" value={formatGoal(preferences.goal)} />
               <SummaryCell label="schedule" value={`${preferences.daysPerWeek}d/wk`} />
               <SummaryCell label="session" value={`${preferences.sessionMinutes} min`} />
               <SummaryCell
@@ -588,7 +940,10 @@ function SegmentedChips<T extends string | number>({
             selected={selected === option}
             mode={selected === option ? 'flat' : 'outlined'}
             onPress={() => onSelect(option)}
-            style={selected === option ? { backgroundColor: colors.accentSoft } : undefined}
+            style={[
+              styles.choiceChip,
+              selected === option ? { backgroundColor: colors.accentSoft } : undefined,
+            ]}
             textStyle={selected === option ? { color: colors.accent } : undefined}
           >
             {format(option)}
@@ -612,16 +967,10 @@ function SummaryCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-function validateProfileFields(
-  displayName: string,
-  email: string,
-): { displayName?: string; email?: string } {
-  const issues: { displayName?: string; email?: string } = {};
+function validateProfileFields(displayName: string): { displayName?: string } {
+  const issues: { displayName?: string } = {};
   if (displayName.trim().length < 2) {
     issues.displayName = 'Use at least 2 characters.';
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-    issues.email = 'Add a valid email address.';
   }
   return issues;
 }
@@ -655,6 +1004,19 @@ function formatExperience(value: ExperienceLevel): string {
   return 'Intermediate';
 }
 
+function formatGoal(value: TrainingGoal): string {
+  if (value === 'hypertrophy') return 'Build muscle';
+  if (value === 'strength') return 'Get stronger';
+  return 'Strength + muscle';
+}
+
+function formatNutritionContext(value: NutritionContext): string {
+  if (value === 'maintenance') return 'Maintaining';
+  if (value === 'surplus') return 'Surplus';
+  if (value === 'deficit') return 'Deficit';
+  return 'Not set';
+}
+
 function formatEnvironment(value: TrainingEnvironment): string {
   if (value === 'commercial_gym') return 'Full gym';
   if (value === 'home_gym') return 'Home gym';
@@ -667,6 +1029,12 @@ function formatTone(value: CoachingTone): string {
   if (value === 'direct') return 'Direct';
   if (value === 'hype') return 'Hype';
   return 'Science';
+}
+
+function formatDraftAction(action: BackupPreview['draftAction']): string {
+  if (action === 'restore') return 'the backup draft will be restored';
+  if (action === 'keep_existing') return 'the current draft will be kept';
+  return 'no draft in this backup';
 }
 
 const styles = StyleSheet.create({
@@ -683,6 +1051,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  choiceChip: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
   muscleGrid: {
     flexDirection: 'row',
@@ -722,5 +1094,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
+  },
+  portabilityActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
 });

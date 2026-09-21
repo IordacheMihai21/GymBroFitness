@@ -17,9 +17,21 @@ export const EXERCISE_CATALOG: Exercise[] = [
 ];
 
 const byId = new Map<string, Exercise>(EXERCISE_CATALOG.map((e) => [e.id, e]));
+const byStableName = buildStableNameIndex(EXERCISE_CATALOG);
 
 export function getExercise(id: string): Exercise | undefined {
-  return byId.get(id);
+  return byId.get(id) ?? byStableName.get(normalizeExerciseIdentifier(id));
+}
+
+/** Resolve an ID, slug, name, or unambiguous alias to the stable catalog ID. */
+export function canonicalExerciseId(identifier: string): string | null {
+  return getExercise(identifier)?.id ?? null;
+}
+
+export function sameExerciseIdentity(left: string, right: string): boolean {
+  if (left === right) return true;
+  const canonicalLeft = canonicalExerciseId(left);
+  return canonicalLeft != null && canonicalLeft === canonicalExerciseId(right);
 }
 
 export function requireExercise(id: string): Exercise {
@@ -52,8 +64,7 @@ export function isExerciseAvailable(exercise: Exercise, owned: EquipmentType[]):
   const implementsList = exercise.equipment.filter((eq) => !MANDATORY_PAIRS[eq]);
 
   const supportsOk = supports.every((eq) => ownedSet.has(eq));
-  const implementOk =
-    implementsList.length === 0 || implementsList.some((eq) => ownedSet.has(eq));
+  const implementOk = implementsList.length === 0 || implementsList.some((eq) => ownedSet.has(eq));
   return supportsOk && implementOk;
 }
 
@@ -62,9 +73,7 @@ export function availableExercises(
   excludedSlugs: string[] = [],
 ): Exercise[] {
   const excluded = new Set(excludedSlugs);
-  return EXERCISE_CATALOG.filter(
-    (e) => !excluded.has(e.slug) && isExerciseAvailable(e, owned),
-  );
+  return EXERCISE_CATALOG.filter((e) => !excluded.has(e.slug) && isExerciseAvailable(e, owned));
 }
 
 export function exercisesForMuscle(
@@ -103,12 +112,30 @@ export const ENVIRONMENT_EQUIPMENT: Record<string, EquipmentType[]> = {
     'ez_bar',
     'bodyweight',
   ],
-  home_gym: [
-    'adjustable_dumbbell',
-    'bench',
-    'pull_up_bar',
-    'resistance_band',
-    'bodyweight',
-  ],
+  home_gym: ['adjustable_dumbbell', 'bench', 'pull_up_bar', 'resistance_band', 'bodyweight'],
   bodyweight: ['bodyweight', 'resistance_band'],
 };
+
+function buildStableNameIndex(exercises: Exercise[]): Map<string, Exercise> {
+  const candidates = new Map<string, Exercise | null>();
+  for (const exercise of exercises) {
+    for (const identifier of [exercise.slug, exercise.name, ...exercise.aliases]) {
+      const normalized = normalizeExerciseIdentifier(identifier);
+      const existing = candidates.get(normalized);
+      candidates.set(normalized, existing && existing.id !== exercise.id ? null : exercise);
+    }
+  }
+  return new Map(
+    [...candidates.entries()].flatMap(([identifier, exercise]) =>
+      exercise ? [[identifier, exercise] as const] : [],
+    ),
+  );
+}
+
+function normalizeExerciseIdentifier(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}

@@ -2,7 +2,17 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { Button, Card, Chip, Divider, IconButton, List, ProgressBar } from 'react-native-paper';
+import {
+  Button,
+  Card,
+  Chip,
+  Dialog,
+  Divider,
+  IconButton,
+  List,
+  Portal,
+  ProgressBar,
+} from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
@@ -34,7 +44,7 @@ export default function ProgramLibraryScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, preferences, saveProgram } = useActiveProgram();
+  const { user, preferences, program, saveProgram } = useActiveProgram();
   const templates = useMemo(() => listProgramLibraryTemplates(preferences), [preferences]);
   const [filter, setFilter] = useState<LibraryFilter>('all');
   const [selectedTemplateId, setSelectedTemplateId] = useState(
@@ -42,6 +52,7 @@ export default function ProgramLibraryScreen() {
   );
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   const filteredTemplates = useMemo(
     () => templates.filter((template) => filter === 'all' || template.category === filter),
@@ -72,6 +83,7 @@ export default function ProgramLibraryScreen() {
         preferences,
       });
       await saveProgram(next);
+      setConfirming(false);
       router.replace('/program');
     } catch {
       setStatus('Could not import this program.');
@@ -92,7 +104,12 @@ export default function ProgramLibraryScreen() {
       }}
     >
       <View style={styles.headerRow}>
-        <IconButton mode="contained-tonal" icon="arrow-left" onPress={() => router.back()} />
+        <IconButton
+          mode="contained-tonal"
+          icon="arrow-left"
+          accessibilityLabel="Back to program"
+          onPress={() => router.back()}
+        />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[typography.caption, { color: colors.textMuted }]}>Program systems</Text>
           <Text style={[typography.title, { color: colors.textPrimary }]}>Library</Text>
@@ -123,6 +140,9 @@ export default function ProgramLibraryScreen() {
             </View>
             <Chip compact mode="flat" icon="calendar-week">
               {selectedTemplate.daysPerWeek}d/wk
+            </Chip>
+            <Chip compact mode="outlined" icon="target">
+              {formatGoal(selectedTemplate.goal)}
             </Chip>
           </View>
 
@@ -211,6 +231,11 @@ export default function ProgramLibraryScreen() {
             <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
               {selectedTemplate.subtitle}
             </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {replacedCount === 0
+                ? 'Every exercise matches your available equipment.'
+                : `${replacedCount} exercise${replacedCount === 1 ? '' : 's'} will be substituted for your equipment or exclusions.`}
+            </Text>
             <View style={styles.chipRow}>
               {selectedTemplate.tags.map((tag) => (
                 <Chip key={tag} compact mode="outlined">
@@ -235,13 +260,44 @@ export default function ProgramLibraryScreen() {
 
       <Button
         mode="contained"
-        icon="download-circle-outline"
+        icon="clipboard-check-outline"
         loading={saving}
         disabled={saving}
-        onPress={setActiveProgram}
+        onPress={() => setConfirming(true)}
       >
-        Set as active program
+        Review activation
       </Button>
+
+      <Portal>
+        <Dialog visible={confirming} onDismiss={() => !saving && setConfirming(false)}>
+          <Dialog.Title>Activate {selectedTemplate.name}?</Dialog.Title>
+          <Dialog.Content style={{ gap: spacing.md }}>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>
+              This replaces the active plan “{program.name}” for future workouts. Completed workout
+              history, personal records, saved templates and any active workout draft stay intact.
+            </Text>
+            <View style={[styles.impactPanel, { backgroundColor: colors.surfaceRaised }]}>
+              <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+                {selectedTemplate.daysPerWeek} days · {formatGoal(selectedTemplate.goal)} ·{' '}
+                {templateWeeklySetCount(selectedTemplate)} prescribed sets/week
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {replacedCount === 0
+                  ? 'No equipment substitutions.'
+                  : `${replacedCount} equipment-based substitution${replacedCount === 1 ? '' : 's'} shown in the preview.`}
+              </Text>
+            </View>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setConfirming(false)} disabled={saving}>
+              Keep current plan
+            </Button>
+            <Button onPress={setActiveProgram} loading={saving} disabled={saving}>
+              Activate previewed plan
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </Animated.ScrollView>
   );
 }
@@ -366,6 +422,12 @@ function formatLevel(level: ProgramLibraryTemplate['level']): string {
   return `${level[0].toUpperCase()}${level.slice(1)}`;
 }
 
+function formatGoal(goal: ProgramLibraryTemplate['goal']): string {
+  if (goal === 'hypertrophy') return 'Build muscle';
+  if (goal === 'strength') return 'Strength';
+  return 'Strength + muscle';
+}
+
 const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
@@ -413,5 +475,10 @@ const styles = StyleSheet.create({
   sourcePanel: {
     borderRadius: 14,
     gap: 4,
+  },
+  impactPanel: {
+    borderRadius: 14,
+    gap: 6,
+    padding: 12,
   },
 });

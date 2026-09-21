@@ -1,4 +1,4 @@
-import type { ExerciseType, ExperienceLevel, MuscleGroup } from '@/types';
+import type { ExerciseType, ExperienceLevel, MuscleGroup, TrainingGoal } from '@/types';
 
 /**
  * Tunable programming defaults. The generator and progression engine read
@@ -12,6 +12,19 @@ export const REP_RANGES: Record<ExerciseType, RepRange> = {
   isolation: { min: 10, max: 15 },
 };
 
+/** Goal-specific defaults. Isolation work stays moderate even in strength plans. */
+export const GOAL_REP_RANGES: Record<TrainingGoal, Record<ExerciseType, RepRange>> = {
+  hypertrophy: REP_RANGES,
+  strength: {
+    compound: { min: 3, max: 6 },
+    isolation: { min: 8, max: 12 },
+  },
+  mixed: {
+    compound: { min: 5, max: 8 },
+    isolation: { min: 10, max: 15 },
+  },
+};
+
 /** Small muscles respond well to higher-rep isolation work. */
 export const HIGH_REP_MUSCLES: MuscleGroup[] = ['calves', 'abs', 'forearms'];
 export const HIGH_REP_RANGE: RepRange = { min: 12, max: 20 };
@@ -22,6 +35,12 @@ export const TIME_RANGE_SECONDS: RepRange = { min: 30, max: 60 };
 export const REST_SECONDS: Record<ExerciseType, number> = {
   compound: 180,
   isolation: 105,
+};
+
+export const GOAL_REST_SECONDS: Record<TrainingGoal, Record<ExerciseType, number>> = {
+  hypertrophy: REST_SECONDS,
+  strength: { compound: 240, isolation: 120 },
+  mixed: { compound: 210, isolation: 105 },
 };
 
 /** Default target RIR for working sets by experience. */

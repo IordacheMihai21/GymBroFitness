@@ -2,8 +2,10 @@ import {
   buildPersonalRecordsFromHistory,
   buildWeekLog,
   buildWorkoutHistoryInsights,
+  countSetsWithRir,
   computeIntensityMatchPct,
 } from '../historyInsights';
+import { buildMuscleIntelligence } from '../muscleIntelligence';
 import type { PerformedSet, WorkoutSession } from '@/types';
 
 function set(id: string, patch: Partial<PerformedSet> = {}): PerformedSet {
@@ -63,9 +65,7 @@ describe('history insights', () => {
         set('a', { loadKg: 105, reps: 8, rir: 1 }),
         set('b', { loadKg: 105, reps: 7, rir: 1.5 }),
       ]),
-      session('older', '2026-09-13T10:00:00.000Z', [
-        set('c', { loadKg: 100, reps: 8, rir: 1 }),
-      ]),
+      session('older', '2026-09-13T10:00:00.000Z', [set('c', { loadKg: 100, reps: 8, rir: 1 })]),
     ];
 
     const insights = buildWorkoutHistoryInsights(
@@ -93,7 +93,10 @@ describe('history insights', () => {
     });
     expect(insights.weekVolumeKg).toBe(1575);
     expect(insights.intensityMatchPct).toBe(1);
-    expect(insights.personalRecords.some((record) => record.exerciseId === 'barbell-bench-press')).toBe(true);
+    expect(insights.rirSetCount).toBe(3);
+    expect(
+      insights.personalRecords.some((record) => record.exerciseId === 'barbell-bench-press'),
+    ).toBe(true);
     expect(insights.strengthTrend?.exerciseName).toBe('Barbell Bench Press');
     expect(insights.strengthTrend?.deltaKg).toBeGreaterThan(0);
   });
@@ -108,6 +111,19 @@ describe('history insights', () => {
     ];
 
     expect(computeIntensityMatchPct(history)).toBe(0.5);
+    expect(countSetsWithRir(history)).toBe(2);
+  });
+
+  it('uses the same current-week direct-set total as Body', () => {
+    const history = [
+      session('shared', '2026-09-14T10:00:00.000Z', [set('a'), set('b', { rir: null })]),
+    ];
+    const now = new Date('2026-09-14T12:00:00.000Z');
+    const progress = buildWorkoutHistoryInsights(history, [], now);
+    const body = buildMuscleIntelligence([], history, now).find((item) => item.muscle === 'chest');
+
+    expect(progress.weeklySetsByMuscle.chest).toBe(2);
+    expect(body?.trainingLoad.directSets).toBe(progress.weeklySetsByMuscle.chest);
   });
 
   it('builds week log without requiring planned training days', () => {

@@ -1,7 +1,10 @@
 import {
   displayLoad,
+  formatLoad,
+  formatVolumeLoad,
   inputToKg,
   kgToLb,
+  loadInputToKg,
   lbToKg,
   roundToIncrement,
   smallestIncrementKg,
@@ -23,6 +26,24 @@ describe('unit conversion', () => {
   it('parses user input back to kg', () => {
     expect(inputToKg(60, 'kg')).toBe(60);
     expect(inputToKg(135, 'lb')).toBeCloseTo(61.23, 1);
+  });
+
+  it('round-trips a 135 lb field through canonical kg storage', () => {
+    const storedKg = loadInputToKg('135', 'lb');
+    expect(storedKg).toBeCloseTo(61.23497, 5);
+    expect(displayLoad(storedKg, 'lb')).toBe(135);
+  });
+
+  it('accepts comma decimals and rejects non-finite input', () => {
+    expect(loadInputToKg('22,5', 'kg')).toBe(22.5);
+    expect(loadInputToKg('Infinity', 'kg')).toBeNull();
+  });
+
+  it('formats canonical loads and volume in the selected unit', () => {
+    expect(formatLoad(100, 'kg')).toBe('100kg');
+    expect(formatLoad(100, 'lb')).toBe('220.5lb');
+    expect(formatVolumeLoad(1000, 'kg')).toBe('1.0t');
+    expect(formatVolumeLoad(100, 'lb')).toBe('220lb');
   });
 });
 

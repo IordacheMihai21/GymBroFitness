@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getDb } from '@/db/client';
+import { workoutTemplatePayloadSchema } from '@/db/payload';
+import type { GymBroDb } from '@/db/types';
 
 import {
   deleteTemplateSql,
@@ -12,6 +14,7 @@ import type { WorkoutTemplate } from './templates';
 
 /** The pre-SQLite key this app used to store templates under (see the migration below). */
 const LEGACY_STORAGE_KEY = '@GymBroFitness/workout-templates/v1';
+type LegacyTemplateStorage = Pick<typeof AsyncStorage, 'getItem' | 'removeItem'>;
 
 /**
  * SQLite is now the source of truth for saved templates — same migration as
@@ -22,25 +25,40 @@ const LEGACY_STORAGE_KEY = '@GymBroFitness/workout-templates/v1';
 let migration: Promise<void> | null = null;
 
 function ensureMigrated(): Promise<void> {
-  if (!migration) migration = migrateLegacyTemplates();
+  if (!migration) {
+    migration = migrateLegacyTemplates(AsyncStorage, getDb()).catch((error: unknown) => {
+      migration = null;
+      throw error;
+    });
+  }
   return migration;
 }
 
-async function migrateLegacyTemplates(): Promise<void> {
-  const raw = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
+export async function migrateLegacyTemplates(
+  storage: LegacyTemplateStorage,
+  db: GymBroDb,
+): Promise<void> {
+  const raw = await storage.getItem(LEGACY_STORAGE_KEY);
   if (!raw) return;
 
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      const templates = parsed.filter(isWorkoutTemplateLike);
-      if (templates.length > 0) importTemplatesSql(getDb(), templates);
-    }
+    parsed = JSON.parse(raw);
   } catch {
-    // Corrupt legacy data — nothing usable to migrate, nothing to crash over.
-  } finally {
-    await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+    return;
   }
+
+  if (!Array.isArray(parsed)) return;
+
+  const templates: WorkoutTemplate[] = [];
+  for (const candidate of parsed) {
+    const result = workoutTemplatePayloadSchema.safeParse(candidate);
+    if (!result.success) return;
+    templates.push(result.data);
+  }
+
+  importTemplatesSql(db, templates);
+  await storage.removeItem(LEGACY_STORAGE_KEY);
 }
 
 export async function listTemplates(): Promise<WorkoutTemplate[]> {
@@ -58,14 +76,7 @@ export async function deleteTemplate(id: string): Promise<void> {
   deleteTemplateSql(getDb(), id);
 }
 
-function isWorkoutTemplateLike(value: unknown): value is WorkoutTemplate {
-  if (value == null || typeof value !== 'object') return false;
-  const candidate = value as Partial<WorkoutTemplate>;
-  return (
-    typeof candidate.id === 'string' &&
-    typeof candidate.name === 'string' &&
-    typeof candidate.createdAt === 'string' &&
-    candidate.day != null &&
-    Array.isArray(candidate.day.prescriptions)
-  );
+export async function importWorkoutTemplates(templates: WorkoutTemplate[]): Promise<void> {
+  await ensureMigrated();
+  importTemplatesSql(getDb(), templates);
 }

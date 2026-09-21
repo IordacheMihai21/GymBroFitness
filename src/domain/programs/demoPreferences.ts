@@ -10,6 +10,7 @@ export const DEMO_DISPLAY_NAME = 'Alex';
 
 export const DEMO_PREFERENCES: TrainingPreferences = {
   goal: 'hypertrophy',
+  nutritionContext: 'unknown',
   experience: 'intermediate',
   environment: 'commercial_gym',
   equipment: [

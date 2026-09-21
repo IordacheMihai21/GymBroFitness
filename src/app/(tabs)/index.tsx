@@ -3,24 +3,20 @@ import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { type ElementRef, useCallback, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Avatar, Button, IconButton, TouchableRipple } from 'react-native-paper';
+import { Avatar, Button, Card, Chip, IconButton, TouchableRipple } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HomeActionSheet, type HomeSheet } from '@/components/home/HomeActionSheet';
 import { HomePreflightRail } from '@/components/home/HomePreflightRail';
-import { MesocycleCard } from '@/components/home/MesocycleCard';
 import { MuscleFocusMap } from '@/components/home/MuscleFocusMap';
 import { OverloadRunwayCard } from '@/components/home/OverloadRunwayCard';
 import { PrWatchCard } from '@/components/home/PrWatchCard';
-import { RecoveryProtocolCard } from '@/components/home/RecoveryProtocolCard';
 import { TodayWorkoutHero } from '@/components/home/TodayWorkoutHero';
 import { WeekLogCard } from '@/components/home/WeekLogCard';
 import { Reveal } from '@/components/ui/Reveal';
 import { BRAND } from '@/constants/branding';
-import { computeMesocycleStatus } from '@/domain/programs/mesocycle';
-import { DEMO_MESOCYCLE_BLOCK, DEMO_PRE_WORKOUT_LOG } from '@/domain/workouts/demoHistory';
 import { buildPlannedWeek, buildWorkoutHistoryInsights } from '@/domain/workouts/historyInsights';
-import { listWorkoutHistory } from '@/domain/workouts/historyStore';
+import { getInProgressWorkoutSession, listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { buildProgressionTarget } from '@/domain/workouts/targetToBeat';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
@@ -36,6 +32,7 @@ export default function HomeScreen() {
   const safeTop = Math.max(insets.top, spacing.xxl);
   const { user, preferences, program } = useActiveProgram();
   const [history, setHistory] = useState<WorkoutSession[]>([]);
+  const [activeDraft, setActiveDraft] = useState<WorkoutSession | null>(null);
   const [dayIndex, setDayIndex] = useState(0);
   const [activeSheet, setActiveSheet] = useState<HomeSheet | null>(null);
   const day = program.days[dayIndex];
@@ -44,9 +41,13 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       let mounted = true;
-      listWorkoutHistory().then((next) => {
-        if (mounted) setHistory(next);
-      });
+      Promise.all([listWorkoutHistory(), getInProgressWorkoutSession()]).then(
+        ([nextHistory, draft]) => {
+          if (!mounted) return;
+          setHistory(nextHistory);
+          setActiveDraft(draft);
+        },
+      );
       return () => {
         mounted = false;
       };
@@ -61,16 +62,22 @@ export default function HomeScreen() {
     () => buildWorkoutHistoryInsights(history, plannedWeek),
     [history, plannedWeek],
   );
-  const mesocycleStatus = useMemo(() => computeMesocycleStatus(DEMO_MESOCYCLE_BLOCK), []);
   const target = useMemo(
     () =>
       buildProgressionTarget({
         prescription: day.prescriptions[0],
         history,
         userExperience: preferences.experience,
+        nutritionContext: preferences.nutritionContext,
         isPriorityMuscle: day.focus.some((muscle) => preferences.musclePriorities.includes(muscle)),
       }),
-    [day, history, preferences.experience, preferences.musclePriorities],
+    [
+      day,
+      history,
+      preferences.experience,
+      preferences.musclePriorities,
+      preferences.nutritionContext,
+    ],
   );
 
   function startDay(index: number) {
@@ -107,6 +114,7 @@ export default function HomeScreen() {
               icon="menu"
               size={24}
               onPress={() => router.push('/settings')}
+              accessibilityLabel="Open settings"
               style={styles.iconButton}
             />
             <Text style={[typography.subheading, { color: colors.textPrimary }]}>
@@ -128,6 +136,8 @@ export default function HomeScreen() {
               </Button>
               <TouchableRipple
                 onPress={() => router.push('/profile')}
+                accessibilityLabel="Open profile"
+                accessibilityRole="button"
                 style={styles.avatarTouchable}
                 borderless
               >
@@ -138,6 +148,12 @@ export default function HomeScreen() {
         </Reveal>
 
         <Reveal index={1}>
+          {activeDraft ? (
+            <ActiveWorkoutCard session={activeDraft} onResume={() => router.push('/workout')} />
+          ) : null}
+        </Reveal>
+
+        <Reveal index={2}>
           <View style={{ gap: 4 }}>
             <Text style={[typography.title, { color: colors.textPrimary }]}>
               Ready to jump back to work, {user.displayName}?
@@ -146,62 +162,55 @@ export default function HomeScreen() {
           </View>
         </Reveal>
 
-        <Reveal index={2}>
-          <TodayWorkoutHero
-            day={day}
-            targetRir={day.prescriptions[0].targetRir}
-            target={target}
-            hasPreviousTopSet={target.lastSignal != null}
-            swapLabel={program.days[swapIndex].name}
-            onStart={() => startDay(dayIndex)}
-            onSwap={() => openSheet('swap')}
-            onWeakPoint={() => openSheet('weakPoint')}
-            onCustomWorkout={() => router.push('/custom-workout')}
-          />
-        </Reveal>
-
         <Reveal index={3}>
-          <HomePreflightRail
-            intensityMatchPct={insights.intensityMatchPct}
-            preWorkoutLog={DEMO_PRE_WORKOUT_LOG}
-            status={mesocycleStatus}
-            onFuelPress={() => openSheet('preFuel')}
-          />
+          {activeDraft ? null : (
+            <TodayWorkoutHero
+              day={day}
+              targetRir={day.prescriptions[0].targetRir}
+              target={target}
+              units={preferences.units}
+              hasPreviousTopSet={target.lastSignal != null}
+              swapLabel={program.days[swapIndex].name}
+              onStart={() => startDay(dayIndex)}
+              onSwap={() => openSheet('swap')}
+              onWeakPoint={() => openSheet('weakPoint')}
+              onCustomWorkout={() => router.push('/custom-workout')}
+            />
+          )}
         </Reveal>
 
         <Reveal index={4}>
-          <OverloadRunwayCard target={target} />
+          <HomePreflightRail
+            intensityMatchPct={insights.intensityMatchPct}
+            sessionsThisWeek={insights.weekLog.filter((entry) => entry.status === 'done').length}
+          />
         </Reveal>
 
         <Reveal index={5}>
-          <MuscleFocusMap day={day} />
+          <OverloadRunwayCard target={target} units={preferences.units} />
         </Reveal>
 
         <Reveal index={6}>
-          <PrWatchCard records={insights.personalRecords} />
+          <MuscleFocusMap day={day} />
         </Reveal>
 
         <Reveal index={7}>
+          <PrWatchCard records={insights.personalRecords} units={preferences.units} />
+        </Reveal>
+
+        <Reveal index={8}>
           <WeekLogCard
             entries={insights.weekLog}
             weekVolumeKg={insights.weekVolumeKg}
             intensityMatchPct={insights.intensityMatchPct}
+            units={preferences.units}
           />
-        </Reveal>
-
-        <Reveal index={8}>
-          <MesocycleCard blockName={DEMO_MESOCYCLE_BLOCK.name} status={mesocycleStatus} />
-        </Reveal>
-
-        <Reveal index={9}>
-          <RecoveryProtocolCard status={mesocycleStatus} weekVolumeKg={insights.weekVolumeKg} />
         </Reveal>
       </ScrollView>
 
       <HomeActionSheet
         activeSheet={activeSheet}
         modalRef={actionSheetRef}
-        preWorkoutLog={DEMO_PRE_WORKOUT_LOG}
         streakDays={insights.streakDays}
         currentDayName={day.name}
         swapLabel={program.days[swapIndex].name}
@@ -209,6 +218,54 @@ export default function HomeScreen() {
         onConfirmSwap={confirmSwap}
       />
     </View>
+  );
+}
+
+function ActiveWorkoutCard({
+  session,
+  onResume,
+}: {
+  session: WorkoutSession;
+  onResume: () => void;
+}) {
+  const { colors, radius, spacing, typography } = useTheme();
+  const completedSets = session.exercises.reduce(
+    (total, exercise) =>
+      total + exercise.sets.filter((set) => set.completed && !set.skipped).length,
+    0,
+  );
+  const plannedSets = session.exercises.reduce(
+    (total, exercise) => total + exercise.sets.length,
+    0,
+  );
+
+  return (
+    <Card
+      mode="contained"
+      style={{
+        backgroundColor: colors.accentSoft,
+        borderColor: colors.accent,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: radius.xl,
+      }}
+    >
+      <Card.Content style={{ gap: spacing.md }}>
+        <View style={styles.topBar}>
+          <View style={{ flex: 1 }}>
+            <Text style={[typography.micro, { color: colors.accent }]}>ACTIVE WORKOUT</Text>
+            <Text style={[typography.heading, { color: colors.textPrimary }]}>
+              {session.dayName}
+            </Text>
+          </View>
+          <Chip compact icon={session.status === 'paused' ? 'pause' : 'progress-clock'}>
+            {completedSets}/{plannedSets} sets
+          </Chip>
+        </View>
+        <Button mode="contained" icon="play" onPress={onResume}>
+          Resume workout
+        </Button>
+      </Card.Content>
+    </Card>
   );
 }
 

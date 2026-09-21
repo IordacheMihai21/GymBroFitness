@@ -111,7 +111,8 @@ export type MovementPattern =
   | 'anti_rotation';
 
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
-export type TrainingGoal = 'hypertrophy'; // architecture allows more later
+export type TrainingGoal = 'hypertrophy' | 'strength' | 'mixed';
+export type NutritionContext = 'unknown' | 'maintenance' | 'surplus' | 'deficit';
 export type TrainingEnvironment = 'commercial_gym' | 'home_gym' | 'bodyweight' | 'custom';
 export type Units = 'kg' | 'lb';
 export type CoachingTone = 'supportive' | 'direct' | 'hype' | 'science';
@@ -152,6 +153,8 @@ export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Monday
 
 export type TrainingPreferences = {
   goal: TrainingGoal;
+  /** Optional self-reported context; never interpreted as a calorie prescription. */
+  nutritionContext?: NutritionContext;
   experience: ExperienceLevel;
   environment: TrainingEnvironment;
   equipment: EquipmentType[];
@@ -308,6 +311,12 @@ export type PerformedExercise = {
 
 export type WorkoutStatus = 'in_progress' | 'paused' | 'completed' | 'discarded';
 
+export type RestTimerSnapshot = {
+  /** Absolute deadline so backgrounding or restarting cannot freeze the countdown. */
+  endsAt: string;
+  durationSeconds: number;
+};
+
 export type WorkoutSession = {
   id: string;
   userId: string;
@@ -320,6 +329,10 @@ export type WorkoutSession = {
   exercises: PerformedExercise[];
   readiness?: ReadinessCheckIn;
   totalPausedSeconds: number;
+  /** Set only while the whole workout is paused; absent on legacy sessions. */
+  pausedAt?: string | null;
+  /** Persisted countdown state; absent on sessions created before timer persistence. */
+  restTimer?: RestTimerSnapshot | null;
   note?: string;
 };
 
@@ -352,6 +365,7 @@ export type ExercisePerformanceHistory = {
   date: string;
   prescription: ExercisePrescription;
   sets: PerformedSet[];
+  readiness?: ReadinessCheckIn;
 };
 
 export type ProgressionAction =
@@ -366,6 +380,23 @@ export type ProgressionAction =
 
 export type ProgressionConfidence = 'low' | 'medium' | 'high';
 
+export type ProgressionReasonCode =
+  | 'NO_COMPLETED_SETS'
+  | 'PAIN_HOLD'
+  | 'INCOMPLETE_PRESCRIPTION'
+  | 'CALIBRATING_LOAD'
+  | 'MISSING_RIR_HOLD'
+  | 'DELOAD_SIGNALS'
+  | 'SHARP_INTRASET_DROP'
+  | 'EXTREME_MISS'
+  | 'REPEATED_BELOW_MIN'
+  | 'ONE_OFF_MISS'
+  | 'TOP_OF_RANGE_ALL_SETS'
+  | 'BODYWEIGHT_TOP_OF_RANGE'
+  | 'PRIORITY_VOLUME_HEADROOM'
+  | 'IN_RANGE_PROGRESS_REPS'
+  | 'HOLD_STEADY';
+
 export type ProgressionDecision = {
   exerciseId: string;
   action: ProgressionAction;
@@ -374,7 +405,8 @@ export type ProgressionDecision = {
   nextMaxReps: number;
   nextWorkingSets: number;
   confidence: ProgressionConfidence;
-  reasonCode: string;
+  reasonCode: ProgressionReasonCode;
+  ruleVersion: number;
   explanation: string;
   supportingMetrics: Record<string, number | string>;
   createdAt: string;
@@ -387,6 +419,7 @@ export type ProgressionInput = {
   previousSessions: ExercisePerformanceHistory[];
   exercise: Exercise;
   userExperience: ExperienceLevel;
+  nutritionContext?: NutritionContext;
   readiness?: ReadinessCheckIn;
   /** Weekly working sets currently programmed for the exercise's primary muscle. */
   weeklySetsForPrimaryMuscle?: number;

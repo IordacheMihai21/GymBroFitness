@@ -17,10 +17,15 @@ export const legExercises = [
       'Sit down between your hips with a tall chest until thighs reach at least parallel.',
       'Drive up through mid-foot, keeping knees tracking over toes.',
     ],
-    commonMistakes: ['Knees caving inward.', 'Rising hips-first into a good-morning.', 'Cutting depth as weight increases.'],
+    commonMistakes: [
+      'Knees caving inward.',
+      'Rising hips-first into a good-morning.',
+      'Cutting depth as weight increases.',
+    ],
     scienceExplanation:
       'Loads the quads and glutes through the biggest usable range with the most progression headroom of any lower-body lift.',
-    progressionInstructions: 'Add the smallest plate increment when all sets top the rep range at target RIR.',
+    progressionInstructions:
+      'Add the smallest plate increment when all sets top the rep range at target RIR.',
     easierAlternatives: ['goblet-squat', 'leg-press', 'smith-machine-squat'],
     equivalentAlternatives: ['hack-squat-machine', 'smith-machine-squat'],
   }),
@@ -42,7 +47,8 @@ export const legExercises = [
     commonMistakes: ['Letting the weight pull the chest forward.', 'Heels lifting.'],
     scienceExplanation:
       'The front-loaded counterbalance keeps the torso upright, teaching deep squatting while genuinely loading the quads.',
-    progressionInstructions: 'Dumbbell steps until the heaviest bell is easy — then graduate to barbell or hack squats.',
+    progressionInstructions:
+      'Dumbbell steps until the heaviest bell is easy — then graduate to barbell or hack squats.',
     harderAlternatives: ['barbell-back-squat', 'hack-squat-machine'],
     equivalentAlternatives: ['leg-press'],
   }),
@@ -63,7 +69,8 @@ export const legExercises = [
     commonMistakes: ['Feet directly under the bar forcing knee strain.'],
     scienceExplanation:
       'The fixed path removes balance demands so the quads can be pushed near failure with less technical risk.',
-    progressionInstructions: 'Add 2.5–5 kg once all sets top the range.',
+    progressionInstructions:
+      'Add the smallest practical load increment once all sets top the range.',
     equivalentAlternatives: ['barbell-back-squat', 'hack-squat-machine', 'leg-press'],
   }),
   defineExercise({
@@ -81,7 +88,10 @@ export const legExercises = [
       'Lower deep with knees tracking over toes.',
       'Press up without locking out harshly.',
     ],
-    commonMistakes: ['Feet too high (shifts to glutes when quads are the target).', 'Shallow reps.'],
+    commonMistakes: [
+      'Feet too high (shifts to glutes when quads are the target).',
+      'Shallow reps.',
+    ],
     scienceExplanation:
       'Back support plus a guided path lets you take the quads through deep ranges close to failure safely — hard to beat for quad hypertrophy.',
     progressionInstructions: 'Add the smallest plate increment after topping the rep range.',
@@ -105,7 +115,8 @@ export const legExercises = [
     commonMistakes: ['Butt lifting off the pad at depth.', 'Tiny half reps with excessive load.'],
     scienceExplanation:
       'Removes the balance and spinal-loading limits of squats so the quads themselves become the limiting factor.',
-    progressionInstructions: 'Add plates in the smallest steps after topping the range on all sets.',
+    progressionInstructions:
+      'Add plates in the smallest steps after topping the range on all sets.',
     equivalentAlternatives: ['hack-squat-machine', 'barbell-back-squat'],
   }),
   defineExercise({
@@ -167,7 +178,11 @@ export const legExercises = [
       'Push your hips back, sliding the bar down your legs with a flat back.',
       'Stop when the hamstrings are fully stretched, then drive hips forward.',
     ],
-    commonMistakes: ['Rounding the back.', 'Bending the knees into a squat.', 'Overreaching past hamstring flexibility.'],
+    commonMistakes: [
+      'Rounding the back.',
+      'Bending the knees into a squat.',
+      'Overreaching past hamstring flexibility.',
+    ],
     scienceExplanation:
       'Loads the hamstrings at long muscle lengths under heavy load — one of the strongest hypertrophy signals available for the posterior chain.',
     progressionInstructions: 'Smallest plate increments once all sets top the range at target RIR.',
@@ -381,7 +396,10 @@ export const legExercises = [
       'Lower the back knee toward the floor.',
       'Drive up through the front foot.',
     ],
-    commonMistakes: ['Short stance driving the knee far past the toes uncomfortably.', 'Leaning far forward.'],
+    commonMistakes: [
+      'Short stance driving the knee far past the toes uncomfortably.',
+      'Leaning far forward.',
+    ],
     scienceExplanation:
       'Builds single-leg strength and balance with a stable setup before progressing to rear-foot-elevated work.',
     progressionInstructions: 'Add dumbbells, then elevate the rear foot.',
@@ -402,7 +420,10 @@ export const legExercises = [
       'Step forward into a lunge, back knee toward the floor.',
       'Push through the front foot into the next stride.',
     ],
-    commonMistakes: ['Short strides with the torso pitched forward.', 'Wobbling from a narrow base.'],
+    commonMistakes: [
+      'Short strides with the torso pitched forward.',
+      'Wobbling from a narrow base.',
+    ],
     scienceExplanation:
       'High-rep unilateral volume with a stretch on the trailing leg glutes each stride.',
     progressionInstructions: 'Add dumbbells once bodyweight sets top the range.',

@@ -85,4 +85,15 @@ describe('buildSetAutofillSuggestion', () => {
     expect(suggestion.source).toBe('prescription');
     expect(setAutofillPatch(suggestion)).toMatchObject({ loadKg: null, reps: 6, rir: 2 });
   });
+
+  it('uses seconds rather than reps for a time-based prescription', () => {
+    const current = makeExercise([makeSet(0)]);
+    const suggestion = buildSetAutofillSuggestion(current, null, 0, 'kg', 'time');
+
+    expect(setAutofillPatch(suggestion)).toMatchObject({
+      loadKg: null,
+      reps: null,
+      durationSeconds: 6,
+    });
+  });
 });

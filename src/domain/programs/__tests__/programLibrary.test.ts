@@ -7,6 +7,7 @@ import type { TrainingPreferences } from '@/types';
 
 import {
   buildProgramFromLibraryTemplate,
+  listProgramLibraryTemplates,
   PROGRAM_LIBRARY,
   templateWeeklySetCount,
 } from '../programLibrary';
@@ -87,5 +88,11 @@ describe('program library', () => {
     expect(
       exercises.every((exercise) => isExerciseAvailable(exercise, bodyweightPreferences.equipment)),
     ).toBe(true);
+  });
+
+  it('ranks templates matching the selected goal ahead of otherwise similar plans', () => {
+    const ranked = listProgramLibraryTemplates({ ...preferences, goal: 'mixed' });
+
+    expect(ranked[0].goal).toBe('mixed');
   });
 });

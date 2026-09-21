@@ -42,13 +42,17 @@ describe('programStore', () => {
     expect(snapshot.program.userId).toBe(DEMO_USER_ID);
   });
 
-  it('clears corrupt local program payloads', async () => {
-    await AsyncStorage.setItem('@GymBroFitness/active-program/v1', '{"version":1,"program":null}');
+  it('preserves corrupt local program payloads for recovery', async () => {
+    const raw = '{"version":1,"program":null}';
+    await AsyncStorage.setItem('@GymBroFitness/active-program/v1', raw);
 
     const snapshot = await loadActiveProgram(DEMO_PREFERENCES, DEMO_USER_ID);
 
     expect(snapshot.source).toBe('generated');
-    await expect(AsyncStorage.getItem('@GymBroFitness/active-program/v1')).resolves.toBeNull();
+    await expect(AsyncStorage.getItem('@GymBroFitness/active-program/v1')).resolves.toBe(raw);
+    await expect(AsyncStorage.getItem('@GymBroFitness/active-program/v1/recovery')).resolves.toBe(
+      raw,
+    );
   });
 
   it('can reset to generated program explicitly', async () => {

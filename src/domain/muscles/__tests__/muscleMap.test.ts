@@ -50,7 +50,7 @@ describe('muscleMap', () => {
   });
 
   it('uses compact labels for dense mobile UI', () => {
-    expect(shortVolumeZoneLabel('below_mv')).toBe('Below MV');
-    expect(shortVolumeZoneLabel('frontier')).toBe('Frontier');
+    expect(shortVolumeZoneLabel('below_mv')).toBe('Very low ref.');
+    expect(shortVolumeZoneLabel('frontier')).toBe('High ref.');
   });
 });

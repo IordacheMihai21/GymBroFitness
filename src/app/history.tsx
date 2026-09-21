@@ -1,4 +1,4 @@
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { ActivityIndicator, Button, Card, Chip, IconButton, List } from 'react-native-paper';
@@ -9,13 +9,18 @@ import { deleteTemplate, listTemplates } from '@/domain/programs/templateStore';
 import type { WorkoutTemplate } from '@/domain/programs/templates';
 import { summarizeWorkoutSession, type WorkoutHistorySummary } from '@/domain/workouts/history';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
+import { useTrainingProfile } from '@/hooks/useTrainingProfile';
 import { useTheme } from '@/theme';
-import type { WorkoutSession } from '@/types';
+import type { Units, WorkoutSession } from '@/types';
+import { formatVolumeLoad } from '@/utils/units';
 
 export default function HistoryScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
+  const selectedSessionId = typeof sessionId === 'string' ? sessionId : null;
+  const { preferences } = useTrainingProfile();
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +52,10 @@ export default function HistoryScreen() {
     setTemplates((prev) => prev.filter((t) => t.id !== templateId));
   };
 
-  const summaries = useMemo(() => sessions.map(summarizeWorkoutSession), [sessions]);
+  const summaries = useMemo(
+    () => sessions.map((session) => summarizeWorkoutSession(session, preferences.units)),
+    [preferences.units, sessions],
+  );
   const totalVolume = summaries.reduce((total, item) => total + item.volumeKg, 0);
   const totalSets = summaries.reduce((total, item) => total + item.completedSets, 0);
   const leaveHistory = () => {
@@ -70,11 +78,7 @@ export default function HistoryScreen() {
         ListHeaderComponent={
           <View style={{ gap: spacing.lg }}>
             <View style={styles.headerRow}>
-              <IconButton
-                mode="contained-tonal"
-                icon="chevron-left"
-                onPress={leaveHistory}
-              />
+              <IconButton mode="contained-tonal" icon="chevron-left" onPress={leaveHistory} />
               <View style={{ flex: 1 }}>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
                   Saved training log
@@ -101,7 +105,10 @@ export default function HistoryScreen() {
                 <View style={styles.metricRow}>
                   <HistoryMetric label="sessions" value={String(sessions.length)} />
                   <HistoryMetric label="sets" value={String(totalSets)} />
-                  <HistoryMetric label="volume" value={formatVolume(totalVolume)} />
+                  <HistoryMetric
+                    label="volume"
+                    value={formatVolumeLoad(totalVolume, preferences.units)}
+                  />
                 </View>
               </Card.Content>
             </Card>
@@ -145,7 +152,8 @@ export default function HistoryScreen() {
                   No saved sessions yet
                 </Text>
                 <Text style={[typography.body, { color: colors.textMuted }]}>
-                  Finish a workout and it will show here with sets, volume, duration, and lift breakdown.
+                  Finish a workout and it will show here with sets, volume, duration, and lift
+                  breakdown.
                 </Text>
                 <Button mode="contained" icon="dumbbell" onPress={leaveHistory}>
                   Back to training
@@ -154,7 +162,14 @@ export default function HistoryScreen() {
             </Card>
           )
         }
-        renderItem={({ item }) => <HistorySessionCard summary={item} onSelectExercise={goToExercise} />}
+        renderItem={({ item }) => (
+          <HistorySessionCard
+            summary={item}
+            units={preferences.units}
+            onSelectExercise={goToExercise}
+            selected={item.sessionId === selectedSessionId}
+          />
+        )}
       />
     </Animated.View>
   );
@@ -162,13 +177,19 @@ export default function HistoryScreen() {
 
 function HistorySessionCard({
   summary,
+  units,
   onSelectExercise,
+  selected,
 }: {
   summary: WorkoutHistorySummary;
+  units: Units;
   onSelectExercise: (exerciseId: string) => void;
+  selected: boolean;
 }) {
   const { colors, radius, spacing, typography } = useTheme();
-  const topExercises = summary.exerciseSummaries.filter((item) => item.completedSets > 0).slice(0, 3);
+  const topExercises = summary.exerciseSummaries
+    .filter((item) => item.completedSets > 0)
+    .slice(0, 3);
 
   return (
     <Card
@@ -177,8 +198,9 @@ function HistorySessionCard({
         styles.card,
         {
           backgroundColor: colors.surface,
-          borderColor: colors.border,
+          borderColor: selected ? colors.accent : colors.border,
           borderRadius: radius.xl,
+          borderWidth: selected ? 2 : StyleSheet.hairlineWidth,
         },
       ]}
     >
@@ -188,7 +210,9 @@ function HistorySessionCard({
             <Text style={[typography.micro, { color: colors.accent }]}>
               {formatDate(summary.startedAt)}
             </Text>
-            <Text style={[typography.heading, { color: colors.textPrimary }]}>{summary.dayName}</Text>
+            <Text style={[typography.heading, { color: colors.textPrimary }]}>
+              {summary.dayName}
+            </Text>
           </View>
           <Chip compact mode="flat" icon="timer-outline">
             {summary.durationMinutes} min
@@ -203,7 +227,7 @@ function HistorySessionCard({
             {summary.exerciseCount} lifts
           </Chip>
           <Chip compact mode="outlined">
-            {formatVolume(summary.volumeKg)}
+            {formatVolumeLoad(summary.volumeKg, units)}
           </Chip>
         </View>
 
@@ -212,10 +236,12 @@ function HistorySessionCard({
             <List.Item
               key={exercise.exerciseId}
               title={exercise.name}
-              description={`${exercise.completedSets} sets · ${formatVolume(exercise.volumeKg)} · best ${exercise.bestSetLabel}`}
+              description={`${exercise.completedSets} sets · ${formatVolumeLoad(exercise.volumeKg, units)} · best ${exercise.bestSetLabel}`}
               onPress={() => onSelectExercise(exercise.exerciseId)}
               left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
-              right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
+              right={(props) => (
+                <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+              )}
               titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
               descriptionStyle={[typography.caption, { color: colors.textMuted }]}
               style={styles.compactListItem}
@@ -242,7 +268,11 @@ function TemplateRow({
     <View
       style={[
         styles.templateRow,
-        { backgroundColor: colors.surfaceRaised, borderRadius: radius.md, paddingHorizontal: spacing.md },
+        {
+          backgroundColor: colors.surfaceRaised,
+          borderRadius: radius.md,
+          paddingHorizontal: spacing.md,
+        },
       ]}
     >
       <View style={{ flex: 1 }}>
@@ -283,10 +313,6 @@ function formatDate(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
-}
-
-function formatVolume(volumeKg: number): string {
-  return volumeKg >= 1000 ? `${(volumeKg / 1000).toFixed(1)}t` : `${Math.round(volumeKg)}kg`;
 }
 
 const styles = StyleSheet.create({

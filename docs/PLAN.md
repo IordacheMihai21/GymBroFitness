@@ -1,5 +1,7 @@
 # GymBroFitness — Project Assessment & Roadmap
 
+> Historical document. For the current implementation order and revised scientific assumptions, use [the integrated plan dated September 20, 2026](IMPLEMENTATION_MASTER_PLAN.md). Some implementation-status statements below are outdated.
+
 _Last updated: 2026-09-10_
 
 ## What this project currently is

@@ -1,22 +1,42 @@
 import { desc, eq } from 'drizzle-orm';
 
-import { workoutSessionsTable } from '@/db/schema';
+import {
+  decodePayload,
+  encodePayload,
+  workoutSessionPayloadSchema,
+  type PersistedPayload,
+} from '@/db/payload';
+import { dataRecoveryTable, workoutSessionsTable } from '@/db/schema';
 import type { GymBroDb } from '@/db/types';
 import type { WorkoutSession } from '@/types';
 
-const MAX_STORED_SESSIONS = 100;
 const RESUMABLE_STATUSES = new Set<WorkoutSession['status']>(['in_progress', 'paused']);
+
+export type WorkoutHistoryPage = {
+  limit: number;
+  offset?: number;
+};
 
 /** Driver-agnostic SQL operations for workout history — see `db/types.ts` for why. */
 
-export function listWorkoutHistorySql(db: GymBroDb): WorkoutSession[] {
-  return db
+export function listWorkoutHistorySql(db: GymBroDb, page?: WorkoutHistoryPage): WorkoutSession[] {
+  const query = db
     .select()
     .from(workoutSessionsTable)
     .where(eq(workoutSessionsTable.status, 'completed'))
-    .orderBy(desc(workoutSessionsTable.startedAt))
-    .all()
-    .map((row) => row.payload);
+    .orderBy(desc(workoutSessionsTable.startedAt), desc(workoutSessionsTable.id));
+
+  const rows = page
+    ? query
+        .limit(Math.max(1, Math.trunc(page.limit)))
+        .offset(Math.max(0, Math.trunc(page.offset ?? 0)))
+        .all()
+    : query.all();
+
+  return rows.flatMap((row) => {
+    const session = decodeWorkoutSessionRow(db, row.id, row.payload);
+    return session ? [session] : [];
+  });
 }
 
 export function getInProgressWorkoutSessionSql(db: GymBroDb): WorkoutSession | null {
@@ -26,8 +46,9 @@ export function getInProgressWorkoutSessionSql(db: GymBroDb): WorkoutSession | n
       .from(workoutSessionsTable)
       .orderBy(desc(workoutSessionsTable.startedAt))
       .all()
-      .find((row) => RESUMABLE_STATUSES.has(row.status as WorkoutSession['status']))?.payload ??
-    null
+      .filter((row) => RESUMABLE_STATUSES.has(row.status as WorkoutSession['status']))
+      .map((row) => decodeWorkoutSessionRow(db, row.id, row.payload))
+      .find((session): session is WorkoutSession => session != null) ?? null
   );
 }
 
@@ -42,30 +63,32 @@ export function saveInProgressWorkoutSessionSql(
     finishedAt: null,
   };
 
-  const existingDrafts = db
-    .select()
-    .from(workoutSessionsTable)
-    .orderBy(desc(workoutSessionsTable.startedAt))
-    .all()
-    .filter((row) => RESUMABLE_STATUSES.has(row.status as WorkoutSession['status']));
-  for (const existing of existingDrafts) {
-    if (existing.id !== draft.id) {
-      db.delete(workoutSessionsTable).where(eq(workoutSessionsTable.id, existing.id)).run();
+  db.transaction((tx) => {
+    const existingDrafts = tx
+      .select()
+      .from(workoutSessionsTable)
+      .orderBy(desc(workoutSessionsTable.startedAt))
+      .all()
+      .filter((row) => RESUMABLE_STATUSES.has(row.status as WorkoutSession['status']));
+    for (const existing of existingDrafts) {
+      if (existing.id !== draft.id) {
+        tx.delete(workoutSessionsTable).where(eq(workoutSessionsTable.id, existing.id)).run();
+      }
     }
-  }
 
-  db.insert(workoutSessionsTable)
-    .values({
-      id: draft.id,
-      startedAt: draft.startedAt,
-      status: draft.status,
-      payload: draft,
-    })
-    .onConflictDoUpdate({
-      target: workoutSessionsTable.id,
-      set: { startedAt: draft.startedAt, status: draft.status, payload: draft },
-    })
-    .run();
+    tx.insert(workoutSessionsTable)
+      .values({
+        id: draft.id,
+        startedAt: draft.startedAt,
+        status: draft.status,
+        payload: encodePayload(draft),
+      })
+      .onConflictDoUpdate({
+        target: workoutSessionsTable.id,
+        set: { startedAt: draft.startedAt, status: draft.status, payload: encodePayload(draft) },
+      })
+      .run();
+  });
 
   return draft;
 }
@@ -86,26 +109,36 @@ export function saveWorkoutSessionSql(db: GymBroDb, session: WorkoutSession): Wo
       id: completed.id,
       startedAt: completed.startedAt,
       status: completed.status,
-      payload: completed,
+      payload: encodePayload(completed),
     })
     .onConflictDoUpdate({
       target: workoutSessionsTable.id,
-      set: { startedAt: completed.startedAt, status: completed.status, payload: completed },
+      set: {
+        startedAt: completed.startedAt,
+        status: completed.status,
+        payload: encodePayload(completed),
+      },
     })
     .run();
 
-  pruneOldSessions(db);
   return completed;
 }
 
 /** Inserts sessions as-is (status preserved) — for importing pre-existing data, not the save-on-finish flow. */
 export function importSessionsSql(db: GymBroDb, sessions: WorkoutSession[]): void {
-  for (const session of sessions) {
-    db.insert(workoutSessionsTable)
-      .values({ id: session.id, startedAt: session.startedAt, status: session.status, payload: session })
-      .onConflictDoNothing()
-      .run();
-  }
+  db.transaction((tx) => {
+    for (const session of sessions) {
+      tx.insert(workoutSessionsTable)
+        .values({
+          id: session.id,
+          startedAt: session.startedAt,
+          status: session.status,
+          payload: encodePayload(session),
+        })
+        .onConflictDoNothing({ target: workoutSessionsTable.id })
+        .run();
+    }
+  });
 }
 
 export function clearWorkoutHistorySql(db: GymBroDb): void {
@@ -116,14 +149,47 @@ export function countWorkoutHistorySql(db: GymBroDb): number {
   return db.select().from(workoutSessionsTable).all().length;
 }
 
-function pruneOldSessions(db: GymBroDb): void {
-  const ids = db
-    .select({ id: workoutSessionsTable.id })
-    .from(workoutSessionsTable)
-    .orderBy(desc(workoutSessionsTable.startedAt))
-    .all();
-  const staleIds = ids.slice(MAX_STORED_SESSIONS).map((row) => row.id);
-  for (const id of staleIds) {
-    db.delete(workoutSessionsTable).where(eq(workoutSessionsTable.id, id)).run();
+function decodeWorkoutSessionRow(
+  db: GymBroDb,
+  id: string,
+  payload: PersistedPayload<WorkoutSession>,
+): WorkoutSession | null {
+  const decoded = decodePayload(payload, workoutSessionPayloadSchema);
+  if (!decoded.ok) {
+    preserveUnrecognizedPayload(db, id, decoded.reason, payload);
+    return null;
   }
+
+  if (decoded.data.id !== id) {
+    preserveUnrecognizedPayload(db, id, 'payload_id_mismatch', payload);
+    return null;
+  }
+
+  if (decoded.legacy) {
+    db.update(workoutSessionsTable)
+      .set({ payload: encodePayload(decoded.data) })
+      .where(eq(workoutSessionsTable.id, id))
+      .run();
+  }
+  return decoded.data;
+}
+
+function preserveUnrecognizedPayload(
+  db: GymBroDb,
+  id: string,
+  reason: string,
+  payload: unknown,
+): void {
+  db.insert(dataRecoveryTable)
+    .values({
+      id: `workout-session-read-${id}`,
+      entityType: 'workout_session',
+      entityId: id,
+      reason,
+      payload: JSON.stringify(payload),
+      createdAt: new Date().toISOString(),
+      migrationVersion: 1,
+    })
+    .onConflictDoNothing({ target: dataRecoveryTable.id })
+    .run();
 }

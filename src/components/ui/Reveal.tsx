@@ -1,6 +1,7 @@
 import { MotiView } from 'moti';
 import type { PropsWithChildren } from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 
 type RevealProps = PropsWithChildren<{
   index?: number;
@@ -9,6 +10,9 @@ type RevealProps = PropsWithChildren<{
 
 /** Staggered fade+slide entrance for list-like content. */
 export function Reveal({ index = 0, style, children }: RevealProps) {
+  const reduceMotion = useReducedMotion();
+  if (reduceMotion) return <View style={style}>{children}</View>;
+
   return (
     <MotiView
       style={style}

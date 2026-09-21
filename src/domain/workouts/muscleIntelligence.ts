@@ -1,10 +1,22 @@
 import { getExercise } from '@/domain/exercises/catalog';
 import { completedWorkingSets } from '@/domain/progression/engine';
 import { dayOfWeek } from '@/utils/dates';
-import { MUSCLE_GROUPS, type MuscleGroup, type ProgramDay, type WorkoutSession } from '@/types';
+import {
+  MUSCLE_GROUPS,
+  type MuscleGroup,
+  type ProgramDay,
+  type Units,
+  type WorkoutSession,
+} from '@/types';
+import { formatLoad } from '@/utils/units';
 
 import { estimateOneRepMax, setEfforts, volumeLoadKg } from './analytics';
-import { classifyWeeklyVolume, volumeZoneLabel, type VolumeClassification } from './volumeLandmarks';
+import { muscleSetContributions } from './muscleContributions';
+import {
+  classifyWeeklyVolume,
+  volumeZoneLabel,
+  type VolumeClassification,
+} from './volumeLandmarks';
 
 export type MuscleProgramExercise = {
   exerciseId: string;
@@ -29,12 +41,23 @@ export type MuscleExerciseRecord = {
   bestSessionVolumeKg: number;
 };
 
-export type MuscleFatigueLabel = 'Fresh' | 'Ready' | 'Loaded' | 'Fatigued';
+export type MuscleTrainingLoadLabel =
+  | 'No direct history'
+  | 'Indirect exposure'
+  | 'Recent exposure'
+  | 'Moderate weekly dose'
+  | 'High weekly dose';
 
-export type MuscleFatigue = {
-  score: number;
-  label: MuscleFatigueLabel;
+export type MuscleTrainingLoad = {
+  label: MuscleTrainingLoadLabel;
+  /** Kept for existing consumers; always identical to directSets. */
   weeklySets: number;
+  directSets: number;
+  indirectExposures: number;
+  estimatedSecondarySets: number;
+  weightedEstimate: number;
+  unmappedIndirectExposures: number;
+  contributionModelVersion: number;
   volume: VolumeClassification;
   volumeLabel: string;
   lastSessionSets: number;
@@ -42,16 +65,6 @@ export type MuscleFatigue = {
   lastTrainedAt: string | null;
   lastTrainedDaysAgo: number | null;
   averageRir: number | null;
-};
-
-export type MuscleStrengthRank = {
-  rank: number | null;
-  totalRanked: number;
-  tier: 'S' | 'A' | 'B' | 'C' | 'Unranked';
-  topLoadKg: number | null;
-  bestE1rmKg: number | null;
-  leaderMuscle: MuscleGroup | null;
-  leaderLoadKg: number | null;
 };
 
 export type MuscleRecentExercise = {
@@ -92,8 +105,7 @@ export type MuscleIntelligence = {
   muscle: MuscleGroup;
   programExercises: MuscleProgramExercise[];
   records: MuscleExerciseRecord[];
-  fatigue: MuscleFatigue;
-  rank: MuscleStrengthRank;
+  trainingLoad: MuscleTrainingLoad;
   recentSessions: MuscleRecentSession[];
   formQuality: MuscleFormQuality;
   signal: MuscleTrainingSignal;
@@ -111,12 +123,12 @@ export function buildMuscleIntelligence(
   programDays: ProgramDay[],
   history: WorkoutSession[],
   now = new Date(),
+  units: Units = 'kg',
 ): MuscleIntelligence[] {
   const completedSessions = history
     .filter((session) => session.status === 'completed')
     .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
   const recordsByMuscle = new Map<MuscleGroup, MuscleExerciseRecord[]>();
-  const rankTable = buildStrengthRankTable(completedSessions);
 
   for (const muscle of MUSCLE_GROUPS) {
     recordsByMuscle.set(muscle, buildExerciseRecordsForMuscle(muscle, completedSessions));
@@ -124,18 +136,17 @@ export function buildMuscleIntelligence(
 
   return MUSCLE_GROUPS.map((muscle) => {
     const records = recordsByMuscle.get(muscle) ?? [];
-    const fatigue = buildMuscleFatigue(muscle, completedSessions, now);
-    const recentSessions = buildRecentSessionsForMuscle(muscle, completedSessions);
+    const trainingLoad = buildMuscleTrainingLoad(muscle, completedSessions, now);
+    const recentSessions = buildRecentSessionsForMuscle(muscle, completedSessions, units);
     const formQuality = buildFormQualityForMuscle(muscle, completedSessions);
     return {
       muscle,
       programExercises: buildProgramExercisesForMuscle(programDays, muscle),
       records,
-      fatigue,
-      rank: rankTable.get(muscle) ?? emptyRank(),
+      trainingLoad,
       recentSessions,
       formQuality,
-      signal: trainingSignal({ records, fatigue, formQuality }),
+      signal: trainingSignal({ records, trainingLoad, formQuality }),
     };
   });
 }
@@ -154,18 +165,21 @@ export function buildProgramExercisesForMuscle(
         else if (exercise.secondaryMuscles.includes(muscle)) role = 'secondary';
         if (!role) return [];
 
-        return [{
-          exerciseId: exercise.id,
-          name: exercise.name,
-          dayName: day.name,
-          workingSets: prescription.workingSets,
-          repRangeLabel: exercise.trackingType === 'time'
-            ? `${prescription.minReps}-${prescription.maxReps}s`
-            : `${prescription.minReps}-${prescription.maxReps} reps`,
-          targetRir: prescription.targetRir,
-          restSeconds: prescription.restSeconds,
-          role,
-        }];
+        return [
+          {
+            exerciseId: exercise.id,
+            name: exercise.name,
+            dayName: day.name,
+            workingSets: prescription.workingSets,
+            repRangeLabel:
+              exercise.trackingType === 'time'
+                ? `${prescription.minReps}-${prescription.maxReps}s`
+                : `${prescription.minReps}-${prescription.maxReps} reps`,
+            targetRir: prescription.targetRir,
+            restSeconds: prescription.restSeconds,
+            role,
+          },
+        ];
       }),
     )
     .sort(
@@ -211,7 +225,10 @@ export function buildExerciseRecordsForMuscle(
       }
 
       record.totalSets += workingSets.length;
-      record.bestSessionVolumeKg = Math.max(record.bestSessionVolumeKg, Math.round(volumeLoadKg(performed.sets)));
+      record.bestSessionVolumeKg = Math.max(
+        record.bestSessionVolumeKg,
+        Math.round(volumeLoadKg(performed.sets)),
+      );
 
       for (const effort of workingSets.flatMap(setEfforts)) {
         const load = effort.loadKg ?? 0;
@@ -240,20 +257,18 @@ export function buildExerciseRecordsForMuscle(
   );
 }
 
-function buildMuscleFatigue(
+function buildMuscleTrainingLoad(
   muscle: MuscleGroup,
   completedSessions: WorkoutSession[],
   now: Date,
-): MuscleFatigue {
+): MuscleTrainingLoad {
   const weekStart = startOfWeek(now);
   const currentWeekSessions = completedSessions.filter((session) => {
     const startedAt = new Date(session.startedAt);
     return startedAt >= weekStart && startedAt <= now;
   });
-  const weeklySets = currentWeekSessions.reduce(
-    (total, session) => total + directSetsForMuscle(session, muscle),
-    0,
-  );
+  const contributions = muscleSetContributions(currentWeekSessions, muscle);
+  const weeklySets = contributions.directSets;
   const volume = classifyWeeklyVolume(muscle, weeklySets);
   const lastTouch = completedSessions
     .map((session) => muscleSessionTouch(session, muscle))
@@ -263,17 +278,15 @@ function buildMuscleFatigue(
   const averageRir = lastTouch?.rirValues.length
     ? round1(lastTouch.rirValues.reduce((sum, rir) => sum + rir, 0) / lastTouch.rirValues.length)
     : null;
-  const score = fatigueScore({
-    weeklySets,
-    volume,
-    lastTrainedDaysAgo,
-    averageRir,
-  });
-
   return {
-    score,
-    label: fatigueLabel(score, volume),
+    label: trainingLoadLabel(volume, lastTrainedAt, contributions.indirectExposures),
     weeklySets,
+    directSets: contributions.directSets,
+    indirectExposures: contributions.indirectExposures,
+    estimatedSecondarySets: contributions.estimatedSecondarySets,
+    weightedEstimate: contributions.weightedEstimate,
+    unmappedIndirectExposures: contributions.unmappedIndirectExposures,
+    contributionModelVersion: contributions.modelVersion,
     volume,
     volumeLabel: volumeZoneLabel(volume.zone),
     lastSessionSets: lastTouch?.sets ?? 0,
@@ -284,102 +297,61 @@ function buildMuscleFatigue(
   };
 }
 
-function buildStrengthRankTable(completedSessions: WorkoutSession[]): Map<MuscleGroup, MuscleStrengthRank> {
-  const bestByMuscle = new Map<MuscleGroup, { topLoadKg: number; bestE1rmKg: number | null }>();
-
-  for (const muscle of MUSCLE_GROUPS) {
-    const records = buildExerciseRecordsForMuscle(muscle, completedSessions);
-    const topLoadKg = Math.max(...records.map((record) => record.bestLoadKg ?? 0), 0);
-    if (topLoadKg <= 0) continue;
-    const bestE1rmKg = Math.max(...records.map((record) => record.bestE1rmKg ?? 0), 0);
-    bestByMuscle.set(muscle, {
-      topLoadKg,
-      bestE1rmKg: bestE1rmKg > 0 ? bestE1rmKg : null,
-    });
-  }
-
-  const leaderboard = [...bestByMuscle.entries()].sort(
-    (a, b) => b[1].topLoadKg - a[1].topLoadKg || a[0].localeCompare(b[0]),
-  );
-  const leader = leaderboard[0];
-  const result = new Map<MuscleGroup, MuscleStrengthRank>();
-
-  for (const muscle of MUSCLE_GROUPS) {
-    const entryIndex = leaderboard.findIndex(([candidate]) => candidate === muscle);
-    if (entryIndex === -1) {
-      result.set(muscle, {
-        ...emptyRank(),
-        totalRanked: leaderboard.length,
-        leaderMuscle: leader?.[0] ?? null,
-        leaderLoadKg: leader?.[1].topLoadKg ?? null,
-      });
-      continue;
-    }
-
-    const entry = leaderboard[entryIndex][1];
-    const rank = entryIndex + 1;
-    result.set(muscle, {
-      rank,
-      totalRanked: leaderboard.length,
-      tier: rankTier(rank, leaderboard.length),
-      topLoadKg: entry.topLoadKg,
-      bestE1rmKg: entry.bestE1rmKg,
-      leaderMuscle: leader?.[0] ?? null,
-      leaderLoadKg: leader?.[1].topLoadKg ?? null,
-    });
-  }
-
-  return result;
-}
-
 function buildRecentSessionsForMuscle(
   muscle: MuscleGroup,
   completedSessions: WorkoutSession[],
+  units: Units,
 ): MuscleRecentSession[] {
-  return completedSessions.flatMap((session) => {
-    const exercises = session.exercises.flatMap((performed) => {
-      const exercise = getExercise(performed.exerciseId);
-      if (!exercise?.primaryMuscles.includes(muscle)) return [];
-      const working = completedWorkingSets(performed.sets);
-      if (working.length === 0) return [];
+  return completedSessions
+    .flatMap((session) => {
+      const exercises = session.exercises.flatMap((performed) => {
+        const exercise = getExercise(performed.exerciseId);
+        if (!exercise?.primaryMuscles.includes(muscle)) return [];
+        const working = completedWorkingSets(performed.sets);
+        if (working.length === 0) return [];
 
-      return [{
-        exerciseId: exercise.id,
-        name: exercise.name,
-        sets: working.length,
-        volumeKg: Math.round(volumeLoadKg(performed.sets)),
-        bestSetLabel: bestSetLabel(working),
-        averageFormScore: averageFormScore(working),
-      }];
-    });
-    if (exercises.length === 0) return [];
+        return [
+          {
+            exerciseId: exercise.id,
+            name: exercise.name,
+            sets: working.length,
+            volumeKg: Math.round(volumeLoadKg(performed.sets)),
+            bestSetLabel: bestSetLabel(working, units),
+            averageFormScore: averageFormScore(working),
+          },
+        ];
+      });
+      if (exercises.length === 0) return [];
 
-    const rirValues = session.exercises.flatMap((performed) => {
-      const exercise = getExercise(performed.exerciseId);
-      if (!exercise?.primaryMuscles.includes(muscle)) return [];
-      return completedWorkingSets(performed.sets)
-        .map((set) => set.rir)
-        .filter((rir): rir is number => rir != null);
-    });
-    const formScores = exercises
-      .map((exercise) => exercise.averageFormScore)
-      .filter((score): score is number => score != null);
+      const rirValues = session.exercises.flatMap((performed) => {
+        const exercise = getExercise(performed.exerciseId);
+        if (!exercise?.primaryMuscles.includes(muscle)) return [];
+        return completedWorkingSets(performed.sets)
+          .map((set) => set.rir)
+          .filter((rir): rir is number => rir != null);
+      });
+      const formScores = exercises
+        .map((exercise) => exercise.averageFormScore)
+        .filter((score): score is number => score != null);
 
-    return [{
-      sessionId: session.id,
-      dayName: session.dayName,
-      performedAt: session.finishedAt ?? session.startedAt,
-      sets: exercises.reduce((sum, exercise) => sum + exercise.sets, 0),
-      volumeKg: exercises.reduce((sum, exercise) => sum + exercise.volumeKg, 0),
-      averageRir: rirValues.length
-        ? round1(rirValues.reduce((sum, rir) => sum + rir, 0) / rirValues.length)
-        : null,
-      averageFormScore: formScores.length
-        ? Math.round(formScores.reduce((sum, score) => sum + score, 0) / formScores.length)
-        : null,
-      exercises,
-    }];
-  }).slice(0, 4);
+      return [
+        {
+          sessionId: session.id,
+          dayName: session.dayName,
+          performedAt: session.finishedAt ?? session.startedAt,
+          sets: exercises.reduce((sum, exercise) => sum + exercise.sets, 0),
+          volumeKg: exercises.reduce((sum, exercise) => sum + exercise.volumeKg, 0),
+          averageRir: rirValues.length
+            ? round1(rirValues.reduce((sum, rir) => sum + rir, 0) / rirValues.length)
+            : null,
+          averageFormScore: formScores.length
+            ? Math.round(formScores.reduce((sum, score) => sum + score, 0) / formScores.length)
+            : null,
+          exercises,
+        },
+      ];
+    })
+    .slice(0, 4);
 }
 
 function buildFormQualityForMuscle(
@@ -422,25 +394,34 @@ function buildFormQualityForMuscle(
 
 function trainingSignal({
   records,
-  fatigue,
+  trainingLoad,
   formQuality,
 }: {
   records: MuscleExerciseRecord[];
-  fatigue: MuscleFatigue;
+  trainingLoad: MuscleTrainingLoad;
   formQuality: MuscleFormQuality;
 }): MuscleTrainingSignal {
-  if (records.length === 0 && fatigue.weeklySets === 0) {
+  if (records.length === 0 && trainingLoad.weeklySets === 0) {
+    if (trainingLoad.indirectExposures > 0) {
+      return {
+        kind: 'maintain',
+        label: 'Indirect exposure logged',
+        detail:
+          'This muscle assisted other lifts. Direct sets and indirect exposures stay separate because they are not equivalent.',
+      };
+    }
     return {
       kind: 'build_baseline',
       label: 'Build baseline',
-      detail: 'Log direct work here so the app can rank strength, dose, and recovery.',
+      detail: 'Log direct work here to establish recent exposure and exercise-specific records.',
     };
   }
-  if (fatigue.volume.zone === 'excessive' || fatigue.score >= 72) {
+  if (trainingLoad.volume.zone === 'excessive') {
     return {
       kind: 'recover',
-      label: 'Recover / rotate away',
-      detail: 'Weekly load is near the recoverable ceiling. Keep direct work conservative.',
+      label: 'Review weekly dose',
+      detail:
+        'Direct sets are above the general reference; use performance and recovery feedback before adding more.',
     };
   }
   if (formQuality.averageScore != null && formQuality.averageScore < 80) {
@@ -450,29 +431,23 @@ function trainingSignal({
       detail: formQuality.mostCommonIssue ?? 'Technique quality is limiting the signal.',
     };
   }
-  if (fatigue.volume.zone === 'below_mv' || fatigue.volume.zone === 'maintenance') {
+  if (trainingLoad.volume.zone === 'below_mv' || trainingLoad.volume.zone === 'maintenance') {
     return {
       kind: 'train',
-      label: 'Priority target',
-      detail: 'Direct sets are below the growth zone. Add quality volume when this fits the split.',
+      label: 'Low direct-set count',
+      detail:
+        'Direct sets are below the general weekly reference; add work only when it fits the plan and performance trend.',
     };
   }
   return {
     kind: 'maintain',
-    label: 'Growth dose active',
-    detail: 'Volume and fatigue are usable. Progress by beating the top working set.',
+    label: 'Weekly dose logged',
+    detail:
+      'This is a reference range, not a recovery measurement. Let exercise performance guide progression.',
   };
 }
 
-function directSetsForMuscle(session: WorkoutSession, muscle: MuscleGroup): number {
-  return session.exercises.reduce((total, performed) => {
-    const exercise = getExercise(performed.exerciseId);
-    if (!exercise?.primaryMuscles.includes(muscle)) return total;
-    return total + completedWorkingSets(performed.sets).length;
-  }, 0);
-}
-
-function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>): string {
+function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>, units: Units): string {
   const efforts = sets.flatMap(setEfforts);
   if (efforts.length === 0) return 'No sets';
   const best = efforts.reduce((current, effort) => {
@@ -481,7 +456,9 @@ function bestSetLabel(sets: ReturnType<typeof completedWorkingSets>): string {
     if (effortLoad !== currentLoad) return effortLoad > currentLoad ? effort : current;
     return (effort.reps ?? 0) > (current.reps ?? 0) ? effort : current;
   });
-  if (best.loadKg != null && best.loadKg > 0) return `${best.loadKg}kg x ${best.reps ?? 0}`;
+  if (best.loadKg != null && best.loadKg > 0) {
+    return `${formatLoad(best.loadKg, units)} x ${best.reps ?? 0}`;
+  }
   return `${best.reps ?? 0} reps`;
 }
 
@@ -489,10 +466,15 @@ function averageFormScore(sets: ReturnType<typeof completedWorkingSets>): number
   const scores = sets
     .map((set) => set.formAnalysis?.averageScore)
     .filter((score): score is number => score != null);
-  return scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null;
+  return scores.length
+    ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+    : null;
 }
 
-function muscleSessionTouch(session: WorkoutSession, muscle: MuscleGroup): MuscleSessionTouch | null {
+function muscleSessionTouch(
+  session: WorkoutSession,
+  muscle: MuscleGroup,
+): MuscleSessionTouch | null {
   let sets = 0;
   const rirValues: number[] = [];
 
@@ -507,60 +489,15 @@ function muscleSessionTouch(session: WorkoutSession, muscle: MuscleGroup): Muscl
   return sets > 0 ? { session, sets, rirValues } : null;
 }
 
-function fatigueScore({
-  weeklySets,
-  volume,
-  lastTrainedDaysAgo,
-  averageRir,
-}: {
-  weeklySets: number;
-  volume: VolumeClassification;
-  lastTrainedDaysAgo: number | null;
-  averageRir: number | null;
-}): number {
-  const volumePressure = Math.min(1, weeklySets / Math.max(1, volume.landmarks.mrv)) * 58;
-  const recencyPressure =
-    lastTrainedDaysAgo == null
-      ? 0
-      : lastTrainedDaysAgo === 0
-        ? 28
-        : lastTrainedDaysAgo === 1
-          ? 22
-          : lastTrainedDaysAgo === 2
-            ? 14
-            : lastTrainedDaysAgo === 3
-              ? 8
-              : 0;
-  const intensityPressure = averageRir == null ? 0 : averageRir <= 1 ? 12 : averageRir <= 2 ? 7 : 0;
-  return Math.min(100, Math.round(volumePressure + recencyPressure + intensityPressure));
-}
-
-function fatigueLabel(score: number, volume: VolumeClassification): MuscleFatigueLabel {
-  if (volume.zone === 'excessive' || score >= 72) return 'Fatigued';
-  if (volume.zone === 'frontier' || score >= 48) return 'Loaded';
-  if (score >= 18) return 'Ready';
-  return 'Fresh';
-}
-
-function rankTier(rank: number, total: number): MuscleStrengthRank['tier'] {
-  if (rank === 1) return 'S';
-  if (total <= 1) return 'S';
-  const percentile = (rank - 1) / Math.max(1, total - 1);
-  if (percentile <= 0.25) return 'A';
-  if (percentile <= 0.6) return 'B';
-  return 'C';
-}
-
-function emptyRank(): MuscleStrengthRank {
-  return {
-    rank: null,
-    totalRanked: 0,
-    tier: 'Unranked',
-    topLoadKg: null,
-    bestE1rmKg: null,
-    leaderMuscle: null,
-    leaderLoadKg: null,
-  };
+function trainingLoadLabel(
+  volume: VolumeClassification,
+  lastTrainedAt: string | null,
+  indirectExposures: number,
+): MuscleTrainingLoadLabel {
+  if (!lastTrainedAt) return indirectExposures > 0 ? 'Indirect exposure' : 'No direct history';
+  if (volume.zone === 'excessive' || volume.zone === 'frontier') return 'High weekly dose';
+  if (volume.zone === 'growth') return 'Moderate weekly dose';
+  return 'Recent exposure';
 }
 
 function startOfWeek(date: Date): Date {

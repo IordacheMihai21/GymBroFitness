@@ -1,14 +1,18 @@
 import type {
   ExperienceLevel,
   MuscleGroup,
+  NutritionContext,
   ProgramDay,
   ProgressionAction,
   ProgressionConfidence,
+  Units,
   WorkoutSession,
 } from '@/types';
 
 import {
   buildProgressionTarget,
+  formatDecisionTarget,
+  formatTargetSummary,
   progressionActionLabel,
   type TargetToBeat,
 } from '../workouts/targetToBeat';
@@ -54,14 +58,18 @@ type BuildProgramProgressionInput = {
   days: ProgramDay[];
   history: WorkoutSession[];
   userExperience: ExperienceLevel;
+  nutritionContext?: NutritionContext;
   priorityMuscles?: MuscleGroup[];
+  units?: Units;
 };
 
 export function buildProgramProgressionSummary({
   days,
   history,
   userExperience,
+  nutritionContext,
   priorityMuscles = [],
+  units = 'kg',
 }: BuildProgramProgressionInput): ProgramProgressionSummary {
   const actionCounts = emptyActionCounts();
   const allTargets: ProgramProgressionTarget[] = [];
@@ -72,6 +80,7 @@ export function buildProgramProgressionSummary({
         prescription,
         history,
         userExperience,
+        nutritionContext,
         isPriorityMuscle: day.focus.some((muscle) => priorityMuscles.includes(muscle)),
       });
       const item: ProgramProgressionTarget = {
@@ -81,8 +90,8 @@ export function buildProgramProgressionSummary({
         exerciseName: target.exerciseName,
         action: target.decision.action,
         actionLabel: progressionActionLabel(target.decision.action),
-        targetText: target.targetText,
-        targetSummary: target.targetSummary,
+        targetText: formatDecisionTarget(target.decision, units),
+        targetSummary: formatTargetSummary(target, units),
         confidence: target.decision.confidence,
         score: scoreTarget(target.decision.action, target.decision.confidence),
         target,
@@ -109,7 +118,7 @@ export function buildProgramProgressionSummary({
       actionCounts: dayActionCounts,
       primaryTarget,
       readinessLabel: readinessLabel(dayActionCounts),
-      readinessDetail: readinessDetail(dayActionCounts, primaryTarget),
+      readinessDetail: readinessDetail(dayActionCounts, primaryTarget, units),
       score: dayTargets.reduce((sum, item) => sum + item.score, 0),
     };
   });
@@ -185,10 +194,12 @@ function readinessLabel(counts: Record<ProgressionAction, number>): string {
 function readinessDetail(
   counts: Record<ProgressionAction, number>,
   target: ProgramProgressionTarget | null,
+  units: Units,
 ): string {
   if (!target) return 'No programmed exercises.';
   if (counts.suggest_deload > 0) return `${target.exerciseName}: manage fatigue before pushing.`;
-  if (counts.increase_load > 0) return `${target.exerciseName}: ${target.targetText}.`;
+  if (counts.increase_load > 0)
+    return `${target.exerciseName}: ${formatDecisionTarget(target.target.decision, units)}.`;
   if (counts.add_set > 0) return `${target.exerciseName}: add quality volume.`;
   if (counts.increase_reps > 0) return `${target.exerciseName}: buy reps before plates.`;
   if (counts.needs_more_data > 0) return `${target.exerciseName}: log a clean benchmark.`;

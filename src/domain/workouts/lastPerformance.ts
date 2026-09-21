@@ -1,5 +1,7 @@
-import type { PerformedExercise, PerformedSet, WorkoutSession } from '@/types';
+import type { PerformedExercise, PerformedSet, Units, WorkoutSession } from '@/types';
+import { displayLoad, unitLabel } from '@/utils/units';
 
+import { sameExerciseIdentity } from '../exercises/catalog';
 import { completedWorkingSets } from '../progression/engine';
 
 /**
@@ -12,7 +14,7 @@ export function findLastPerformedExercise(
   exerciseId: string,
 ): PerformedExercise | null {
   for (const session of history) {
-    const match = session.exercises.find((ex) => ex.exerciseId === exerciseId);
+    const match = session.exercises.find((ex) => sameExerciseIdentity(ex.exerciseId, exerciseId));
     if (match) return match;
   }
   return null;
@@ -32,14 +34,14 @@ export function previousSetAtIndex(
 }
 
 /** Human-readable "last time" label for a single previous set. */
-export function formatPreviousSet(set: PerformedSet | null): string | null {
+export function formatPreviousSet(set: PerformedSet | null, units: Units = 'kg'): string | null {
   if (!set) return null;
   if (set.durationSeconds != null && set.durationSeconds > 0) {
     return `Last: ${set.durationSeconds}s`;
   }
   if (set.loadKg != null && set.loadKg > 0) {
     const rir = set.rir != null ? ` @ RIR ${set.rir}` : '';
-    return `Last: ${set.loadKg} kg × ${set.reps ?? 0}${rir}`;
+    return `Last: ${displayLoad(set.loadKg, units)} ${unitLabel(units)} × ${set.reps ?? 0}${rir}`;
   }
   if (set.reps != null) {
     return `Last: ${set.reps} reps`;
