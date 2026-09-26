@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { StyleSheet } from 'react-native';
 import { List } from 'react-native-paper';
 
-import type { LibraryExercise } from '@/domain/exercises/library';
+import { referenceImageUrl, type LibraryExercise } from '@/domain/exercises/library';
 import { useTheme } from '@/theme';
 
 type ExerciseListItemProps = {
@@ -13,7 +13,7 @@ type ExerciseListItemProps = {
 
 export function ExerciseListItem({ exercise, onPress, selected = false }: ExerciseListItemProps) {
   const { colors, radius, typography } = useTheme();
-  const thumbnail = exercise.images[0];
+  const thumbnail = exercise.images[0] ? referenceImageUrl(exercise.images[0]) : undefined;
   const muscleLabel = exercise.primaryMuscles.join(', ') || 'Other';
 
   return (
@@ -37,8 +37,12 @@ export function ExerciseListItem({ exercise, onPress, selected = false }: Exerci
         thumbnail ? (
           <Image
             source={{ uri: thumbnail }}
-            style={[styles.thumbnail, { borderRadius: radius.md, backgroundColor: colors.surfacePressed }]}
+            style={[
+              styles.thumbnail,
+              { borderRadius: radius.md, backgroundColor: colors.surfacePressed },
+            ]}
             contentFit="cover"
+            cachePolicy="memory-disk"
           />
         ) : (
           <List.Icon icon="dumbbell" color={colors.textMuted} />

@@ -13,12 +13,15 @@ const MIN_GAP_MS = 1500;
 /** How long the same violation cue must keep being the top issue before it's repeated aloud. */
 const VIOLATION_REPEAT_COOLDOWN_MS = 4000;
 
-function repCompletionCue(rep: RepAnalysis): VoiceCue {
+function repCompletionCue(rep: RepAnalysis, fixedViolationId: string | null): VoiceCue {
   const topIssue = pickTopViolation(rep.violations);
-  if (!topIssue || rep.overallScore >= 90) {
-    return { id: `rep-good-${rep.repNumber}`, text: 'Nice rep.' };
+  if (topIssue && rep.overallScore < 90) {
+    return { id: `rep-issue-${rep.repNumber}`, text: topIssue.message };
   }
-  return { id: `rep-issue-${rep.repNumber}`, text: topIssue.message };
+  if (fixedViolationId) {
+    return { id: `rep-fixed-${rep.repNumber}`, text: 'Fixed — nice adjustment.' };
+  }
+  return { id: `rep-good-${rep.repNumber}`, text: 'Nice rep.' };
 }
 
 /**
@@ -29,19 +32,29 @@ function repCompletionCue(rep: RepAnalysis): VoiceCue {
  * an ongoing violation is re-announced only after it has stayed the top issue
  * for a while, and nothing is ever spoken close enough to overlap the last
  * utterance.
+ *
+ * Confirmation loop: when a rep that had a fault is immediately followed by a
+ * clean rep, the caller passes the fault's id as `fixedViolationId` so the
+ * coach can confirm the correction ("Fixed — nice adjustment.") instead of a
+ * generic "Nice rep." — closing the loop instead of only ever flagging faults
+ * going forward.
  */
 export class VoiceCoach {
   private lastSpokenId: string | null = null;
   private lastSpokenAt = -Infinity;
 
   decide(
-    input: { repCompleted: RepAnalysis | null; topViolation: FormViolation | null },
+    input: {
+      repCompleted: RepAnalysis | null;
+      topViolation: FormViolation | null;
+      fixedViolationId?: string | null;
+    },
     timestampMs: number,
   ): VoiceCue | null {
     if (timestampMs - this.lastSpokenAt < MIN_GAP_MS) return null;
 
     if (input.repCompleted) {
-      const cue = repCompletionCue(input.repCompleted);
+      const cue = repCompletionCue(input.repCompleted, input.fixedViolationId ?? null);
       this.markSpoken(cue.id, timestampMs);
       return cue;
     }

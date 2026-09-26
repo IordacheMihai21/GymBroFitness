@@ -12,6 +12,8 @@ export interface RepAnalysis {
   symmetryScore: number;
   violations: FormViolation[];
   overallScore: number;
+  /** Peak angular velocity during this rep's concentric phase, deg/sec — null when never measured. Feeds set-level velocity-loss tracking (see velocityLoss.ts). */
+  peakConcentricVelocityDegPerSec: number | null;
 }
 
 export interface RepScoringInput {
@@ -67,6 +69,10 @@ function makeSyntheticViolation(id: string, message: string, severity: FormViola
 export function scoreRep(input: RepScoringInput): RepAnalysis {
   const concentricMs = input.concentricDirection === 'towardTop' ? input.timing.risingMs : input.timing.fallingMs;
   const eccentricMs = input.concentricDirection === 'towardTop' ? input.timing.fallingMs : input.timing.risingMs;
+  const peakConcentricVelocityDegPerSec =
+    input.concentricDirection === 'towardTop'
+      ? input.timing.peakRisingVelocityDegPerSec
+      : input.timing.peakFallingVelocityDegPerSec;
 
   const romScore = scoreRom(input.timing.romDegrees, input.minRomDegrees);
   const concentricTempo = scoreTempoPhase(concentricMs, input.idealTempo.concentricMs);
@@ -104,5 +110,6 @@ export function scoreRep(input: RepScoringInput): RepAnalysis {
     symmetryScore,
     violations,
     overallScore,
+    peakConcentricVelocityDegPerSec,
   };
 }

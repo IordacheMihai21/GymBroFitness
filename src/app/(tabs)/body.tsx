@@ -1,13 +1,14 @@
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Button, Card, Chip, Divider, List, ProgressBar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, runOnJS } from 'react-native-reanimated';
+import { runOnJS } from 'react-native-reanimated';
 
 import { Reveal } from '@/components/ui/Reveal';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
@@ -15,6 +16,7 @@ import {
   BODY_HEAT_COLORS,
   BODY_HEAT_LEGEND,
   DEFAULT_MUSCLE,
+  RANK_TIER_COLORS,
   type BodySide,
   bodyIntensityForVolume,
   bodySidesForMuscle,
@@ -31,6 +33,12 @@ import {
   type MuscleRecentSession,
 } from '@/domain/workouts/muscleIntelligence';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
+import {
+  buildBodyProgression,
+  type BodyBadge,
+  type MuscleRankProgress,
+} from '@/domain/workouts/muscleProgression';
+import { VolumeLandmarkGauge } from '@/components/muscles/VolumeLandmarkGauge';
 import { formatDate } from '@/utils/dates';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme, type SemanticColors } from '@/theme';
@@ -67,10 +75,13 @@ export default function BodyScreen() {
     () => buildMuscleIntelligence(program.days, history, undefined, preferences.units),
     [history, preferences.units, program.days],
   );
+  const progression = useMemo(() => buildBodyProgression(history), [history]);
   const selected =
     intelligence.find((item) => item.muscle === selectedMuscle) ??
     intelligence.find((item) => item.muscle === DEFAULT_MUSCLE) ??
     intelligence[0];
+  const selectedRank =
+    progression.muscles.find((item) => item.muscle === selectedMuscle) ?? progression.muscles[0];
   const bodyData = useMemo(
     () => buildBodyData(intelligence, selected.muscle, colors),
     [colors, intelligence, selected.muscle],
@@ -111,8 +122,7 @@ export default function BodyScreen() {
   }
 
   return (
-    <Animated.ScrollView
-      entering={FadeIn}
+    <ScrollView
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={{
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
@@ -168,26 +178,51 @@ export default function BodyScreen() {
             </View>
 
             <GestureDetector gesture={swipeGesture}>
-              <View style={[styles.bodyStage, { backgroundColor: colors.surfaceRaised }]}>
-                <Body
-                  data={bodyData}
-                  colors={[
-                    colors.surfacePressed,
-                    colors.surfacePressed,
-                    colors.surfacePressed,
-                    colors.surfacePressed,
+              <View
+                style={[
+                  styles.bodyStageFrame,
+                  {
+                    shadowColor: selectedUiColor,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.bodyStage,
+                    {
+                      backgroundColor: colors.surfaceRaised,
+                      borderColor: withAlpha(selectedUiColor, '3D'),
+                    },
                   ]}
-                  side={bodySide}
-                  scale={bodyScale}
-                  border="none"
-                  defaultFill={colors.surfacePressed}
-                  defaultStroke={colors.border}
-                  defaultStrokeWidth={0.35}
-                  onBodyPartPress={handleBodyPartPress}
-                />
+                >
+                  <LinearGradient
+                    colors={[withAlpha(selectedUiColor, '38'), 'transparent']}
+                    start={{ x: 0.1, y: 0 }}
+                    end={{ x: 0.85, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <Body
+                    data={bodyData}
+                    colors={[
+                      colors.surfacePressed,
+                      colors.surfacePressed,
+                      colors.surfacePressed,
+                      colors.surfacePressed,
+                    ]}
+                    side={bodySide}
+                    scale={bodyScale}
+                    border="none"
+                    defaultFill={colors.surfacePressed}
+                    defaultStroke={colors.border}
+                    defaultStrokeWidth={0.35}
+                    onBodyPartPress={handleBodyPartPress}
+                  />
+                </View>
               </View>
             </GestureDetector>
             <HeatLegend />
+
+            <RankProgressPanel rank={selectedRank} />
 
             <View style={styles.metricGrid}>
               <MetricBlock
@@ -206,10 +241,10 @@ export default function BodyScreen() {
                 detail={`mapped · v${selected.trainingLoad.contributionModelVersion}`}
               />
             </View>
-            <ProgressBar
-              progress={Math.min(1, selected.trainingLoad.volume.gaugeFraction)}
-              color={selectedTone.fill}
-              style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
+            <VolumeLandmarkGauge
+              landmarks={selected.trainingLoad.volume.landmarks}
+              weeklySets={selected.trainingLoad.volume.weeklySets}
+              zone={selected.trainingLoad.volume.zone}
             />
             <View style={styles.fatigueMetaRow}>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
@@ -362,6 +397,23 @@ export default function BodyScreen() {
       </Reveal>
 
       <Reveal index={3}>
+        <DetailCard
+          title="Training badges"
+          eyebrow={`${progression.unlockedBadgeCount} of ${progression.badges.length} unlocked`}
+        >
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            Badges are calculated from completed workout history and never from planned sessions.
+          </Text>
+          {progression.badges.map((badge, index) => (
+            <View key={badge.id}>
+              <BadgeRow badge={badge} />
+              {index < progression.badges.length - 1 ? <Divider /> : null}
+            </View>
+          ))}
+        </DetailCard>
+      </Reveal>
+
+      <Reveal index={4}>
         <Card
           mode="contained"
           style={[
@@ -392,8 +444,9 @@ export default function BodyScreen() {
               </Chip>
             </View>
             <Text style={[typography.body, { color: colors.textSecondary }]}>
-              Colors summarize direct sets logged this week against general reference ranges. They
-              do not rank muscles, diagnose fatigue, or measure recovery.
+              Colors summarize direct sets logged this week against general reference ranges. Rank
+              tracks long-term training evidence separately; neither one diagnoses fatigue or
+              measures recovery.
             </Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
               Strength remains exercise-specific below, because loads from different movements and
@@ -403,7 +456,7 @@ export default function BodyScreen() {
         </Card>
       </Reveal>
 
-      <Reveal index={4}>
+      <Reveal index={5}>
         <DetailCard title="Program exercises" eyebrow="Current plan">
           {selected.programExercises.length === 0 ? (
             <EmptyListItem
@@ -425,7 +478,7 @@ export default function BodyScreen() {
         </DetailCard>
       </Reveal>
 
-      <Reveal index={5}>
+      <Reveal index={6}>
         <DetailCard title="Records" eyebrow="Saved history">
           {selected.records.length === 0 ? (
             <EmptyListItem
@@ -468,7 +521,7 @@ export default function BodyScreen() {
           )}
         </DetailCard>
       </Reveal>
-    </Animated.ScrollView>
+    </ScrollView>
   );
 }
 
@@ -483,6 +536,88 @@ function HeatLegend() {
           <Text style={[typography.micro, { color: colors.textMuted }]}>{item.label}</Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+function RankProgressPanel({ rank }: { rank: MuscleRankProgress }) {
+  const { colors, typography } = useTheme();
+  const rankColor = RANK_TIER_COLORS[rank.rank];
+
+  return (
+    <View
+      accessibilityLabel={rankAccessibilityLabel(rank)}
+      style={[
+        styles.rankPanel,
+        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+      ]}
+    >
+      <View style={[styles.rankMark, { backgroundColor: withAlpha(rankColor, '24') }]}>
+        <Text style={[typography.micro, { color: rankColor }]}>RANK</Text>
+        <Text style={[typography.heading, { color: rankColor }]}>
+          {rank.rank === 'Unranked' ? '—' : rank.rank}
+        </Text>
+      </View>
+      <View style={styles.rankCopy}>
+        <View style={styles.headerRow}>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+            {rank.rank === 'Unranked' ? 'Not ranked yet' : 'Training evidence'}
+          </Text>
+          <Text style={[typography.micro, { color: colors.textMuted }]}>
+            {rank.directSets} sets · {rank.sessionCount} sessions
+          </Text>
+        </View>
+        <ProgressBar
+          progress={rank.progress}
+          color={rankColor}
+          style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
+        />
+        <Text style={[typography.micro, { color: colors.textMuted }]}>
+          {rank.nextRank
+            ? `${rank.setsRemaining} ${rank.setsRemaining === 1 ? 'set' : 'sets'} and ${rank.sessionsRemaining} ${rank.sessionsRemaining === 1 ? 'session' : 'sessions'} to Rank ${rank.nextRank}`
+            : 'Highest evidence rank reached'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function BadgeRow({ badge }: { badge: BodyBadge }) {
+  const { colors, typography } = useTheme();
+  const tone = badge.unlocked ? colors.success : colors.textMuted;
+  const progressLabel = badge.unlocked
+    ? 'Unlocked'
+    : badge.unit === '%'
+      ? `${Math.min(100, badge.current)}%`
+      : `${badge.current}/${badge.target} ${badge.unit}`;
+
+  return (
+    <View
+      accessibilityLabel={`${badge.name}. ${badge.description} ${progressLabel}`}
+      style={styles.badgeRow}
+    >
+      <View
+        style={[
+          styles.badgeIcon,
+          { backgroundColor: badge.unlocked ? colors.successSoft : colors.surfaceRaised },
+        ]}
+      >
+        <List.Icon icon={badge.icon} color={tone} />
+      </View>
+      <View style={styles.badgeCopy}>
+        <View style={styles.headerRow}>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{badge.name}</Text>
+          <Text style={[typography.micro, { color: tone }]}>{progressLabel}</Text>
+        </View>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>{badge.description}</Text>
+        {!badge.unlocked ? (
+          <ProgressBar
+            progress={badge.progress}
+            color={colors.accent}
+            style={[styles.badgeProgress, { backgroundColor: colors.surfacePressed }]}
+          />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -728,6 +863,13 @@ function lastTrainedLabel(selected: MuscleIntelligence): string {
   return `${selected.trainingLoad.lastTrainedDaysAgo} days since trained`;
 }
 
+function rankAccessibilityLabel(rank: MuscleRankProgress): string {
+  if (!rank.nextRank) {
+    return `Rank ${rank.rank}. ${rank.directSets} direct sets across ${rank.sessionCount} sessions. Highest evidence rank reached.`;
+  }
+  return `Rank ${rank.rank}. ${rank.directSets} direct sets across ${rank.sessionCount} sessions. ${rank.setsRemaining} sets and ${rank.sessionsRemaining} sessions to Rank ${rank.nextRank}.`;
+}
+
 function withAlpha(hex: string, alpha: string): string {
   return hex.length === 7 ? `${hex}${alpha}` : hex;
 }
@@ -742,13 +884,42 @@ const styles = StyleSheet.create({
   card: {
     borderWidth: StyleSheet.hairlineWidth,
   },
+  bodyStageFrame: {
+    borderRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 26,
+    elevation: 12,
+  },
   bodyStage: {
     minHeight: 456,
     borderRadius: 18,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
     overflow: 'hidden',
+  },
+  rankPanel: {
+    minHeight: 86,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  rankMark: {
+    width: 58,
+    minHeight: 58,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 7,
   },
   metricGrid: {
     flexDirection: 'row',
@@ -795,6 +966,31 @@ const styles = StyleSheet.create({
   progress: {
     height: 7,
     borderRadius: 999,
+  },
+  badgeRow: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  badgeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  badgeCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  badgeProgress: {
+    height: 4,
+    borderRadius: 999,
+    marginTop: 3,
   },
   heatLegend: {
     flexDirection: 'row',

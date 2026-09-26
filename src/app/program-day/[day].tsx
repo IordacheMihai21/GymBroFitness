@@ -14,6 +14,7 @@ import {
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ExerciseDemoModal } from '@/components/exercise/ExerciseDemoModal';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { requireExercise } from '@/domain/exercises/catalog';
 import {
@@ -63,9 +64,16 @@ export default function ProgramDayEditorScreen() {
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | null>(null);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [previewExercise, setPreviewExercise] = useState<Exercise | null>(null);
 
   const dayIndex = useMemo(() => parseDayParam(params.day), [params.day]);
   const selectedDay = program.days[dayIndex];
+  const previewAlreadySelected = Boolean(
+    previewExercise &&
+    selectedDay?.prescriptions.some(
+      (prescription) => prescription.exerciseId === previewExercise.id,
+    ),
+  );
   const dayStats = useMemo(() => summarizeDay(selectedDay), [selectedDay]);
   const candidates = useMemo(() => {
     if (!selectedDay) return [];
@@ -118,6 +126,7 @@ export default function ProgramDayEditorScreen() {
       addProgramPrescription(program, dayIndex, prescription),
       `${exercise.name} added.`,
     );
+    setPreviewExercise(null);
   }
 
   function startDay() {
@@ -234,6 +243,7 @@ export default function ProgramDayEditorScreen() {
                   : undefined
               }
               onRemove={() => removePrescription(index)}
+              onPreview={() => setPreviewExercise(requireExercise(prescription.exerciseId))}
             />
             {index < selectedDay.prescriptions.length - 1 ? <Divider /> : null}
           </View>
@@ -286,12 +296,13 @@ export default function ProgramDayEditorScreen() {
             <View key={exercise.id}>
               <List.Item
                 title={exercise.name}
-                description={`${muscleLabels(exercise.primaryMuscles)} - ${exercise.movementPattern.replace(/_/g, ' ')}`}
-                onPress={() => addExercise(exercise)}
+                description={`${muscleLabels(exercise.primaryMuscles)} - ${exercise.movementPattern.replace(/_/g, ' ')} · Preview technique`}
+                descriptionNumberOfLines={2}
+                onPress={() => setPreviewExercise(exercise)}
                 disabled={saving}
-                left={(props) => <List.Icon {...props} icon="plus-circle" color={colors.accent} />}
+                left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
                 right={(props) => (
-                  <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+                  <List.Icon {...props} icon="arrow-expand" color={colors.textMuted} />
                 )}
                 titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
                 descriptionStyle={[typography.caption, { color: colors.textMuted }]}
@@ -302,6 +313,15 @@ export default function ProgramDayEditorScreen() {
           ))
         )}
       </EditorSection>
+
+      <ExerciseDemoModal
+        key={previewExercise?.id ?? 'closed'}
+        exercise={previewExercise}
+        actionLabel={previewAlreadySelected ? 'Done' : `Add to ${selectedDay.name}`}
+        actionIcon={previewAlreadySelected ? 'check' : 'playlist-plus'}
+        onAction={previewAlreadySelected ? () => setPreviewExercise(null) : addExercise}
+        onDismiss={() => setPreviewExercise(null)}
+      />
     </Animated.ScrollView>
   );
 }
@@ -349,6 +369,7 @@ function PrescriptionEditorCard({
   onMoveUp,
   onMoveDown,
   onRemove,
+  onPreview,
 }: {
   prescription: ExercisePrescription;
   index: number;
@@ -358,6 +379,7 @@ function PrescriptionEditorCard({
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onRemove: () => void;
+  onPreview: () => void;
 }) {
   const { colors, typography } = useTheme();
   const exercise = requireExercise(prescription.exerciseId);
@@ -474,6 +496,9 @@ function PrescriptionEditorCard({
         </ScrollView>
 
         <View style={styles.secondaryActionRow}>
+          <Button compact mode="outlined" icon="motion-play-outline" onPress={onPreview}>
+            Technique
+          </Button>
           <Button
             compact
             mode={prescription.supersetWithNext ? 'contained-tonal' : 'outlined'}

@@ -74,6 +74,7 @@ describe('exercise intelligence', () => {
               worstRepScore: 72,
               mostCommonIssue: 'Control the eccentric.',
               recommendations: ['Lower with control.'],
+              velocityLossPct: null,
             },
           }),
           set('b', { loadKg: 100, reps: 8, rir: 1.5 }),

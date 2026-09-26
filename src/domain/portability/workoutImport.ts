@@ -3,6 +3,7 @@ import type { PerformedSet, SetKind, Units, WorkoutSession } from '@/types';
 import { inputToKg } from '@/utils/units';
 
 import { csvRecords, parseCsv } from './csv';
+import { externalMappingKey } from './externalExerciseMappingsStore';
 
 export type WorkoutImportSource = 'hevy' | 'strong';
 
@@ -89,8 +90,11 @@ export function parseExternalWorkoutCsv(raw: string, options: ImportOptions): Wo
     }
   });
 
-  if (normalized.length === 0) throw new Error('No importable workout rows were found.');
-  if (normalized.length < rows.length / 2) {
+  const invalidRowCount = warnings.filter((warning) => warning.code !== 'unmapped_exercise').length;
+  if (normalized.length === 0 && unmappedCounts.size === 0) {
+    throw new Error('No importable workout rows were found.');
+  }
+  if (invalidRowCount > rows.length / 2) {
     throw new Error('More than half of the CSV rows need correction before import.');
   }
 
@@ -128,7 +132,7 @@ function normalizeRow(
     ? (parseSourceDate(record.end_time, source) ?? start)
     : addDuration(start, record.Duration);
   const exerciseName = required(record, hevy ? 'exercise_title' : 'Exercise Name', row);
-  const customMapping = options.exerciseMappings?.[exerciseName];
+  const customMapping = options.exerciseMappings?.[externalMappingKey(source, exerciseName)];
   const exerciseId = customMapping
     ? canonicalExerciseId(customMapping)
     : resolveExternalExercise(exerciseName);

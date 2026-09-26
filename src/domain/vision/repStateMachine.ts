@@ -46,6 +46,10 @@ export interface RepMachineState {
   fallingStartMs: number | null;
   minAngleThisRep: number;
   maxAngleThisRep: number;
+  /** Peak |angular velocity| seen while rising this rep, deg/sec. Whichever of rising/falling is the true concentric phase is exercise-specific — see VisionExerciseConfig.concentricDirection. */
+  peakRisingVelocityDegPerSec: number;
+  /** Peak |angular velocity| seen while falling this rep, deg/sec. */
+  peakFallingVelocityDegPerSec: number;
 }
 
 export interface CompletedRepTiming {
@@ -54,6 +58,10 @@ export interface CompletedRepTiming {
   /** Duration of the most recent falling-toward-bottom phase, ms. */
   fallingMs: number | null;
   romDegrees: number;
+  /** Peak |angular velocity| during the rising phase, deg/sec. Null if never measured (e.g. no velocity sample arrived). */
+  peakRisingVelocityDegPerSec: number | null;
+  /** Peak |angular velocity| during the falling phase, deg/sec. */
+  peakFallingVelocityDegPerSec: number | null;
 }
 
 export interface RepMachineResult {
@@ -75,6 +83,8 @@ export function createInitialRepMachineState(): RepMachineState {
     fallingStartMs: null,
     minAngleThisRep: Infinity,
     maxAngleThisRep: -Infinity,
+    peakRisingVelocityDegPerSec: 0,
+    peakFallingVelocityDegPerSec: 0,
   };
 }
 
@@ -110,6 +120,10 @@ export function updateRepMachine(
       risingMs: prev.risingStartMs === null ? null : timestampMs - prev.risingStartMs,
       fallingMs: prev.fallingStartMs === null ? null : timestampMs - prev.fallingStartMs,
       romDegrees: Math.abs(maxAngleThisRep - minAngleThisRep),
+      peakRisingVelocityDegPerSec:
+        prev.peakRisingVelocityDegPerSec > 0 ? prev.peakRisingVelocityDegPerSec : null,
+      peakFallingVelocityDegPerSec:
+        prev.peakFallingVelocityDegPerSec > 0 ? prev.peakFallingVelocityDegPerSec : null,
     };
   }
 
@@ -132,6 +146,16 @@ export function updateRepMachine(
   const risingStartMs = phase === 'rising' && prev.phase !== 'rising' ? timestampMs : prev.risingStartMs;
   const fallingStartMs = phase === 'falling' && prev.phase !== 'falling' ? timestampMs : prev.fallingStartMs;
 
+  const currentAbsVelocity = angularVelocityDegPerSec === null ? 0 : Math.abs(angularVelocityDegPerSec);
+  const peakRisingVelocityDegPerSec =
+    phase === 'rising'
+      ? Math.max(prev.peakRisingVelocityDegPerSec, currentAbsVelocity)
+      : prev.peakRisingVelocityDegPerSec;
+  const peakFallingVelocityDegPerSec =
+    phase === 'falling'
+      ? Math.max(prev.peakFallingVelocityDegPerSec, currentAbsVelocity)
+      : prev.peakFallingVelocityDegPerSec;
+
   const nextState: RepMachineState = {
     endpoint,
     phase,
@@ -140,6 +164,8 @@ export function updateRepMachine(
     fallingStartMs: repCompleted ? null : fallingStartMs,
     minAngleThisRep: repCompleted ? angle : minAngleThisRep,
     maxAngleThisRep: repCompleted ? angle : maxAngleThisRep,
+    peakRisingVelocityDegPerSec: repCompleted ? 0 : peakRisingVelocityDegPerSec,
+    peakFallingVelocityDegPerSec: repCompleted ? 0 : peakFallingVelocityDegPerSec,
   };
 
   return { state: nextState, repCompleted, completedRepTiming };

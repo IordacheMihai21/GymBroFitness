@@ -36,6 +36,13 @@
       ],
       "expo-secure-store",
       "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "color": "#4D96FF",
+          "defaultChannel": "rest-timer-alerts"
+        }
+      ],
       "react-native-fast-tflite",
       [
         "react-native-vision-camera",

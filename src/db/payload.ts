@@ -78,6 +78,7 @@ export const workoutSessionPayloadSchema: z.ZodType<WorkoutSession> = z
     status: z.enum(['in_progress', 'paused', 'completed', 'discarded']),
     startedAt: z.string(),
     finishedAt: z.string().nullable(),
+    reviewStartedAt: z.string().nullable().optional(),
     exercises: z.array(
       z
         .object({

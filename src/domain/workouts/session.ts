@@ -44,11 +44,26 @@ export function startWorkoutSession(day: ProgramDay, userId: string): WorkoutSes
     status: 'in_progress',
     startedAt: new Date().toISOString(),
     finishedAt: null,
+    reviewStartedAt: null,
     exercises,
     totalPausedSeconds: 0,
     pausedAt: null,
     restTimer: null,
   };
+}
+
+export function beginWorkoutReview(session: WorkoutSession, now = new Date()): WorkoutSession {
+  if (session.status !== 'in_progress') return session;
+  return {
+    ...session,
+    reviewStartedAt: session.reviewStartedAt ?? now.toISOString(),
+    restTimer: null,
+  };
+}
+
+export function continueWorkoutFromReview(session: WorkoutSession): WorkoutSession {
+  if (!session.reviewStartedAt || session.status !== 'in_progress') return session;
+  return { ...session, reviewStartedAt: null };
 }
 
 export function pauseWorkoutSession(session: WorkoutSession, now = new Date()): WorkoutSession {

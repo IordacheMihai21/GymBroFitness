@@ -1,6 +1,11 @@
 import type { WorkoutSession } from '@/types';
 
-import { pauseWorkoutSession, resumeWorkoutSession } from '../session';
+import {
+  beginWorkoutReview,
+  continueWorkoutFromReview,
+  pauseWorkoutSession,
+  resumeWorkoutSession,
+} from '../session';
 
 function session(): WorkoutSession {
   return {
@@ -38,5 +43,14 @@ describe('workout session pause accounting', () => {
     expect(resumed.status).toBe('in_progress');
     expect(resumed.pausedAt).toBeNull();
     expect(resumed.totalPausedSeconds).toBe(105);
+  });
+
+  it('keeps review as a resumable draft until the user saves it', () => {
+    const review = beginWorkoutReview(session(), new Date('2026-09-20T10:30:00.000Z'));
+
+    expect(review.status).toBe('in_progress');
+    expect(review.reviewStartedAt).toBe('2026-09-20T10:30:00.000Z');
+    expect(review.restTimer).toBeNull();
+    expect(continueWorkoutFromReview(review).reviewStartedAt).toBeNull();
   });
 });

@@ -20,6 +20,7 @@ function analysis(patch: Partial<SetFormAnalysis> = {}): SetFormAnalysis {
     worstRepScore: 74,
     mostCommonIssue: null,
     recommendations: ['Clean set.'],
+    velocityLossPct: null,
     ...patch,
   };
 }

@@ -6,8 +6,8 @@ GymBroFitness is a dark-first mobile training tool used one-handed between sets.
 
 ## Navigation and hierarchy
 
-- The four primary destinations are **Today**, **Plan**, **Progress** and **Exercises**.
-- Profile and Settings are contextual destinations opened from the Today header. Body is a detailed view opened from Progress.
+- The five primary destinations are **Today**, **Plan**, **Body**, **Progress** and **Exercises**.
+- Profile and Settings are contextual destinations opened from the Today header. Body owns the interactive muscle map, evidence ranks and earned training badges.
 - A resumable workout is the highest-priority state. Its persistent bar sits above the tab bar, respects the safe area and disappears while the keyboard or workout screen is active.
 - Top-level screens lead with the current task or decision. Supporting metrics follow; detailed rationale remains available without displacing the primary action.
 

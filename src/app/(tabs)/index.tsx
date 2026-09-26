@@ -14,15 +14,15 @@ import { PrWatchCard } from '@/components/home/PrWatchCard';
 import { TodayWorkoutHero } from '@/components/home/TodayWorkoutHero';
 import { WeekLogCard } from '@/components/home/WeekLogCard';
 import { Reveal } from '@/components/ui/Reveal';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { BRAND } from '@/constants/branding';
+import { dailyQuote } from '@/domain/motivation/dailyQuote';
 import { buildPlannedWeek, buildWorkoutHistoryInsights } from '@/domain/workouts/historyInsights';
 import { getInProgressWorkoutSession, listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { buildProgressionTarget } from '@/domain/workouts/targetToBeat';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type { WorkoutSession } from '@/types';
-
-const COACH_NOTE = 'Today is simple: own the first top set, then let the plan do its job.';
 
 export default function HomeScreen() {
   const { colors, spacing, typography } = useTheme();
@@ -37,6 +37,7 @@ export default function HomeScreen() {
   const [activeSheet, setActiveSheet] = useState<HomeSheet | null>(null);
   const day = program.days[dayIndex];
   const swapIndex = (dayIndex + 1) % program.days.length;
+  const quote = useMemo(() => dailyQuote(), []);
 
   useFocusEffect(
     useCallback(() => {
@@ -111,7 +112,7 @@ export default function HomeScreen() {
         <Reveal>
           <View style={styles.topBar}>
             <IconButton
-              icon="menu"
+              icon="cog-outline"
               size={24}
               onPress={() => router.push('/settings')}
               accessibilityLabel="Open settings"
@@ -148,18 +149,33 @@ export default function HomeScreen() {
         </Reveal>
 
         <Reveal index={1}>
-          {activeDraft ? (
-            <ActiveWorkoutCard session={activeDraft} onResume={() => router.push('/workout')} />
-          ) : null}
+          <View style={{ gap: spacing.xs }}>
+            <Text style={[typography.subheading, { color: colors.textSecondary }]}>
+              Hello, {user.displayName}
+            </Text>
+            <Text
+              style={[typography.caption, { color: colors.textMuted, fontStyle: 'italic' }]}
+              numberOfLines={2}
+            >
+              “{quote.text}” — {quote.author}
+            </Text>
+            <Text
+              style={[typography.display, { color: colors.textPrimary, marginTop: spacing.sm }]}
+            >
+              Today
+            </Text>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>
+              {activeDraft
+                ? 'Your workout is saved and ready to continue.'
+                : `${day.name} is ready when you are.`}
+            </Text>
+          </View>
         </Reveal>
 
         <Reveal index={2}>
-          <View style={{ gap: 4 }}>
-            <Text style={[typography.title, { color: colors.textPrimary }]}>
-              Ready to jump back to work, {user.displayName}?
-            </Text>
-            <Text style={[typography.body, { color: colors.textSecondary }]}>{COACH_NOTE}</Text>
-          </View>
+          {activeDraft ? (
+            <ActiveWorkoutCard session={activeDraft} onResume={() => router.push('/workout')} />
+          ) : null}
         </Reveal>
 
         <Reveal index={3}>
@@ -180,31 +196,45 @@ export default function HomeScreen() {
         </Reveal>
 
         <Reveal index={4}>
+          <SectionHeader
+            title="This week"
+            description="Completed work and how closely you trained to the plan."
+          />
+        </Reveal>
+
+        <Reveal index={5}>
           <HomePreflightRail
             intensityMatchPct={insights.intensityMatchPct}
             sessionsThisWeek={insights.weekLog.filter((entry) => entry.status === 'done').length}
           />
         </Reveal>
 
-        <Reveal index={5}>
-          <OverloadRunwayCard target={target} units={preferences.units} />
-        </Reveal>
-
         <Reveal index={6}>
-          <MuscleFocusMap day={day} />
-        </Reveal>
-
-        <Reveal index={7}>
-          <PrWatchCard records={insights.personalRecords} units={preferences.units} />
-        </Reveal>
-
-        <Reveal index={8}>
           <WeekLogCard
             entries={insights.weekLog}
             weekVolumeKg={insights.weekVolumeKg}
             intensityMatchPct={insights.intensityMatchPct}
             units={preferences.units}
           />
+        </Reveal>
+
+        <Reveal index={7}>
+          <SectionHeader
+            title="Training insights"
+            description="Targets and muscle coverage from your saved sessions."
+          />
+        </Reveal>
+
+        <Reveal index={8}>
+          <OverloadRunwayCard target={target} units={preferences.units} />
+        </Reveal>
+
+        <Reveal index={9}>
+          <MuscleFocusMap day={day} />
+        </Reveal>
+
+        <Reveal index={10}>
+          <PrWatchCard records={insights.personalRecords} units={preferences.units} />
         </Reveal>
       </ScrollView>
 
@@ -252,17 +282,32 @@ function ActiveWorkoutCard({
       <Card.Content style={{ gap: spacing.md }}>
         <View style={styles.topBar}>
           <View style={{ flex: 1 }}>
-            <Text style={[typography.micro, { color: colors.accent }]}>ACTIVE WORKOUT</Text>
+            <Text style={[typography.micro, { color: colors.accent }]}>
+              {session.reviewStartedAt ? 'WORKOUT REVIEW' : 'ACTIVE WORKOUT'}
+            </Text>
             <Text style={[typography.heading, { color: colors.textPrimary }]}>
               {session.dayName}
             </Text>
           </View>
-          <Chip compact icon={session.status === 'paused' ? 'pause' : 'progress-clock'}>
+          <Chip
+            compact
+            icon={
+              session.reviewStartedAt
+                ? 'clipboard-edit-outline'
+                : session.status === 'paused'
+                  ? 'pause'
+                  : 'progress-clock'
+            }
+          >
             {completedSets}/{plannedSets} sets
           </Chip>
         </View>
-        <Button mode="contained" icon="play" onPress={onResume}>
-          Resume workout
+        <Button
+          mode="contained"
+          icon={session.reviewStartedAt ? 'clipboard-edit-outline' : 'play'}
+          onPress={onResume}
+        >
+          {session.reviewStartedAt ? 'Review workout' : 'Resume workout'}
         </Button>
       </Card.Content>
     </Card>

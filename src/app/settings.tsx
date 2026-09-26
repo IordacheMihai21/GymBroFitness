@@ -7,16 +7,20 @@ import {
   Dialog,
   HelperText,
   IconButton,
+  List,
   Portal,
+  Searchbar,
   TextInput,
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AccountCard } from '@/components/settings/AccountCard';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
-import { ENVIRONMENT_EQUIPMENT } from '@/domain/exercises/catalog';
+import { ENVIRONMENT_EQUIPMENT, EXERCISE_CATALOG } from '@/domain/exercises/catalog';
 import { generateProgram } from '@/domain/programs/generator';
 import {
   createBackupSnapshot,
+  loadRestoreRecoveryBackup,
   parseBackup,
   previewBackupRestore,
   restoreBackup,
@@ -34,6 +38,10 @@ import {
   parseExternalWorkoutCsv,
   type WorkoutImportResult,
 } from '@/domain/portability/workoutImport';
+import {
+  loadExternalExerciseMappings,
+  saveExternalExerciseMapping,
+} from '@/domain/portability/externalExerciseMappingsStore';
 import {
   resetTrainingProfile,
   saveTrainingProfile,
@@ -108,11 +116,14 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
     preview: BackupPreview;
   } | null>(null);
   const [workoutImportCandidate, setWorkoutImportCandidate] = useState<{
+    raw: string;
     result: WorkoutImportResult;
     newSessionCount: number;
     duplicateSessionCount: number;
   } | null>(null);
   const [strongImportUnit, setStrongImportUnit] = useState<Units>(profile.preferences.units);
+  const [mappingTarget, setMappingTarget] = useState<string | null>(null);
+  const [mappingQuery, setMappingQuery] = useState('');
   const [status, setStatus] = useState<{ tone: StatusTone; text: string } | null>(null);
   const [fieldIssues, setFieldIssues] = useState<{ displayName?: string }>({});
 
@@ -158,6 +169,16 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
       };
     }
   }, [draftPreferences, profile.user.id]);
+  const mappingChoices = useMemo(() => {
+    const query = mappingQuery.trim().toLocaleLowerCase();
+    return EXERCISE_CATALOG.filter((exercise) =>
+      query
+        ? [exercise.name, ...exercise.aliases].some((name) =>
+            name.toLocaleLowerCase().includes(query),
+          )
+        : true,
+    ).slice(0, 12);
+  }, [mappingQuery]);
 
   const programAffectingChanged =
     goal !== profile.preferences.goal ||
@@ -342,15 +363,18 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
     try {
       const raw = await pickWorkoutCsvText();
       if (raw == null) return;
+      const storedMappings = await loadExternalExerciseMappings();
       const result = parseExternalWorkoutCsv(raw, {
         userId: profile.user.id,
         strongWeightUnit: strongImportUnit,
+        exerciseMappings: storedMappings.mappings,
       });
       const existing = new Set((await listWorkoutHistory()).map((session) => session.id));
       const duplicateSessionCount = result.sessions.filter((session) =>
         existing.has(session.id),
       ).length;
       setWorkoutImportCandidate({
+        raw,
         result,
         duplicateSessionCount,
         newSessionCount: result.sessions.length - duplicateSessionCount,
@@ -381,6 +405,63 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
       setStatus({
         tone: 'danger',
         text: error instanceof Error ? error.message : 'Workout import failed.',
+      });
+    } finally {
+      setPortabilityMode(null);
+    }
+  }
+
+  async function mapExternalExercise(exerciseId: string) {
+    if (!mappingTarget || !workoutImportCandidate) return;
+    setPortabilityMode('workout_import');
+    setStatus(null);
+    try {
+      const storedMappings = await saveExternalExerciseMapping(
+        workoutImportCandidate.result.source,
+        mappingTarget,
+        exerciseId,
+      );
+      const result = parseExternalWorkoutCsv(workoutImportCandidate.raw, {
+        userId: profile.user.id,
+        strongWeightUnit: strongImportUnit,
+        exerciseMappings: storedMappings.mappings,
+      });
+      const existing = new Set((await listWorkoutHistory()).map((session) => session.id));
+      const duplicateSessionCount = result.sessions.filter((session) =>
+        existing.has(session.id),
+      ).length;
+      setWorkoutImportCandidate({
+        raw: workoutImportCandidate.raw,
+        result,
+        duplicateSessionCount,
+        newSessionCount: result.sessions.length - duplicateSessionCount,
+      });
+      setMappingTarget(null);
+      setMappingQuery('');
+    } catch (error) {
+      setStatus({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not save this exercise mapping.',
+      });
+    } finally {
+      setPortabilityMode(null);
+    }
+  }
+
+  async function chooseRecoverySnapshot() {
+    setPortabilityMode('import');
+    setStatus(null);
+    try {
+      const backup = await loadRestoreRecoveryBackup();
+      if (!backup) {
+        setStatus({ tone: 'neutral', text: 'No pre-restore recovery snapshot is available.' });
+        return;
+      }
+      setImportCandidate({ backup, preview: await previewBackupRestore(backup) });
+    } catch (error) {
+      setStatus({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Recovery snapshot could not be read.',
       });
     } finally {
       setPortabilityMode(null);
@@ -450,6 +531,8 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
           />
         </Card.Content>
       </Card>
+
+      <AccountCard />
 
       <Card
         mode="contained"
@@ -634,6 +717,14 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
             >
               Import Hevy/Strong
             </Button>
+            <Button
+              mode="text"
+              icon="backup-restore"
+              onPress={chooseRecoverySnapshot}
+              disabled={portabilityMode !== null}
+            >
+              Recover pre-restore data
+            </Button>
           </View>
           <SegmentedChips
             label="Strong CSV weight unit"
@@ -689,7 +780,7 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
 
       <Portal>
         <Dialog
-          visible={workoutImportCandidate != null}
+          visible={workoutImportCandidate != null && mappingTarget == null}
           onDismiss={() => setWorkoutImportCandidate(null)}
         >
           <Dialog.Title>Review workout import</Dialog.Title>
@@ -707,12 +798,37 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
                   are interpreted as {strongImportUnit}.
                 </Text>
                 {workoutImportCandidate.result.unmappedExercises.length > 0 ? (
-                  <Text style={[typography.caption, { color: colors.warning }]}>
-                    Skipped until mapped:{' '}
-                    {workoutImportCandidate.result.unmappedExercises
-                      .map((item) => `${item.name} (${item.rowCount})`)
-                      .join(', ')}
-                  </Text>
+                  <View style={{ gap: spacing.xs }}>
+                    <Text style={[typography.caption, { color: colors.warning }]}>
+                      Map these exercises now, or import only the recognized rows.
+                    </Text>
+                    {workoutImportCandidate.result.unmappedExercises.slice(0, 6).map((item) => (
+                      <List.Item
+                        key={item.name}
+                        title={item.name}
+                        description={`${item.rowCount} set row${item.rowCount === 1 ? '' : 's'}`}
+                        titleNumberOfLines={2}
+                        right={() => (
+                          <Button
+                            compact
+                            mode="text"
+                            onPress={() => {
+                              setMappingTarget(item.name);
+                              setMappingQuery('');
+                            }}
+                          >
+                            Map
+                          </Button>
+                        )}
+                      />
+                    ))}
+                    {workoutImportCandidate.result.unmappedExercises.length > 6 ? (
+                      <Text style={[typography.micro, { color: colors.textMuted }]}>
+                        And {workoutImportCandidate.result.unmappedExercises.length - 6} more in
+                        this file.
+                      </Text>
+                    ) : null}
+                  </View>
                 ) : null}
               </>
             ) : null}
@@ -727,9 +843,65 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
             <Button
               onPress={confirmWorkoutImport}
               loading={portabilityMode === 'workout_import'}
-              disabled={portabilityMode === 'workout_import'}
+              disabled={
+                portabilityMode === 'workout_import' ||
+                workoutImportCandidate?.result.sessions.length === 0
+              }
             >
               Import
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <Portal>
+        <Dialog
+          visible={mappingTarget != null}
+          onDismiss={() => {
+            setMappingTarget(null);
+            setMappingQuery('');
+          }}
+        >
+          <Dialog.Title>Map external exercise</Dialog.Title>
+          <Dialog.Content style={{ gap: spacing.sm }}>
+            <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={3}>
+              Choose the GymBro exercise equivalent for “{mappingTarget}”. This choice is remembered
+              only for this source app.
+            </Text>
+            <Searchbar
+              value={mappingQuery}
+              onChangeText={setMappingQuery}
+              placeholder="Search catalog"
+              accessibilityLabel="Search catalog exercises"
+            />
+            <ScrollView style={styles.mappingResults} keyboardShouldPersistTaps="handled">
+              {mappingChoices.map((exercise) => (
+                <List.Item
+                  key={exercise.id}
+                  title={exercise.name}
+                  description={`${exercise.equipment.join(', ')} · ${exercise.primaryMuscles.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}`}
+                  titleNumberOfLines={2}
+                  descriptionNumberOfLines={2}
+                  onPress={() => mapExternalExercise(exercise.id)}
+                  disabled={portabilityMode !== null}
+                  left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
+                />
+              ))}
+              {mappingChoices.length === 0 ? (
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  No catalog exercise matches this search. Change the query or leave it unmapped.
+                </Text>
+              ) : null}
+            </ScrollView>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setMappingTarget(null);
+                setMappingQuery('');
+              }}
+            >
+              Cancel
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -1099,5 +1271,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  mappingResults: {
+    maxHeight: 320,
   },
 });

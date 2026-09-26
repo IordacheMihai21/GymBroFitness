@@ -1,8 +1,6 @@
-import { type ElementRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BottomSheetModal } from '@gorhom/bottom-sheet';
-import * as Haptics from 'expo-haptics';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { AppState, ScrollView, StyleSheet, Text, View, type DimensionValue } from 'react-native';
+import { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   ActivityIndicator,
   Button,
@@ -15,86 +13,52 @@ import {
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { PrCelebration } from '@/components/workout/PrCelebration';
 import { ReadinessCheckInCard } from '@/components/workout/ReadinessCheckInCard';
 import { RestTimer } from '@/components/workout/RestTimer';
 import { RirPickerSheet } from '@/components/workout/RirPickerSheet';
-import { SetRow, type SetRowHandle } from '@/components/workout/SetRow';
-import { getExercise, requireExercise } from '@/domain/exercises/catalog';
-import { buildManualPrescription, recalculateProgramDay } from '@/domain/programs/programEditing';
-import { saveTemplate, listTemplates } from '@/domain/programs/templateStore';
-import { buildTemplateFromSession, defaultTemplateName } from '@/domain/programs/templates';
-import { detectPersonalRecords, sessionVolumeKg } from '@/domain/workouts/analytics';
-import type { WorkoutExerciseSummary } from '@/domain/workouts/history';
+import { SetRow } from '@/components/workout/SetRow';
 import {
-  discardInProgressWorkoutSession,
-  getInProgressWorkoutSession,
-  listWorkoutHistory,
-  saveInProgressWorkoutSession,
-  saveWorkoutSession,
-} from '@/domain/workouts/historyStore';
+  AssistantFact,
+  FinishMetric,
+  FormQualityBlock,
+  Metric,
+  MuscleDoseRow,
+  ProgressionReviewRow,
+  ProgressionTargetPanel,
+  RirQualityBlock,
+  TopExerciseRow,
+} from '@/components/workout/WorkoutReviewBlocks';
+import { requireExercise } from '@/domain/exercises/catalog';
+import { listTemplates } from '@/domain/programs/templateStore';
 import {
   findLastPerformedExercise,
   previousSetAtIndex,
   formatPreviousSet,
 } from '@/domain/workouts/lastPerformance';
-import { buildAllPersonalRecordsFromHistory } from '@/domain/workouts/historyInsights';
 import { painMessage } from '@/domain/workouts/readiness';
-import {
-  buildSetAutofillSuggestion,
-  setAutofillPatch,
-  type SetAutofillSuggestion,
-} from '@/domain/workouts/setAutofill';
 import { extendRestTimer } from '@/domain/workouts/restTimer';
-import {
-  pauseWorkoutSession,
-  resumeWorkoutSession,
-  startWorkoutSession,
-} from '@/domain/workouts/session';
-import { createWorkoutPersistenceController } from '@/domain/workouts/sessionPersistenceController';
-import {
-  patchWorkoutSet,
-  toggleWorkoutSetCompletion,
-  type SetCompletionResult,
-} from '@/domain/workouts/sessionEditing';
+import { startWorkoutSession } from '@/domain/workouts/session';
 import { formatTrackingTarget } from '@/domain/workouts/setTracking';
-import {
-  buildProgramProgressionTargets,
-  formatDecisionTarget,
-  formatProgressionSignal,
-  formatTargetSummary,
-  formatTargetWinCondition,
-  progressionActionLabel,
-  type TargetToBeat,
-} from '@/domain/workouts/targetToBeat';
-import {
-  buildWorkoutSessionReview,
-  type WorkoutFormReview,
-  type WorkoutMuscleDose,
-  type WorkoutProgressionReview,
-  type WorkoutRirReview,
-} from '@/domain/workouts/workoutReview';
-import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
-import {
-  takePendingFormAnalysisResult,
-  type PendingFormAnalysisResult,
-} from '@/domain/vision/formAnalysisResultStore';
+import { buildWorkoutSessionReview } from '@/domain/workouts/workoutReview';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
-import type {
-  PerformedExercise,
-  PerformedSet,
-  ProgramDay,
-  SetTechnique,
-  TrainingPreferences,
-  ReadinessCheckIn,
-  Units,
-  WorkoutSession,
-} from '@/types';
-import { displayLoad, formatVolumeLoad, unitLabel } from '@/utils/units';
+import type { ProgramDay, TrainingPreferences } from '@/types';
+import { formatVolumeLoad } from '@/utils/units';
 
-type AutosaveState = 'idle' | 'restored' | 'saving' | 'saved' | 'error';
+import {
+  autosaveIcon,
+  autosaveLabel,
+  buildCustomWorkoutDay,
+  cameraAngleLabel,
+  compactSuggestionValue,
+  formatRest,
+  isExerciseDone,
+  shortExerciseName,
+  sourceLabel,
+  techniqueLabel,
+} from '@/features/workout/workout.helpers';
+import { useWorkoutSession } from '@/features/workout/useWorkoutSession';
 
 export default function WorkoutScreen() {
   const {
@@ -171,391 +135,88 @@ function WorkoutSessionView({
   const router = useRouter();
   const safeTop = Math.max(insets.top, spacing.xxl);
 
-  const [session, setSession] = useState(() => startWorkoutSession(day, userId));
-  const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
-  const [finished, setFinished] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [newRecordCount, setNewRecordCount] = useState(0);
-  const [history, setHistory] = useState<WorkoutSession[]>([]);
-  const [rirSetIndex, setRirSetIndex] = useState<number | null>(null);
-  const rirSheetRef = useRef<ElementRef<typeof BottomSheetModal>>(null);
-  const [templateSaved, setTemplateSaved] = useState(false);
-  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
-  const [showCelebration, setShowCelebration] = useState(false);
-  const [isHydratingDraft, setIsHydratingDraft] = useState(true);
-  const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
-  const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null);
-  const [formAnalysisStatus, setFormAnalysisStatus] = useState<string | null>(null);
-  const [showDiscardDialog, setShowDiscardDialog] = useState(false);
-  const [isDiscarding, setIsDiscarding] = useState(false);
-  const [setValidationErrors, setSetValidationErrors] = useState<Record<string, string>>({});
-  const [checkInSkipped, setCheckInSkipped] = useState(false);
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const setRowRefs = useRef<Record<string, SetRowHandle | null>>({});
-  const persistence = useMemo(
-    () =>
-      createWorkoutPersistenceController({
-        saveDraft: saveInProgressWorkoutSession,
-        finish: saveWorkoutSession,
-        discard: discardInProgressWorkoutSession,
-      }),
-    [],
-  );
-
-  useEffect(() => {
-    let mounted = true;
-    Promise.all([listWorkoutHistory(), getInProgressWorkoutSession()])
-      .then(([nextHistory, draft]) => {
-        if (!mounted) return;
-        setHistory(nextHistory);
-        if (draft && isResumableSession(draft)) {
-          setSession(draft);
-          setAutosaveState('restored');
-          setLastAutosavedAt(draft.startedAt);
-          const firstOpenExercise = draft.exercises.findIndex(
-            (exercise) => !isExerciseDone(exercise),
-          );
-          setActiveExerciseIndex(firstOpenExercise === -1 ? 0 : firstOpenExercise);
-        } else {
-          setAutosaveState('idle');
-        }
-      })
-      .finally(() => {
-        if (mounted) setIsHydratingDraft(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isHydratingDraft || finished || !isResumableSession(session)) return;
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-
-    autosaveTimerRef.current = setTimeout(() => {
-      setAutosaveState('saving');
-      persistence
-        .saveDraft(session)
-        .then((saved) => {
-          setLastAutosavedAt(new Date().toISOString());
-          setAutosaveState(saved.id === session.id ? 'saved' : 'idle');
-        })
-        .catch(() => {
-          setAutosaveState('error');
-        });
-    }, 500);
-
-    return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    };
-  }, [finished, isHydratingDraft, persistence, session]);
-
-  useFocusEffect(
-    useCallback(() => {
-      let mounted = true;
-      takePendingFormAnalysisResult(session.id).then((result) => {
-        if (!mounted || !result) return;
-        setSession((prev) => attachFormAnalysisResult(prev, result));
-        setFormAnalysisStatus(`Form AI attached to set ${result.setIndex + 1}.`);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      });
-      return () => {
-        mounted = false;
-      };
-    }, [session.id]),
-  );
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' || isHydratingDraft || finished || !isResumableSession(session)) {
-        return;
-      }
-
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-      persistence
-        .saveDraft(session)
-        .then(() => {
-          setLastAutosavedAt(new Date().toISOString());
-          setAutosaveState('saved');
-        })
-        .catch(() => setAutosaveState('error'));
-    });
-
-    return () => subscription.remove();
-  }, [finished, isHydratingDraft, persistence, session]);
-
-  const activeExercise = session.exercises[activeExerciseIndex] ?? session.exercises[0];
-  const isPaused = session.status === 'paused';
-  const activeExerciseMeta = requireExercise(activeExercise.exerciseId);
-  const activeVisionConfig = getVisionConfigForMovementPattern(activeExerciseMeta.movementPattern);
-  const activePrescription = activeExercise.prescription;
-  const plannedSets = session.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
-  const completedSets = countCompletedSets(session.exercises);
-  const progress = plannedSets > 0 ? completedSets / plannedSets : 0;
-  const volume = sessionVolumeKg(session);
-  const activeCompletedSets = activeExercise.sets.filter(
-    (set) => set.completed && !set.skipped,
-  ).length;
-  const targetLabel = formatTrackingTarget(
+  const {
+    session,
+    setSession,
+    activeExerciseIndex,
+    setActiveExerciseIndex,
+    finished,
+    setFinished,
+    isSaving,
+    saveError,
+    setSaveError,
+    newRecordCount,
+    setNewRecordCount,
+    history,
+    rirTarget,
+    setRirTarget,
+    rirSheetRef,
+    templateSaved,
+    setTemplateSaved,
+    isSavingTemplate,
+    showCelebration,
+    setShowCelebration,
+    isHydratingDraft,
+    autosaveState,
+    setAutosaveState,
+    lastAutosavedAt,
+    setLastAutosavedAt,
+    formAnalysisStatus,
+    showDiscardDialog,
+    setShowDiscardDialog,
+    showSaveIncompleteDialog,
+    setShowSaveIncompleteDialog,
+    isDiscarding,
+    setValidationErrors,
+    checkInSkipped,
+    setCheckInSkipped,
+    restNotificationStatus,
+    setRowRefs,
+    activeExercise,
+    isPaused,
+    activeExerciseMeta,
+    activeVisionConfig,
     activePrescription,
-    activeExerciseMeta.trackingType,
-    preferences.units,
-  );
-  const previousPerformance = useMemo(
-    () => findLastPerformedExercise(history, activeExercise.exerciseId),
-    [history, activeExercise.exerciseId],
-  );
-  const nextOpenSetIndex = firstOpenSetIndex(activeExercise.sets);
-  const formTargetSetIndex = nextOpenSetIndex ?? Math.max(0, activeExercise.sets.length - 1);
-  const formTargetSet = activeExercise.sets[formTargetSetIndex];
-  const openSetCount = activeExercise.sets.filter((set) => !set.completed && !set.skipped).length;
-  const activeAutofillSuggestion =
-    nextOpenSetIndex == null
-      ? null
-      : buildSetAutofillSuggestion(
-          activeExercise,
-          previousPerformance,
-          nextOpenSetIndex,
-          preferences.units,
-          activeExerciseMeta.trackingType,
-        );
-  const progressionTargets = useMemo(
-    () =>
-      buildProgramProgressionTargets({
-        prescriptions: session.exercises.map((exercise) => exercise.prescription),
-        history,
-        userExperience: preferences.experience,
-        nutritionContext: preferences.nutritionContext,
-      }),
-    [history, preferences.experience, preferences.nutritionContext, session.exercises],
-  );
-  const activeProgressionTarget = progressionTargets.get(activeExercise.exerciseId) ?? null;
-
-  function updateSet(exerciseIndex: number, setIndex: number, patch: Partial<PerformedSet>) {
-    const setId = session.exercises[exerciseIndex]?.sets[setIndex]?.id;
-    if (setId && setValidationErrors[setId]) {
-      setSetValidationErrors((current) => {
-        const next = { ...current };
-        delete next[setId];
-        return next;
-      });
-    }
-    setSession((prev) => patchWorkoutSet(prev, exerciseIndex, setIndex, patch));
-  }
-
-  function openRirPicker(setIndex: number) {
-    if (isPaused) return;
-    setRirSetIndex(setIndex);
-    rirSheetRef.current?.present();
-  }
-
-  function saveReadiness(readiness: ReadinessCheckIn) {
-    setSession((prev) => ({ ...prev, readiness }));
-    setCheckInSkipped(false);
-    setAutosaveState('saving');
-  }
-
-  function confirmRir(value: number) {
-    if (isPaused) return;
-    if (rirSetIndex != null) {
-      updateSet(activeExerciseIndex, rirSetIndex, { rir: value });
-      Haptics.selectionAsync();
-    }
-    rirSheetRef.current?.dismiss();
-  }
-
-  function clearRir() {
-    if (isPaused) return;
-    if (rirSetIndex != null) updateSet(activeExerciseIndex, rirSetIndex, { rir: null });
-    rirSheetRef.current?.dismiss();
-  }
-
-  function copyPreviousSet(exerciseIndex: number, setIndex: number) {
-    if (isPaused) return;
-    const previous = session.exercises[exerciseIndex]?.sets[setIndex - 1];
-    if (!previous) return;
-    Haptics.selectionAsync();
-    updateSet(exerciseIndex, setIndex, {
-      loadKg: previous.loadKg,
-      reps: previous.reps,
-      rir: previous.rir,
-      durationSeconds: previous.durationSeconds,
-    });
-  }
-
-  function fillNextSet() {
-    if (isPaused) return;
-    if (nextOpenSetIndex == null || activeAutofillSuggestion == null) return;
-    Haptics.selectionAsync();
-    updateSet(activeExerciseIndex, nextOpenSetIndex, setAutofillPatch(activeAutofillSuggestion));
-  }
-
-  function fillOpenSets() {
-    if (isPaused) return;
-    if (openSetCount === 0) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSession((prev) => {
-      const exercises = [...prev.exercises];
-      const exercise = exercises[activeExerciseIndex];
-      const previous = findLastPerformedExercise(history, exercise.exerciseId);
-      const nextExercise: PerformedExercise = { ...exercise, sets: [...exercise.sets] };
-
-      nextExercise.sets = nextExercise.sets.map((set, index) => {
-        if (set.completed || set.skipped) return set;
-        const suggestion = buildSetAutofillSuggestion(
-          nextExercise,
-          previous,
-          index,
-          preferences.units,
-          requireExercise(nextExercise.exerciseId).trackingType,
-        );
-        const nextSet = { ...set, ...setAutofillPatch(suggestion) };
-        nextExercise.sets[index] = nextSet;
-        return nextSet;
-      });
-
-      exercises[activeExerciseIndex] = nextExercise;
-      return { ...prev, exercises };
-    });
-  }
-
-  function toggleComplete(exerciseIndex: number, setIndex: number): SetCompletionResult | null {
-    if (isPaused) return null;
-    const exercise = session.exercises[exerciseIndex];
-    if (!exercise) return null;
-    const trackingType = requireExercise(exercise.exerciseId).trackingType;
-    const result = toggleWorkoutSetCompletion(session, exerciseIndex, setIndex, trackingType);
-    if (!result.ok) {
-      if (result.reason === 'invalid_set') {
-        setSetValidationErrors((current) => ({ ...current, [result.setId]: result.message }));
-      }
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return result;
-    }
-    setSession(result.session);
-    if (result.completed) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (result.navigation.nextExerciseIndex != null) {
-      setActiveExerciseIndex(result.navigation.nextExerciseIndex);
-    }
-    return result;
-  }
-
-  function completeAndFocusNext(exerciseIndex: number, setIndex: number) {
-    const result = toggleComplete(exerciseIndex, setIndex);
-    if (!result?.ok || !result.completed) return;
-
-    const nextExerciseIndex = result.navigation.nextExerciseIndex ?? exerciseIndex;
-    const nextExercise = result.session.exercises[nextExerciseIndex];
-    const nextSet = nextExercise?.sets.find(
-      (candidate) => !candidate.completed && !candidate.skipped,
-    );
-    if (!nextSet) return;
-    setTimeout(() => setRowRefs.current[nextSet.id]?.focusPrimaryInput(), 0);
-  }
-
-  function toggleSupersetWithNext(exerciseIndex: number) {
-    setSession((prev) => {
-      const exercises = [...prev.exercises];
-      const current = exercises[exerciseIndex];
-      exercises[exerciseIndex] = {
-        ...current,
-        prescription: {
-          ...current.prescription,
-          supersetWithNext: !current.prescription.supersetWithNext,
-        },
-      };
-      return { ...prev, exercises };
-    });
-    Haptics.selectionAsync();
-  }
-
-  function pauseSession() {
-    if (isPaused || finished) return;
-    void Haptics.selectionAsync();
-    setSession((prev) => pauseWorkoutSession(prev));
-    setAutosaveState('saving');
-  }
-
-  function resumeSession() {
-    if (!isPaused) return;
-    void Haptics.selectionAsync();
-    setSession((prev) => resumeWorkoutSession(prev));
-    setAutosaveState('saving');
-  }
-
-  async function discardSession() {
-    if (isDiscarding) return;
-    setIsDiscarding(true);
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    try {
-      await persistence.discard(session.id);
-      setSession((prev) => ({
-        ...prev,
-        status: 'discarded',
-        pausedAt: null,
-        restTimer: null,
-      }));
-      setShowDiscardDialog(false);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      router.replace('/');
-    } finally {
-      setIsDiscarding(false);
-    }
-  }
-
-  async function finishSession() {
-    if (isSaving || completedSets === 0) return;
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    setIsSaving(true);
-    setSaveError(null);
-    setAutosaveState('saving');
-
-    const completedSession: WorkoutSession = {
-      ...session,
-      status: 'completed',
-      finishedAt: new Date().toISOString(),
-      pausedAt: null,
-      restTimer: null,
-    };
-
-    try {
-      const saved = await persistence.finish(completedSession);
-      const existingRecords = buildAllPersonalRecordsFromHistory(
-        history.filter((item) => item.id !== saved.id),
-      );
-      const records = detectPersonalRecords(saved, existingRecords, getExercise);
-      setSession(saved);
-      setHistory((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
-      setNewRecordCount(records.length);
-      setAutosaveState('saved');
-      setLastAutosavedAt(new Date().toISOString());
-      if (records.length > 0) setShowCelebration(true);
-      setFinished(true);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      try {
-        await persistence.saveDraft(session);
-        setLastAutosavedAt(new Date().toISOString());
-      } catch {
-        // The in-memory session remains editable even if the DB is still unavailable.
-      }
-      setAutosaveState('error');
-      setSaveError('Saving failed. Your workout is still open — retry to finish safely.');
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function saveAsTemplate() {
-    if (isSavingTemplate || templateSaved) return;
-    setIsSavingTemplate(true);
-    const template = buildTemplateFromSession(session, defaultTemplateName(day.name));
-    await saveTemplate(template);
-    setTemplateSaved(true);
-    setIsSavingTemplate(false);
-    Haptics.selectionAsync();
-  }
+    plannedSets,
+    completedSets,
+    remainingSets,
+    isReviewing,
+    progress,
+    volume,
+    activeCompletedSets,
+    targetLabel,
+    previousPerformance,
+    nextOpenSetIndex,
+    formTargetSetIndex,
+    formTargetSet,
+    openSetCount,
+    activeAutofillSuggestion,
+    activeProgressionTarget,
+    updateSet,
+    openRirPicker,
+    saveReadiness,
+    confirmRir,
+    clearRir,
+    copyPreviousSet,
+    copySetToRemaining,
+    toggleSetSkipped,
+    fillNextSet,
+    fillOpenSetsForExercise,
+    fillAllOpenSets,
+    fillOpenSets,
+    toggleComplete,
+    completeAndFocusNext,
+    completeExerciseOpenSets,
+    toggleSupersetWithNext,
+    pauseSession,
+    resumeSession,
+    endLiveWorkout,
+    continueLiveWorkout,
+    discardSession,
+    saveCompletedSession,
+    saveIncompleteSession,
+    saveAsTemplate,
+  } = useWorkoutSession(day, userId, preferences);
 
   if (isHydratingDraft) {
     return (
@@ -564,6 +225,244 @@ function WorkoutSessionView({
         <Text style={[typography.caption, { color: colors.textMuted }]}>
           Checking saved workout
         </Text>
+      </View>
+    );
+  }
+
+  if (isReviewing && !finished) {
+    const rirValue = rirTarget
+      ? (session.exercises[rirTarget.exerciseIndex]?.sets[rirTarget.setIndex]?.rir ?? null)
+      : null;
+
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          contentContainerStyle={{
+            paddingTop: safeTop,
+            paddingHorizontal: spacing.lg,
+            paddingBottom: insets.bottom + 220,
+            gap: spacing.lg,
+          }}
+        >
+          <View style={styles.reviewEditorHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[typography.micro, { color: colors.accent }]}>Post-workout review</Text>
+              <Text style={[typography.title, { color: colors.textPrimary }]}>
+                Log what you did
+              </Text>
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                Fill this now or leave and resume later. Nothing reaches progression until you save.
+              </Text>
+            </View>
+            <Chip compact mode="flat" icon="clipboard-edit-outline">
+              {completedSets}/{plannedSets}
+            </Chip>
+          </View>
+
+          <View
+            style={[
+              styles.reviewStatusPanel,
+              { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+            ]}
+          >
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+                {remainingSets === 0 ? 'Ready to save' : `${remainingSets} sets need a decision`}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                Enter results, then log all open sets at once. You can still confirm or skip rows
+                individually.
+              </Text>
+            </View>
+            <View style={styles.reviewStatusActions}>
+              {remainingSets > 0 ? (
+                <Button
+                  mode="contained-tonal"
+                  icon="auto-fix"
+                  onPress={fillAllOpenSets}
+                  style={styles.reviewStatusAction}
+                >
+                  Prefill all open
+                </Button>
+              ) : null}
+              <Button
+                mode="outlined"
+                icon="arrow-left"
+                onPress={continueLiveWorkout}
+                style={styles.reviewStatusAction}
+              >
+                Back to workout
+              </Button>
+            </View>
+          </View>
+
+          {session.exercises.map((performed, exerciseIndex) => {
+            const exercise = requireExercise(performed.exerciseId);
+            const exerciseTarget = formatTrackingTarget(
+              performed.prescription,
+              exercise.trackingType,
+              preferences.units,
+            );
+            const previous = findLastPerformedExercise(history, performed.exerciseId);
+            const exerciseCompleted = performed.sets.filter(
+              (set) => set.completed && !set.skipped,
+            ).length;
+            const exerciseOpen = performed.sets.filter(
+              (set) => !set.completed && !set.skipped,
+            ).length;
+
+            return (
+              <Card
+                key={performed.id}
+                mode="contained"
+                style={[
+                  styles.reviewEditorCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderRadius: radius.xl,
+                  },
+                ]}
+              >
+                <Card.Content style={{ gap: spacing.md }}>
+                  <View style={styles.sectionHeader}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text
+                        style={[typography.heading, { color: colors.textPrimary }]}
+                        numberOfLines={2}
+                      >
+                        {exercise.name}
+                      </Text>
+                      <Text style={[typography.caption, { color: colors.textMuted }]}>
+                        {exerciseCompleted}/{performed.sets.length} logged · {exerciseTarget}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {performed.sets.map((set, setIndex) => (
+                    <SetRow
+                      key={set.id}
+                      set={set}
+                      targetLabel={exerciseTarget}
+                      equipment={exercise.equipment}
+                      trackingType={exercise.trackingType}
+                      units={preferences.units}
+                      validationError={setValidationErrors[set.id]}
+                      previousLabel={formatPreviousSet(
+                        previousSetAtIndex(previous, setIndex),
+                        preferences.units,
+                      )}
+                      onChange={(patch) => updateSet(exerciseIndex, setIndex, patch)}
+                      onToggleComplete={() => toggleComplete(exerciseIndex, setIndex)}
+                      onSubmitEditing={() => completeAndFocusNext(exerciseIndex, setIndex)}
+                      onCopyPrevious={
+                        setIndex > 0 ? () => copyPreviousSet(exerciseIndex, setIndex) : undefined
+                      }
+                      onCopyToRemaining={() => copySetToRemaining(exerciseIndex, setIndex)}
+                      onToggleSkip={() => toggleSetSkipped(exerciseIndex, setIndex)}
+                      onOpenRirPicker={() => openRirPicker(exerciseIndex, setIndex)}
+                    />
+                  ))}
+
+                  {exerciseOpen > 0 ? (
+                    <View style={styles.reviewExerciseActions}>
+                      <Button
+                        mode="outlined"
+                        icon="auto-fix"
+                        onPress={() => fillOpenSetsForExercise(exerciseIndex)}
+                        style={styles.reviewExerciseAction}
+                      >
+                        Prefill open
+                      </Button>
+                      <Button
+                        mode="contained"
+                        icon="check-all"
+                        onPress={() => completeExerciseOpenSets(exerciseIndex)}
+                        style={styles.reviewExerciseAction}
+                      >
+                        {exerciseOpen === 1 ? 'Log open set' : `Log ${exerciseOpen} open sets`}
+                      </Button>
+                    </View>
+                  ) : null}
+                </Card.Content>
+              </Card>
+            );
+          })}
+
+          {saveError ? (
+            <View style={[styles.saveErrorPanel, { backgroundColor: colors.warningSoft }]}>
+              <Text style={[typography.caption, { color: colors.warning, flex: 1 }]}>
+                {saveError}
+              </Text>
+              <Button
+                compact
+                mode="outlined"
+                onPress={() => saveCompletedSession(session)}
+                loading={isSaving}
+              >
+                Retry save
+              </Button>
+            </View>
+          ) : null}
+
+          <View style={styles.finishActions}>
+            {remainingSets > 0 ? (
+              <Button
+                mode="outlined"
+                icon="skip-next-outline"
+                disabled={completedSets === 0 || isSaving}
+                onPress={() => setShowSaveIncompleteDialog(true)}
+              >
+                Save incomplete
+              </Button>
+            ) : null}
+            <Button
+              mode="contained"
+              icon="check-circle-outline"
+              loading={isSaving}
+              disabled={completedSets === 0 || remainingSets > 0 || isSaving}
+              onPress={() => saveCompletedSession(session)}
+            >
+              Save workout
+            </Button>
+            {completedSets === 0 ? (
+              <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center' }]}>
+                Log at least one completed set before saving, or continue the workout.
+              </Text>
+            ) : null}
+          </View>
+        </ScrollView>
+
+        <RirPickerSheet
+          modalRef={rirSheetRef}
+          value={rirValue}
+          onConfirm={confirmRir}
+          onClear={clearRir}
+          onDismiss={() => setRirTarget(null)}
+        />
+
+        <Portal>
+          <Dialog
+            visible={showSaveIncompleteDialog}
+            onDismiss={() => setShowSaveIncompleteDialog(false)}
+          >
+            <Dialog.Title>Save an incomplete workout?</Dialog.Title>
+            <Dialog.Content>
+              <Text style={[typography.body, { color: colors.textSecondary }]}>
+                The {remainingSets} open sets will be marked skipped. They will not count toward
+                volume, records, or progression.
+              </Text>
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={() => setShowSaveIncompleteDialog(false)}>Keep reviewing</Button>
+              <Button onPress={saveIncompleteSession} disabled={isSaving}>
+                Save incomplete
+              </Button>
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
       </View>
     );
   }
@@ -825,11 +724,10 @@ function WorkoutSessionView({
               compact
               mode="contained-tonal"
               icon="flag-checkered"
-              onPress={finishSession}
-              disabled={isPaused || completedSets === 0 || isSaving}
-              loading={isSaving}
+              onPress={endLiveWorkout}
+              disabled={isPaused || isSaving}
             >
-              Finish
+              Review
             </Button>
           </View>
         </View>
@@ -856,6 +754,9 @@ function WorkoutSessionView({
               color={colors.accent}
               style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
             />
+            <Text style={[typography.caption, { color: colors.textSecondary }]}>
+              Log sets now when useful, or end the workout and add the details afterward.
+            </Text>
             <View style={styles.autosaveRow}>
               <Chip
                 compact
@@ -882,7 +783,12 @@ function WorkoutSessionView({
                 <Text style={[typography.caption, { color: colors.warning, flex: 1 }]}>
                   {saveError}
                 </Text>
-                <Button compact mode="outlined" onPress={finishSession} loading={isSaving}>
+                <Button
+                  compact
+                  mode="outlined"
+                  onPress={() => saveCompletedSession(session)}
+                  loading={isSaving}
+                >
                   Retry save
                 </Button>
               </View>
@@ -1071,6 +977,63 @@ function WorkoutSessionView({
 
             <Divider />
 
+            <View style={{ gap: spacing.sm }}>
+              {activeExercise.sets.map((set, setIndex) => (
+                <SetRow
+                  key={set.id}
+                  ref={(handle) => {
+                    setRowRefs.current[set.id] = handle;
+                  }}
+                  set={set}
+                  targetLabel={targetLabel}
+                  equipment={activeExerciseMeta.equipment}
+                  trackingType={activeExerciseMeta.trackingType}
+                  units={preferences.units}
+                  validationError={setValidationErrors[set.id]}
+                  previousLabel={formatPreviousSet(
+                    previousSetAtIndex(previousPerformance, setIndex),
+                    preferences.units,
+                  )}
+                  onChange={(patch) => updateSet(activeExerciseIndex, setIndex, patch)}
+                  onToggleComplete={() => toggleComplete(activeExerciseIndex, setIndex)}
+                  onSubmitEditing={() => completeAndFocusNext(activeExerciseIndex, setIndex)}
+                  onCopyPrevious={
+                    setIndex > 0 ? () => copyPreviousSet(activeExerciseIndex, setIndex) : undefined
+                  }
+                  onCopyToRemaining={() => copySetToRemaining(activeExerciseIndex, setIndex)}
+                  onToggleSkip={() => toggleSetSkipped(activeExerciseIndex, setIndex)}
+                  onOpenRirPicker={() => openRirPicker(activeExerciseIndex, setIndex)}
+                  disabled={isPaused}
+                />
+              ))}
+            </View>
+
+            <View style={styles.navigationRow}>
+              <Button
+                mode="contained-tonal"
+                icon="chevron-left"
+                onPress={() => setActiveExerciseIndex(Math.max(0, activeExerciseIndex - 1))}
+                disabled={activeExerciseIndex === 0}
+                style={styles.navButton}
+              >
+                Previous
+              </Button>
+              <Button
+                mode="contained"
+                icon="chevron-right"
+                contentStyle={styles.nextButtonContent}
+                onPress={() =>
+                  setActiveExerciseIndex(
+                    Math.min(session.exercises.length - 1, activeExerciseIndex + 1),
+                  )
+                }
+                disabled={activeExerciseIndex === session.exercises.length - 1}
+                style={styles.navButton}
+              >
+                Next exercise
+              </Button>
+            </View>
+
             <View
               style={[
                 styles.assistantPanel,
@@ -1143,61 +1106,6 @@ function WorkoutSessionView({
                 </Button>
               </View>
             </View>
-
-            <View style={styles.navigationRow}>
-              <Button
-                mode="contained-tonal"
-                icon="chevron-left"
-                onPress={() => setActiveExerciseIndex(Math.max(0, activeExerciseIndex - 1))}
-                disabled={activeExerciseIndex === 0}
-                style={styles.navButton}
-              >
-                Prev
-              </Button>
-              <Button
-                mode="contained"
-                icon="chevron-right"
-                contentStyle={styles.nextButtonContent}
-                onPress={() =>
-                  setActiveExerciseIndex(
-                    Math.min(session.exercises.length - 1, activeExerciseIndex + 1),
-                  )
-                }
-                disabled={activeExerciseIndex === session.exercises.length - 1}
-                style={styles.navButton}
-              >
-                Next lift
-              </Button>
-            </View>
-
-            <View style={{ gap: spacing.sm }}>
-              {activeExercise.sets.map((set, setIndex) => (
-                <SetRow
-                  key={set.id}
-                  ref={(handle) => {
-                    setRowRefs.current[set.id] = handle;
-                  }}
-                  set={set}
-                  targetLabel={targetLabel}
-                  equipment={activeExerciseMeta.equipment}
-                  trackingType={activeExerciseMeta.trackingType}
-                  units={preferences.units}
-                  validationError={setValidationErrors[set.id]}
-                  previousLabel={formatPreviousSet(
-                    previousSetAtIndex(previousPerformance, setIndex),
-                    preferences.units,
-                  )}
-                  onChange={(patch) => updateSet(activeExerciseIndex, setIndex, patch)}
-                  onToggleComplete={() => toggleComplete(activeExerciseIndex, setIndex)}
-                  onSubmitEditing={() => completeAndFocusNext(activeExerciseIndex, setIndex)}
-                  onCopyPrevious={
-                    setIndex > 0 ? () => copyPreviousSet(activeExerciseIndex, setIndex) : undefined
-                  }
-                  onOpenRirPicker={() => openRirPicker(setIndex)}
-                  disabled={isPaused}
-                />
-              ))}
-            </View>
           </Card.Content>
         </Card>
 
@@ -1236,15 +1144,20 @@ function WorkoutSessionView({
           }
           onDismiss={() => setSession((prev) => ({ ...prev, restTimer: null }))}
           bottomOffset={insets.bottom + 96}
+          notificationStatus={restNotificationStatus}
         />
       )}
 
       <RirPickerSheet
         modalRef={rirSheetRef}
-        value={rirSetIndex != null ? (activeExercise.sets[rirSetIndex]?.rir ?? null) : null}
+        value={
+          rirTarget
+            ? (session.exercises[rirTarget.exerciseIndex]?.sets[rirTarget.setIndex]?.rir ?? null)
+            : null
+        }
         onConfirm={confirmRir}
         onClear={clearRir}
-        onDismiss={() => setRirSetIndex(null)}
+        onDismiss={() => setRirTarget(null)}
       />
 
       <Portal>
@@ -1274,406 +1187,6 @@ function WorkoutSessionView({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={styles.metric}>
-      <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-    </View>
-  );
-}
-
-function AssistantFact({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={styles.assistantFact}>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function FinishMetric({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View
-      style={[
-        styles.finishMetric,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <Text style={[typography.numeric, { color: colors.textPrimary }]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-    </View>
-  );
-}
-
-function TopExerciseRow({
-  exercise,
-  rank,
-  units,
-}: {
-  exercise: WorkoutExerciseSummary;
-  rank: number;
-  units: Units;
-}) {
-  const { colors, typography } = useTheme();
-  const bestLabel =
-    exercise.bestE1rmKg != null
-      ? `e1RM ${displayLoad(exercise.bestE1rmKg, units)}${unitLabel(units)}`
-      : exercise.bestSetLabel;
-
-  return (
-    <View
-      style={[
-        styles.reviewRow,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <View style={[styles.rankBadge, { backgroundColor: colors.accentSoft }]}>
-        <Text style={[typography.micro, { color: colors.accent }]}>#{rank}</Text>
-      </View>
-      <View style={styles.reviewRowText}>
-        <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-          {exercise.name}
-        </Text>
-        <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
-          {exercise.completedSets} sets · {formatVolumeLoad(exercise.volumeKg, units)} · {bestLabel}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function MuscleDoseRow({ dose }: { dose: WorkoutMuscleDose }) {
-  const { colors, typography } = useTheme();
-  const width = `${Math.max(6, Math.round(Math.min(1, dose.share) * 100))}%` as DimensionValue;
-
-  return (
-    <View style={{ gap: 6 }}>
-      <View style={styles.muscleDoseHeader}>
-        <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-          {MUSCLE_LABELS[dose.muscle]}
-        </Text>
-        <Text style={[typography.micro, { color: colors.textMuted }]}>{dose.sets} sets</Text>
-      </View>
-      <View style={[styles.muscleDoseTrack, { backgroundColor: colors.surfacePressed }]}>
-        <View style={[styles.muscleDoseFill, { width, backgroundColor: colors.accent }]} />
-      </View>
-    </View>
-  );
-}
-
-function RirQualityBlock({ review }: { review: WorkoutRirReview | null }) {
-  return (
-    <QualityBlock
-      label="RIR discipline"
-      value={review ? `${review.accuracyPct}%` : 'missing'}
-      detail={review?.detail ?? 'Log RIR on working sets to unlock effort accuracy.'}
-      progress={review ? review.accuracyPct / 100 : 0}
-      title={review?.label ?? 'No effort signal yet'}
-    />
-  );
-}
-
-function FormQualityBlock({ review }: { review: WorkoutFormReview | null }) {
-  return (
-    <QualityBlock
-      label="Form AI"
-      value={review ? `${review.averageScore}/100` : 'off'}
-      detail={
-        review
-          ? `${review.analyzedSetCount} analyzed sets · ${review.coveragePct}% coverage · ${review.cue}`
-          : 'Run a camera set on supported lifts to track technical quality.'
-      }
-      progress={review ? review.averageScore / 100 : 0}
-      title={review?.label ?? 'No camera data'}
-    />
-  );
-}
-
-function QualityBlock({
-  label,
-  value,
-  title,
-  detail,
-  progress,
-}: {
-  label: string;
-  value: string;
-  title: string;
-  detail: string;
-  progress: number;
-}) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View
-      style={[
-        styles.qualityBlock,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <View style={styles.sectionHeader}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-            {title}
-          </Text>
-        </View>
-        <Text style={[typography.captionBold, { color: colors.accent }]}>{value}</Text>
-      </View>
-      <ProgressBar
-        progress={Math.max(0, Math.min(1, progress))}
-        color={colors.accent}
-        style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
-      />
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{detail}</Text>
-    </View>
-  );
-}
-
-function ProgressionTargetPanel({ target, units }: { target: TargetToBeat; units: Units }) {
-  const { colors, typography } = useTheme();
-  const action = progressionActionLabel(target.decision.action);
-
-  return (
-    <View
-      style={[
-        styles.progressionPanel,
-        { backgroundColor: colors.accentSoft, borderColor: colors.accent },
-      ]}
-    >
-      <View style={styles.sectionHeader}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[typography.micro, { color: colors.accent }]}>Progression target</Text>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-            {formatDecisionTarget(target.decision, units)}
-          </Text>
-        </View>
-        <Chip compact mode="flat" icon="trending-up">
-          {action}
-        </Chip>
-      </View>
-      <View style={styles.progressionFacts}>
-        <AssistantFact label="last" value={formatProgressionSignal(target.lastSignal, units)} />
-        <AssistantFact label="win" value={formatTargetWinCondition(target, units)} />
-      </View>
-      <Text style={[typography.micro, { color: colors.textSecondary }]} numberOfLines={2}>
-        {target.decision.explanation}
-      </Text>
-    </View>
-  );
-}
-
-function ProgressionReviewRow({ item, units }: { item: WorkoutProgressionReview; units: Units }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View
-      style={[
-        styles.reviewRow,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <View style={[styles.rankBadge, { backgroundColor: colors.accentSoft }]}>
-        <Text style={[typography.micro, { color: colors.accent }]}>
-          {item.actionLabel.slice(0, 3)}
-        </Text>
-      </View>
-      <View style={styles.reviewRowText}>
-        <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-          {item.exerciseName}
-        </Text>
-        <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={2}>
-          {formatTargetSummary(item.target, units)}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function countCompletedSets(exercises: PerformedExercise[]): number {
-  return exercises.reduce(
-    (sum, exercise) => sum + exercise.sets.filter((set) => set.completed && !set.skipped).length,
-    0,
-  );
-}
-
-function isExerciseDone(exercise: PerformedExercise): boolean {
-  return exercise.sets.every((set) => set.completed || set.skipped);
-}
-
-function isResumableSession(session: WorkoutSession): boolean {
-  return session.status === 'in_progress' || session.status === 'paused';
-}
-
-function firstOpenSetIndex(sets: PerformedSet[]): number | null {
-  const index = sets.findIndex((set) => !set.completed && !set.skipped);
-  return index === -1 ? null : index;
-}
-
-function shortExerciseName(name: string): string {
-  return name
-    .replace(/^Barbell /, '')
-    .replace(/^Dumbbell /, 'DB ')
-    .replace('Romanian Deadlift', 'RDL');
-}
-
-function formatRest(seconds: number): string {
-  if (seconds <= 0) return 'done';
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s === 0 ? `${m}m` : `${m}:${String(s).padStart(2, '0')}`;
-}
-
-function autosaveIcon(state: AutosaveState): string {
-  switch (state) {
-    case 'restored':
-      return 'backup-restore';
-    case 'saving':
-      return 'cloud-sync-outline';
-    case 'saved':
-      return 'content-save-check-outline';
-    case 'error':
-      return 'alert-circle-outline';
-    case 'idle':
-      return 'content-save-outline';
-  }
-}
-
-function autosaveLabel(state: AutosaveState, savedAt: string | null): string {
-  switch (state) {
-    case 'restored':
-      return 'Draft restored';
-    case 'saving':
-      return 'Saving draft';
-    case 'saved':
-      return savedAt ? `Autosaved ${formatClock(savedAt)}` : 'Autosaved';
-    case 'error':
-      return 'Autosave issue';
-    case 'idle':
-      return 'Draft ready';
-  }
-}
-
-function formatClock(iso: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(iso));
-}
-
-function compactSuggestionValue(suggestion: SetAutofillSuggestion, units: Units): string {
-  if (suggestion.durationSeconds != null) return `${suggestion.durationSeconds}s`;
-  if (suggestion.loadKg != null && suggestion.reps != null) {
-    return `${displayLoad(suggestion.loadKg, units)} ${unitLabel(units)} × ${suggestion.reps}`;
-  }
-  if (suggestion.reps != null) return `${suggestion.reps} reps`;
-  return 'target';
-}
-
-function sourceLabel(source: SetAutofillSuggestion['source']): string {
-  switch (source) {
-    case 'previous_session_set':
-      return 'last set';
-    case 'previous_session_top_set':
-      return 'top set';
-    case 'current_previous_set':
-      return 'this lift';
-    case 'prescription':
-      return 'plan';
-  }
-}
-
-function buildCustomWorkoutDay({
-  enabled,
-  idsParam,
-  nameParam,
-  preferences,
-}: {
-  enabled: boolean;
-  idsParam?: string;
-  nameParam?: string;
-  preferences: TrainingPreferences;
-}): ProgramDay | null {
-  if (!enabled || !idsParam) return null;
-  const exerciseIds = idsParam
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-  const prescriptions = exerciseIds.flatMap((id, index) => {
-    const exercise = getExercise(id);
-    return exercise ? [buildManualPrescription(exercise, index, preferences)] : [];
-  });
-  if (prescriptions.length === 0) return null;
-
-  return recalculateProgramDay({
-    id: `custom-${exerciseIds.join('-')}`,
-    name: nameParam?.trim() || 'Custom Workout',
-    order: 0,
-    focus: [],
-    prescriptions,
-    estimatedMinutes: 0,
-  });
-}
-
-function attachFormAnalysisResult(
-  session: WorkoutSession,
-  result: PendingFormAnalysisResult,
-): WorkoutSession {
-  if (session.id !== result.sessionId) return session;
-  const exercise = session.exercises[result.exerciseIndex];
-  const set = exercise?.sets[result.setIndex];
-  if (!exercise || !set || exercise.exerciseId !== result.analysis.exerciseId) return session;
-
-  const exercises = [...session.exercises];
-  const sets = [...exercise.sets];
-  sets[result.setIndex] = {
-    ...set,
-    reps: set.reps ?? result.analysis.repCount,
-    formAnalysis: result.analysis,
-  };
-  exercises[result.exerciseIndex] = { ...exercise, sets };
-  return { ...session, exercises };
-}
-
-function techniqueLabel(technique: SetTechnique): string {
-  switch (technique) {
-    case 'drop_set':
-      return 'Drop set';
-    case 'rest_pause':
-      return 'Rest-pause';
-    case 'myo_reps':
-      return 'Myo-reps';
-    case 'cluster_set':
-      return 'Cluster';
-    case 'top_backoff':
-      return 'Top + backoff';
-    case 'standard':
-      return 'Standard';
-  }
-}
-
-function cameraAngleLabel(angle: 'front' | 'side' | 'front-45'): string {
-  switch (angle) {
-    case 'front':
-      return 'front';
-    case 'side':
-      return 'side';
-    case 'front-45':
-      return '45°';
-  }
-}
-
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   header: {
@@ -1694,6 +1207,38 @@ const styles = StyleSheet.create({
   completeCard: {
     width: '100%',
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  reviewEditorHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  reviewStatusPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+  },
+  reviewStatusActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  reviewStatusAction: {
+    flexGrow: 1,
+    flexBasis: 150,
+  },
+  reviewEditorCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  reviewExerciseActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  reviewExerciseAction: {
+    flexGrow: 1,
+    flexBasis: 150,
   },
   completionStats: {
     flexDirection: 'row',

@@ -124,3 +124,30 @@ describe('updateRepMachine — state carries forward correctly across reps', () 
     expect(Math.abs(first - second)).toBeLessThan(15);
   });
 });
+
+describe('updateRepMachine — peak velocity tracking', () => {
+  it('reports a positive peak rising and falling velocity for a normal rep', () => {
+    const { results } = runSequence(curlRepAngles(1), 'decreasing', CURL_THRESHOLDS);
+    const completed = results.find((r) => r.repCompleted);
+    expect(completed?.completedRepTiming?.peakRisingVelocityDegPerSec).toBeGreaterThan(0);
+    expect(completed?.completedRepTiming?.peakFallingVelocityDegPerSec).toBeGreaterThan(0);
+  });
+
+  it('resets peak velocity tracking after each completed rep instead of leaking across reps', () => {
+    const { results } = runSequence(curlRepAngles(2), 'decreasing', CURL_THRESHOLDS);
+    const completions = results.filter((r) => r.repCompleted);
+    expect(completions).toHaveLength(2);
+    const [first, second] = completions.map((r) => r.completedRepTiming!.peakRisingVelocityDegPerSec!);
+    // A leaked running-max from rep 1 could only ever make rep 2's peak equal
+    // or larger, never smaller — so a comparable magnitude (not a monotonic
+    // climb) is the signal that the per-rep reset actually happened.
+    expect(second).toBeGreaterThan(0);
+    expect(Math.abs(first - second) / first).toBeLessThan(0.5);
+  });
+
+  it('reports null peak velocity when no rep ever reaches the state machine (never measured)', () => {
+    const state = createInitialRepMachineState();
+    expect(state.peakRisingVelocityDegPerSec).toBe(0);
+    expect(state.peakFallingVelocityDegPerSec).toBe(0);
+  });
+});

@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs, usePathname, useRouter } from 'expo-router';
+import { AnimatePresence, MotiView } from 'moti';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getInProgressWorkoutSession } from '@/domain/workouts/historyStore';
@@ -33,7 +35,10 @@ export default function TabsLayout() {
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.textMuted,
           tabBarShowLabel: true,
+          tabBarHideOnKeyboard: true,
           tabBarLabelStyle: { fontSize: typography.micro.fontSize, fontWeight: '600' },
+          tabBarActiveBackgroundColor: colors.accentSoft,
+          tabBarItemStyle: styles.tabItem,
           tabBarStyle: [
             styles.tabBar,
             {
@@ -62,7 +67,10 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="body"
           options={{
-            href: null,
+            title: 'Body',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="body-outline" color={color} size={size} />
+            ),
           }}
         />
         <Tabs.Screen
@@ -106,6 +114,9 @@ function ActiveWorkoutBar() {
   const pathname = usePathname();
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [lastSessionId, setLastSessionId] = useState<string | null>(null);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     let mounted = true;
@@ -126,6 +137,12 @@ function ActiveWorkoutBar() {
     };
   }, []);
 
+  const sessionId = session?.id ?? null;
+  if (sessionId !== lastSessionId) {
+    setLastSessionId(sessionId);
+    if (sessionId) setCollapsed(false);
+  }
+
   if (!session || pathname.includes('/workout') || keyboardVisible) return null;
 
   const completedSets = session.exercises.reduce(
@@ -137,33 +154,106 @@ function ActiveWorkoutBar() {
     (total, exercise) => total + exercise.sets.length,
     0,
   );
+  const bottom = Math.max(insets.bottom, spacing.sm) + 84;
+  const label = session.reviewStartedAt ? 'REVIEW WORKOUT' : 'RESUME WORKOUT';
+  const icon = session.reviewStartedAt ? 'clipboard-outline' : 'play-circle';
 
-  return (
+  const pill = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Resume ${session.dayName}, ${completedSets} of ${plannedSets} sets complete`}
-      onPress={() => router.push('/workout')}
+      accessibilityLabel={`Show ${label.toLowerCase()} bar for ${session.dayName}`}
+      onPress={() => setCollapsed(false)}
       style={({ pressed }) => [
-        styles.activeWorkoutBar,
-        {
-          bottom: Math.max(insets.bottom, spacing.sm) + 84,
-          backgroundColor: pressed ? colors.surfacePressed : colors.surface,
-          borderColor: colors.accent,
-          borderRadius: radius.lg,
-        },
+        styles.activeWorkoutFab,
+        { backgroundColor: pressed ? colors.accentPressed : colors.accent },
       ]}
     >
-      <View style={{ flex: 1 }}>
-        <Text style={[typography.micro, { color: colors.accent }]}>RESUME WORKOUT</Text>
-        <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
-          {session.dayName}
-        </Text>
-      </View>
-      <Text style={[typography.captionBold, { color: colors.textSecondary }]}>
-        {completedSets}/{plannedSets} sets
-      </Text>
-      <Ionicons name="play-circle" color={colors.accent} size={28} />
+      <Ionicons name={icon} color={colors.onAccent} size={26} />
     </Pressable>
+  );
+
+  const bar = (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${session.reviewStartedAt ? 'Review' : 'Resume'} ${session.dayName}, ${completedSets} of ${plannedSets} sets complete`}
+        onPress={() => router.push('/workout')}
+        style={({ pressed }) => [styles.activeWorkoutContent, pressed && { opacity: 0.7 }]}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={[typography.micro, { color: colors.accent }]}>{label}</Text>
+          <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
+            {session.dayName}
+          </Text>
+        </View>
+        <Text style={[typography.captionBold, { color: colors.textSecondary }]}>
+          {completedSets}/{plannedSets} sets
+        </Text>
+        <Ionicons name={icon} color={colors.accent} size={28} />
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Minimize active workout bar"
+        hitSlop={10}
+        onPress={() => setCollapsed(true)}
+        style={styles.minimizeButton}
+      >
+        <Ionicons name="chevron-down" color={colors.textMuted} size={18} />
+      </Pressable>
+    </>
+  );
+
+  if (reduceMotion) {
+    return collapsed ? (
+      <View style={[styles.activeWorkoutFabWrap, { bottom }]}>{pill}</View>
+    ) : (
+      <View
+        style={[
+          styles.activeWorkoutBar,
+          { bottom, backgroundColor: colors.surface, borderColor: colors.accent, borderRadius: radius.lg },
+        ]}
+      >
+        {bar}
+      </View>
+    );
+  }
+
+  return (
+    <AnimatePresence>
+      {collapsed ? (
+        <MotiView
+          key="collapsed-pill"
+          from={{ opacity: 0, scale: 0.4 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.4 }}
+          transition={{ type: 'spring', damping: 14, mass: 0.5 }}
+          exitTransition={{ type: 'timing', duration: 120 }}
+          style={[styles.activeWorkoutFabWrap, { bottom }]}
+        >
+          {pill}
+        </MotiView>
+      ) : (
+        <MotiView
+          key="expanded-bar"
+          from={{ opacity: 0, scale: 0.92, translateY: 10 }}
+          animate={{ opacity: 1, scale: 1, translateY: 0 }}
+          exit={{ opacity: 0, scale: 0.85, translateX: 46, translateY: 6 }}
+          transition={{ type: 'spring', damping: 16, mass: 0.6 }}
+          exitTransition={{ type: 'timing', duration: 140 }}
+          style={[
+            styles.activeWorkoutBar,
+            {
+              bottom,
+              backgroundColor: colors.surface,
+              borderColor: colors.accent,
+              borderRadius: radius.lg,
+            },
+          ]}
+        >
+          {bar}
+        </MotiView>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -178,14 +268,19 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 24,
-    height: 68,
-    borderRadius: 28,
+    left: 12,
+    right: 12,
+    bottom: 10,
+    height: 72,
+    borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
     elevation: 8,
-    paddingTop: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 5,
+  },
+  tabItem: {
+    borderRadius: 14,
+    marginHorizontal: 2,
   },
   activeWorkoutBar: {
     position: 'absolute',
@@ -194,10 +289,37 @@ const styles = StyleSheet.create({
     minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 10,
     elevation: 10,
+  },
+  activeWorkoutContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  minimizeButton: {
+    paddingLeft: 10,
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeWorkoutFabWrap: {
+    position: 'absolute',
+    right: 16,
+  },
+  activeWorkoutFab: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
 });

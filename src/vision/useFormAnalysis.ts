@@ -1,15 +1,16 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useFrameProcessor, type Frame } from 'react-native-vision-camera';
+import {
+  runAtTargetFps,
+  useFrameProcessor,
+  type Frame,
+} from 'react-native-vision-camera';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { useRunOnJS } from 'react-native-worklets-core';
 import { NitroModules } from 'react-native-nitro-modules';
 import type { TensorflowModel } from 'react-native-fast-tflite';
 import * as Speech from 'expo-speech';
 
-import {
-  decodeMoveNetOutput,
-  MOVENET_INPUT_SIZE,
-} from '@/domain/vision/moveNetDecode';
+import { decodeMoveNetOutput, MOVENET_INPUT_SIZE } from '@/domain/vision/moveNetDecode';
 import {
   cameraAngleMismatchMessage,
   detectCameraOrientation,
@@ -18,7 +19,11 @@ import {
 import { extractKeyJoints, type PoseLandmarks } from '@/domain/vision/landmarks';
 import { LandmarkSmoother } from '@/domain/vision/smoothing';
 import { VelocityTracker, getSymmetryRatio } from '@/domain/vision/biomechanics';
-import { assessTrackingQuality, hasRequiredJoints, type TrackingQuality } from '@/domain/vision/confidence';
+import {
+  assessTrackingQuality,
+  hasRequiredJoints,
+  type TrackingQuality,
+} from '@/domain/vision/confidence';
 import { TemporalFilter } from '@/domain/vision/temporalFilter';
 import {
   createInitialRepMachineState,
@@ -26,8 +31,16 @@ import {
   type MovementPhase,
 } from '@/domain/vision/repStateMachine';
 import { scoreRep, type RepAnalysis } from '@/domain/vision/formScoring';
-import { pickTopViolation, resolvePriority, type FormViolation } from '@/domain/vision/feedbackPriority';
+import {
+  pickTopViolation,
+  resolvePriority,
+  type FormViolation,
+} from '@/domain/vision/feedbackPriority';
 import { VoiceCoach } from '@/domain/vision/voiceCoaching';
+import {
+  FormAnalysisPerformanceTracker,
+  type FormAnalysisPerformance,
+} from '@/domain/vision/performanceTracker';
 import type { VisionExerciseConfig } from '@/domain/vision/exerciseVisionConfigs/types';
 
 export interface FormAnalysisState {
@@ -39,6 +52,7 @@ export interface FormAnalysisState {
   lastCompletedRep: RepAnalysis | null;
   /** Smoothed per-frame landmarks, for a plain (non-Skia) overlay to draw — see useFrameProcessor below for why. */
   landmarks: PoseLandmarks | null;
+  performance: FormAnalysisPerformance | null;
 }
 
 const INITIAL_STATE: FormAnalysisState = {
@@ -49,6 +63,7 @@ const INITIAL_STATE: FormAnalysisState = {
   topViolation: null,
   lastCompletedRep: null,
   landmarks: null,
+  performance: null,
 };
 
 /**
@@ -76,6 +91,7 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
   const repStateRef = useRef(createInitialRepMachineState());
   const repViolationsRef = useRef<Map<string, FormViolation>>(new Map());
   const repsRef = useRef<RepAnalysis[]>([]);
+  const performanceTracker = useMemo(() => new FormAnalysisPerformanceTracker(), []);
 
   // A ref (not just the state below) so the frame-processor callback can read
   // the current mute setting without depending on it — toggling mute must not
@@ -98,14 +114,20 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
   const boxedModel = useMemo(() => (model ? NitroModules.box(model) : undefined), [model]);
 
   const onFrameLandmarks = useCallback(
-    (rawLandmarks: PoseLandmarks) => {
+    (rawLandmarks: PoseLandmarks, inferenceMs: number) => {
       const timestampMs = Date.now();
+      const performance = performanceTracker.record(timestampMs, inferenceMs);
       const smoothed = smoother.smooth(rawLandmarks, timestampMs);
       const joints = extractKeyJoints(smoothed);
       const quality = assessTrackingQuality(joints);
 
       if (!hasRequiredJoints(joints, config.requiredJoints)) {
-        setState((prev) => ({ ...prev, trackingQuality: quality, landmarks: smoothed }));
+        setState((prev) => ({
+          ...prev,
+          trackingQuality: quality,
+          landmarks: smoothed,
+          performance: performance ?? prev.performance,
+        }));
         return;
       }
 
@@ -164,11 +186,16 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
       const topViolation = pickTopViolation(activeViolations);
 
       let newlyCompletedRep: RepAnalysis | null = null;
+      // Set when a fault present in the previous rep is absent from this one,
+      // so the voice coach can confirm the correction instead of only ever
+      // flagging faults forward — see VoiceCoach's confirmation-loop doc.
+      let fixedViolationId: string | null = null;
       if (result.repCompleted && result.completedRepTiming) {
         const symmetryRatio =
           config.getAngleLeft && config.getAngleRight
             ? getSymmetryRatio(config.getAngleLeft(joints), config.getAngleRight(joints))
             : null;
+        const previousRep = repsRef.current[repsRef.current.length - 1] ?? null;
         newlyCompletedRep = scoreRep({
           repNumber: repsRef.current.length + 1,
           timing: result.completedRepTiming,
@@ -180,12 +207,19 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
           symmetryRatio,
           stabilityJitterDegrees: null,
         });
+        fixedViolationId =
+          previousRep?.violations.find(
+            (v) => !newlyCompletedRep!.violations.some((nv) => nv.id === v.id),
+          )?.id ?? null;
         repsRef.current.push(newlyCompletedRep);
         repViolationsRef.current.clear();
       }
 
       if (speechEnabledRef.current) {
-        const cue = voiceCoach.decide({ repCompleted: newlyCompletedRep, topViolation }, timestampMs);
+        const cue = voiceCoach.decide(
+          { repCompleted: newlyCompletedRep, topViolation, fixedViolationId },
+          timestampMs,
+        );
         if (cue) Speech.speak(cue.text, { rate: 1.05 });
       }
 
@@ -197,12 +231,13 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
         topViolation,
         lastCompletedRep: newlyCompletedRep ?? prev.lastCompletedRep,
         landmarks: smoothed,
+        performance: performance ?? prev.performance,
       }));
     },
     // Deliberately excludes `state`: it's read only via the setState updater above, keeping
     // this (and the frame processor built on it) stable across reps instead of recreating
     // VisionCamera's native frame processor context every rep.
-    [config, smoother, velocityTracker, temporalFilter, voiceCoach],
+    [config, smoother, velocityTracker, temporalFilter, voiceCoach, performanceTracker],
   );
 
   const reportLandmarks = useRunOnJS(onFrameLandmarks, [onFrameLandmarks]);
@@ -221,21 +256,29 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
     (frame: Frame) => {
       'worklet';
       if (boxedModel == null) return;
-      const model = boxedModel.unbox();
+      // Keep inference on VisionCamera's serial frame-processor runtime. The
+      // model is a boxed Nitro HybridObject; dispatching it through runAsync
+      // crashes inside RN Worklets on the current VisionCamera/TFLite stack.
+      // A conservative cap also gives ImageReader enough time to release each
+      // hardware buffer before another inference starts.
+      runAtTargetFps(5, () => {
+        'worklet';
+        const startedAt = performance.now();
+        const model = boxedModel.unbox();
+        const resized = resize(frame, {
+          scale: { width: MOVENET_INPUT_SIZE, height: MOVENET_INPUT_SIZE },
+          pixelFormat: 'rgb',
+          dataType: 'uint8',
+        });
+        const inputBuffer = resized.buffer.slice(
+          resized.byteOffset,
+          resized.byteOffset + resized.byteLength,
+        ) as ArrayBuffer;
+        const outputs = model.runSync([inputBuffer]);
+        const landmarks = decodeMoveNetOutput(new Float32Array(outputs[0]));
 
-      const resized = resize(frame, {
-        scale: { width: MOVENET_INPUT_SIZE, height: MOVENET_INPUT_SIZE },
-        pixelFormat: 'rgb',
-        dataType: 'uint8',
+        reportLandmarks(landmarks, performance.now() - startedAt);
       });
-      const inputBuffer = resized.buffer.slice(
-        resized.byteOffset,
-        resized.byteOffset + resized.byteLength,
-      ) as ArrayBuffer;
-      const outputs = model.runSync([inputBuffer]);
-      const landmarks = decodeMoveNetOutput(new Float32Array(outputs[0]));
-
-      reportLandmarks(landmarks);
     },
     [boxedModel, resize, reportLandmarks],
   );
@@ -248,9 +291,10 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
     velocityTracker.reset();
     temporalFilter.reset();
     voiceCoach.reset();
+    performanceTracker.reset();
     Speech.stop();
     setState(INITIAL_STATE);
-  }, [smoother, velocityTracker, temporalFilter, voiceCoach]);
+  }, [smoother, velocityTracker, temporalFilter, voiceCoach, performanceTracker]);
 
   const finishSet = useCallback((): RepAnalysis[] => {
     const reps = repsRef.current;

@@ -11,6 +11,7 @@ function makeRep(overrides: Partial<RepAnalysis> = {}): RepAnalysis {
     symmetryScore: 90,
     violations: [],
     overallScore: 90,
+    peakConcentricVelocityDegPerSec: null,
     ...overrides,
   };
 }
@@ -71,5 +72,30 @@ describe('buildSetSummary', () => {
   it('gives positive-only feedback for a clean set', () => {
     const summary = buildSetSummary([makeRep(), makeRep(), makeRep()]);
     expect(summary.recommendations).toEqual(['Clean set — keep this form as your baseline.']);
+  });
+
+  it('reports null velocityLoss when no rep had a measured concentric velocity', () => {
+    const summary = buildSetSummary([makeRep(), makeRep()]);
+    expect(summary.velocityLoss).toBeNull();
+  });
+
+  it('reports the latest velocity-loss reading when reps carry a measured velocity', () => {
+    const summary = buildSetSummary([
+      makeRep({ repNumber: 1, peakConcentricVelocityDegPerSec: 200 }),
+      makeRep({ repNumber: 2, peakConcentricVelocityDegPerSec: 150 }),
+    ]);
+    expect(summary.velocityLoss?.repNumber).toBe(2);
+    expect(summary.velocityLoss?.velocityLossPct).toBeCloseTo(25, 5);
+  });
+
+  it('honors a caller-supplied velocity-loss stop threshold', () => {
+    const reps = [
+      makeRep({ repNumber: 1, peakConcentricVelocityDegPerSec: 100 }),
+      makeRep({ repNumber: 2, peakConcentricVelocityDegPerSec: 80 }),
+    ];
+    const strict = buildSetSummary(reps, 15);
+    const lenient = buildSetSummary(reps, 35);
+    expect(strict.velocityLoss?.zone).toBe('stop_recommended');
+    expect(lenient.velocityLoss?.zone).toBe('high_loss');
   });
 });

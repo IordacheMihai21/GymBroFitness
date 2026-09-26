@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { Button, Portal, ProgressBar } from 'react-native-paper';
 
 import { remainingRestSeconds } from '@/domain/workouts/restTimer';
+import type { RestTimerNotificationStatus } from '@/services/restTimerNotifications';
 import { useTheme } from '@/theme';
 import type { RestTimerSnapshot } from '@/types';
 
@@ -12,6 +13,7 @@ type RestTimerProps = {
   onExtend: (seconds: number) => void;
   onDismiss: () => void;
   bottomOffset: number;
+  notificationStatus?: RestTimerNotificationStatus | 'idle';
 };
 
 function formatTime(totalSeconds: number): string {
@@ -20,7 +22,13 @@ function formatTime(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export function RestTimer({ timer, onExtend, onDismiss, bottomOffset }: RestTimerProps) {
+export function RestTimer({
+  timer,
+  onExtend,
+  onDismiss,
+  bottomOffset,
+  notificationStatus = 'idle',
+}: RestTimerProps) {
   const { colors, radius, spacing, typography } = useTheme();
   const notifiedRef = useRef(false);
   const [nowMs, setNowMs] = useState(Date.now);
@@ -106,6 +114,14 @@ export function RestTimer({ timer, onExtend, onDismiss, bottomOffset }: RestTime
             color={isDone ? colors.accent : colors.info}
             style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
           />
+
+          {notificationStatus === 'permission_denied' || notificationStatus === 'error' ? (
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {notificationStatus === 'permission_denied'
+                ? 'Background alert is off. The timer still works while the app is open.'
+                : 'Background alert is unavailable. The in-app timer is still running.'}
+            </Text>
+          ) : null}
 
           <View style={styles.actionRow}>
             <Button

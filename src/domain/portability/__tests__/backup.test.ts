@@ -98,4 +98,12 @@ describe('portable backup', () => {
     expect(lines[1]).toContain('Barbell Bench Press');
     expect(lines[1]).toContain(',100,8,,2');
   });
+
+  it('neutralizes a leading formula-trigger character in a user-named workout day', () => {
+    const session = { ...completedSession('session-2'), dayName: '=cmd|/c calc' };
+    const csv = workoutHistoryToCsv([session]);
+    const lines = csv.split('\n');
+    expect(lines[1]).toContain("'=cmd|/c calc");
+    expect(lines[1]).not.toMatch(/^=cmd/);
+  });
 });

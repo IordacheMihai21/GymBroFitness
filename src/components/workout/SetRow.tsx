@@ -55,6 +55,8 @@ type SetRowProps = {
   onChange: (patch: Partial<PerformedSet>) => void;
   onToggleComplete: () => void;
   onCopyPrevious?: () => void;
+  onCopyToRemaining?: () => void;
+  onToggleSkip?: () => void;
   /** Exercise equipment tags; used to show a live plate-math breakdown. */
   equipment?: EquipmentType[];
   /** "Last: 100 kg × 8 @ RIR 2" from the most recent session that trained this exercise. */
@@ -83,6 +85,8 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
     onChange,
     onToggleComplete,
     onCopyPrevious,
+    onCopyToRemaining,
+    onToggleSkip,
     equipment,
     previousLabel,
     onOpenRirPicker,
@@ -101,7 +105,8 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
 
   const technique = set.technique ?? 'standard';
   const subEfforts = set.subEfforts ?? [];
-  const isLocked = disabled || set.completed;
+  const isLocked = disabled || set.completed || set.skipped;
+  const menuLocked = disabled || set.completed;
 
   const barWeight = equipment
     ?.map((item) => PLATE_LOADED_EQUIPMENT[item]?.[units])
@@ -153,7 +158,11 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
       style={[
         styles.row,
         {
-          backgroundColor: set.completed ? colors.successSoft : colors.surfaceRaised,
+          backgroundColor: set.completed
+            ? colors.successSoft
+            : set.skipped
+              ? colors.surfacePressed
+              : colors.surfaceRaised,
           borderRadius: radius.md,
           borderColor: colors.border,
           paddingHorizontal: spacing.md,
@@ -190,7 +199,7 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
         </View>
 
         <View style={styles.actionGroup}>
-          {supportsTechniques || onCopyPrevious ? (
+          {supportsTechniques || onCopyPrevious || onCopyToRemaining || onToggleSkip ? (
             <Menu
               visible={menuVisible}
               onDismiss={() => setMenuVisible(false)}
@@ -200,7 +209,7 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
                   mode={technique !== 'standard' ? 'contained' : 'contained-tonal'}
                   size={16}
                   onPress={() => setMenuVisible(true)}
-                  disabled={isLocked}
+                  disabled={menuLocked}
                   style={styles.compactButton}
                 />
               }
@@ -212,6 +221,27 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
                   leadingIcon="content-copy"
                 />
               ) : null}
+              {onCopyToRemaining ? (
+                <Menu.Item
+                  onPress={() => {
+                    setMenuVisible(false);
+                    onCopyToRemaining();
+                  }}
+                  title="Apply to remaining sets"
+                  leadingIcon="playlist-edit"
+                  disabled={set.skipped}
+                />
+              ) : null}
+              {onToggleSkip ? (
+                <Menu.Item
+                  onPress={() => {
+                    setMenuVisible(false);
+                    onToggleSkip();
+                  }}
+                  title={set.skipped ? 'Restore set' : 'Skip set'}
+                  leadingIcon={set.skipped ? 'backup-restore' : 'skip-next-outline'}
+                />
+              ) : null}
               {supportsTechniques
                 ? TECHNIQUES.map((item) => (
                     <Menu.Item
@@ -219,6 +249,7 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
                       onPress={() => selectTechnique(item)}
                       title={TECHNIQUE_LABELS[item]}
                       leadingIcon={item === technique ? 'check' : undefined}
+                      disabled={set.skipped}
                     />
                   ))
                 : null}
@@ -226,83 +257,92 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
           ) : null}
 
           <IconButton
-            icon="check"
+            icon={set.skipped ? 'skip-next-outline' : 'check'}
             mode={set.completed ? 'contained' : 'contained-tonal'}
             size={18}
             onPress={onToggleComplete}
-            disabled={disabled}
+            disabled={disabled || set.skipped}
+            accessibilityLabel={set.completed ? 'Mark set incomplete' : 'Mark set complete'}
             style={styles.compactButton}
           />
         </View>
       </View>
 
-      <View style={styles.inputGroup}>
-        {supportsLoad ? (
-          <TextInput
-            ref={(instance: FocusableInput | null) => {
-              loadInputRef.current = instance;
-            }}
-            mode="outlined"
-            dense
-            label={
-              trackingType === 'weighted_bodyweight'
-                ? `extra ${unitLabel(units)}`
-                : unitLabel(units)
-            }
-            value={set.loadKg != null ? String(displayLoad(set.loadKg, units)) : ''}
-            onChangeText={(text) => onChange({ loadKg: loadInputToKg(text, units) })}
-            keyboardType="decimal-pad"
-            returnKeyType="next"
-            blurOnSubmit={false}
-            onSubmitEditing={() => resultInputRef.current?.focus()}
-            editable={!isLocked}
-            style={styles.input}
-          />
-        ) : null}
-        {supportsReps ? (
-          <TextInput
-            ref={(instance: FocusableInput | null) => {
-              resultInputRef.current = instance;
-            }}
-            mode="outlined"
-            dense
-            label="reps"
-            value={set.reps != null ? String(set.reps) : ''}
-            onChangeText={(text) => onChange({ reps: parseDecimalInput(text) })}
-            keyboardType="number-pad"
-            returnKeyType="done"
-            onSubmitEditing={onSubmitEditing}
-            editable={!isLocked}
-            style={styles.input}
-          />
-        ) : (
-          <TextInput
-            ref={(instance: FocusableInput | null) => {
-              resultInputRef.current = instance;
-            }}
-            mode="outlined"
-            dense
-            label="seconds"
-            value={set.durationSeconds != null ? String(set.durationSeconds) : ''}
-            onChangeText={(text) => onChange({ durationSeconds: parseDecimalInput(text) })}
-            keyboardType="number-pad"
-            returnKeyType="done"
-            onSubmitEditing={onSubmitEditing}
-            editable={!isLocked}
-            style={styles.input}
-          />
-        )}
-        <Pressable
-          onPress={onOpenRirPicker}
-          disabled={isLocked}
-          style={[styles.rirButton, { borderColor: colors.border, opacity: isLocked ? 0.6 : 1 }]}
-        >
-          <Text style={[typography.micro, { color: colors.textMuted }]}>RIR</Text>
-          <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
-            {set.rir != null ? formatRir(set.rir) : '–'}
-          </Text>
-        </Pressable>
-      </View>
+      {set.skipped ? (
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          Skipped — not counted in progression or volume.
+        </Text>
+      ) : null}
+
+      {!set.skipped ? (
+        <View style={styles.inputGroup}>
+          {supportsLoad ? (
+            <TextInput
+              ref={(instance: FocusableInput | null) => {
+                loadInputRef.current = instance;
+              }}
+              mode="outlined"
+              dense
+              label={
+                trackingType === 'weighted_bodyweight'
+                  ? `extra ${unitLabel(units)}`
+                  : unitLabel(units)
+              }
+              value={set.loadKg != null ? String(displayLoad(set.loadKg, units)) : ''}
+              onChangeText={(text) => onChange({ loadKg: loadInputToKg(text, units) })}
+              keyboardType="decimal-pad"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => resultInputRef.current?.focus()}
+              editable={!isLocked}
+              style={styles.input}
+            />
+          ) : null}
+          {supportsReps ? (
+            <TextInput
+              ref={(instance: FocusableInput | null) => {
+                resultInputRef.current = instance;
+              }}
+              mode="outlined"
+              dense
+              label="reps"
+              value={set.reps != null ? String(set.reps) : ''}
+              onChangeText={(text) => onChange({ reps: parseDecimalInput(text) })}
+              keyboardType="number-pad"
+              returnKeyType="done"
+              onSubmitEditing={onSubmitEditing}
+              editable={!isLocked}
+              style={styles.input}
+            />
+          ) : (
+            <TextInput
+              ref={(instance: FocusableInput | null) => {
+                resultInputRef.current = instance;
+              }}
+              mode="outlined"
+              dense
+              label="seconds"
+              value={set.durationSeconds != null ? String(set.durationSeconds) : ''}
+              onChangeText={(text) => onChange({ durationSeconds: parseDecimalInput(text) })}
+              keyboardType="number-pad"
+              returnKeyType="done"
+              onSubmitEditing={onSubmitEditing}
+              editable={!isLocked}
+              style={styles.input}
+            />
+          )}
+          <Pressable
+            onPress={onOpenRirPicker}
+            disabled={isLocked}
+            style={[styles.rirButton, { borderColor: colors.border, opacity: isLocked ? 0.6 : 1 }]}
+          >
+            <Text style={[typography.micro, { color: colors.textMuted }]}>RIR</Text>
+            <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
+              {set.rir != null ? formatRir(set.rir) : '–'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {plates ? (
         <View style={styles.plateRow}>
@@ -330,6 +370,9 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
             </Text>
             <Text style={[typography.micro, { color: colors.textSecondary }]}>
               ROM {set.formAnalysis.averageRomScore} · Tempo {set.formAnalysis.averageTempoScore}
+              {set.formAnalysis.velocityLossPct != null
+                ? ` · VL ${Math.round(set.formAnalysis.velocityLossPct)}%`
+                : ''}
             </Text>
           </View>
           <Text style={[typography.micro, { color: colors.textSecondary }]} numberOfLines={2}>

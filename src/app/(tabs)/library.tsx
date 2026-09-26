@@ -1,16 +1,18 @@
-import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
-import { Button, Card, Chip, IconButton, List, Searchbar } from 'react-native-paper';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Button, Chip, IconButton, List, Searchbar } from 'react-native-paper';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useReducedMotion } from 'react-native-reanimated';
 
+import { ExerciseDemoStage } from '@/components/exercise/ExerciseDemoStage';
 import { ExerciseListItem } from '@/components/exercise/ExerciseListItem';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import {
   EXERCISE_LIBRARY,
   loggableExerciseForReference,
+  referenceImageUrl,
   searchLibrary,
   type LibraryExercise,
 } from '@/domain/exercises/library';
@@ -21,7 +23,8 @@ import {
   toggleExerciseFavorite,
 } from '@/domain/exercises/libraryStateStore';
 import { bodySlugsForMuscle } from '@/domain/muscles/muscleMap';
-import { MUSCLE_GROUPS, type MuscleGroup } from '@/types';
+import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
+import { MUSCLE_GROUPS, type Exercise, type MuscleGroup } from '@/types';
 import { useTheme } from '@/theme';
 
 type LevelFilter = 'all' | LibraryExercise['level'];
@@ -48,7 +51,7 @@ export default function LibraryScreen() {
   const [muscle, setMuscle] = useState<MuscleGroup | null>(null);
   const [level, setLevel] = useState<LevelFilter>('all');
   const [scope, setScope] = useState<ScopeFilter>('all');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailExercise, setDetailExercise] = useState<LibraryExercise | null>(null);
   const [libraryState, setLibraryState] = useState(EMPTY_EXERCISE_LIBRARY_STATE);
   const [libraryStateError, setLibraryStateError] = useState<string | null>(null);
 
@@ -90,22 +93,21 @@ export default function LibraryScreen() {
     return level === 'all' ? scoped : scoped.filter((exercise) => exercise.level === level);
   }, [baseResults, level, libraryState.favoriteIds, libraryState.recentIds, scope]);
 
-  const selectedExercise = useMemo(
-    () =>
-      results.find((exercise) => exercise.id === selectedId) ?? results[0] ?? EXERCISE_LIBRARY[0],
-    [results, selectedId],
-  );
-  const loggableExercise = useMemo(
-    () => loggableExerciseForReference(selectedExercise),
-    [selectedExercise],
-  );
+  function openDetail(exercise: LibraryExercise) {
+    setDetailExercise(exercise);
+    setLibraryStateError(null);
+    recordRecentExercise(exercise.id)
+      .then(setLibraryState)
+      .catch(() => setLibraryStateError('Recent exercises could not be updated. Try again.'));
+  }
 
-  const bodyData = useMemo(() => buildBodyData(selectedExercise), [selectedExercise]);
-  const primaryLabel = selectedExercise.primaryMuscles
-    .map((item) => MUSCLE_LABELS[item])
-    .join(', ');
-  const firstInstruction =
-    selectedExercise.instructions[0] ?? 'Load with control and repeat with consistent form.';
+  function openQuickWorkout(exercise: Exercise) {
+    setDetailExercise(null);
+    router.push({
+      pathname: '/custom-workout',
+      params: { ids: exercise.id, name: 'Quick workout' },
+    });
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
@@ -114,14 +116,13 @@ export default function LibraryScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           paddingBottom: insets.bottom + 120,
-          gap: spacing.sm,
         }}
         ListHeaderComponent={
-          <View style={{ padding: spacing.lg, gap: spacing.lg }}>
+          <View style={{ padding: spacing.lg, paddingBottom: spacing.md, gap: spacing.md }}>
             <View style={styles.headerRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  Exercise intelligence
+                <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                  Find, compare, and add movements
                 </Text>
                 <Text style={[typography.title, { color: colors.textPrimary }]}>Exercises</Text>
               </View>
@@ -157,41 +158,7 @@ export default function LibraryScreen() {
               </Text>
             ) : null}
 
-            {results.length > 0 ? (
-              <SelectedExerciseCard
-                exercise={selectedExercise}
-                bodyData={bodyData}
-                primaryLabel={primaryLabel}
-                firstInstruction={firstInstruction}
-                favorite={libraryState.favoriteIds.includes(selectedExercise.id)}
-                onToggleFavorite={() => {
-                  setLibraryStateError(null);
-                  toggleExerciseFavorite(selectedExercise.id)
-                    .then(setLibraryState)
-                    .catch(() =>
-                      setLibraryStateError('This favorite could not be saved. Try again.'),
-                    );
-                }}
-                loggableExerciseName={loggableExercise?.name ?? null}
-                onViewHistory={
-                  loggableExercise
-                    ? () => router.push(`/exercise/${loggableExercise.id}`)
-                    : undefined
-                }
-                onAdd={
-                  loggableExercise
-                    ? () =>
-                        router.push({
-                          pathname: '/custom-workout',
-                          params: { ids: loggableExercise.id, name: 'Quick workout' },
-                        })
-                    : undefined
-                }
-              />
-            ) : null}
-
             <View style={{ gap: spacing.sm }}>
-              <Text style={[typography.captionBold, { color: colors.textMuted }]}>Filters</Text>
               <FlatList
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -200,6 +167,7 @@ export default function LibraryScreen() {
                 contentContainerStyle={{ gap: spacing.sm }}
                 renderItem={({ item }) => (
                   <Chip
+                    compact
                     icon={item.icon}
                     selected={scope === item.value}
                     mode={scope === item.value ? 'flat' : 'outlined'}
@@ -217,6 +185,7 @@ export default function LibraryScreen() {
                 contentContainerStyle={{ gap: spacing.sm }}
                 renderItem={({ item }) => (
                   <Chip
+                    compact
                     selected={level === item.value}
                     mode={level === item.value ? 'flat' : 'outlined'}
                     onPress={() => setLevel(item.value)}
@@ -233,6 +202,7 @@ export default function LibraryScreen() {
                 contentContainerStyle={{ gap: spacing.sm, paddingTop: spacing.xs }}
                 ListHeaderComponent={
                   <Chip
+                    compact
                     selected={muscle === null}
                     mode={muscle === null ? 'flat' : 'outlined'}
                     onPress={() => setMuscle(null)}
@@ -243,6 +213,7 @@ export default function LibraryScreen() {
                 ListHeaderComponentStyle={{ marginRight: spacing.sm }}
                 renderItem={({ item }) => (
                   <Chip
+                    compact
                     selected={muscle === item}
                     mode={muscle === item ? 'flat' : 'outlined'}
                     onPress={() => setMuscle((current) => (current === item ? null : item))}
@@ -252,6 +223,10 @@ export default function LibraryScreen() {
                 )}
               />
             </View>
+
+            <Text style={[typography.captionBold, { color: colors.textSecondary }]}>
+              {results.length} {results.length === 1 ? 'exercise' : 'exercises'}
+            </Text>
           </View>
         }
         ListEmptyComponent={
@@ -272,172 +247,242 @@ export default function LibraryScreen() {
             </Button>
           </View>
         }
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: spacing.lg }}>
-            <ExerciseListItem
-              exercise={item}
-              selected={item.id === selectedExercise.id}
-              onPress={() => {
-                setSelectedId(item.id);
-                setLibraryStateError(null);
-                recordRecentExercise(item.id)
-                  .then(setLibraryState)
-                  .catch(() =>
-                    setLibraryStateError('Recent exercises could not be updated. Try again.'),
-                  );
-              }}
-            />
+            <ExerciseListItem exercise={item} onPress={() => openDetail(item)} />
           </View>
         )}
+      />
+
+      <LibraryExerciseDetailModal
+        key={detailExercise?.id ?? 'closed'}
+        exercise={detailExercise}
+        favorite={detailExercise ? libraryState.favoriteIds.includes(detailExercise.id) : false}
+        onToggleFavorite={() => {
+          if (!detailExercise) return;
+          setLibraryStateError(null);
+          toggleExerciseFavorite(detailExercise.id)
+            .then(setLibraryState)
+            .catch(() => setLibraryStateError('This favorite could not be saved. Try again.'));
+        }}
+        onDismiss={() => setDetailExercise(null)}
+        onAdd={openQuickWorkout}
+        onViewHistory={(exercise) => {
+          setDetailExercise(null);
+          router.push(`/exercise/${exercise.id}`);
+        }}
+        onFormCheck={(exercise) => {
+          setDetailExercise(null);
+          router.push({ pathname: '/form-check/[exerciseId]', params: { exerciseId: exercise.id } });
+        }}
       />
     </View>
   );
 }
 
-function SelectedExerciseCard({
+function LibraryExerciseDetailModal({
   exercise,
-  bodyData,
-  primaryLabel,
-  firstInstruction,
   favorite,
   onToggleFavorite,
-  loggableExerciseName,
-  onViewHistory,
+  onDismiss,
   onAdd,
+  onViewHistory,
+  onFormCheck,
 }: {
-  exercise: LibraryExercise;
-  bodyData: ExtendedBodyPart[];
-  primaryLabel: string;
-  firstInstruction: string;
+  exercise: LibraryExercise | null;
   favorite: boolean;
   onToggleFavorite: () => void;
-  loggableExerciseName: string | null;
-  onViewHistory?: () => void;
-  onAdd?: () => void;
+  onDismiss: () => void;
+  onAdd: (exercise: Exercise) => void;
+  onViewHistory: (exercise: Exercise) => void;
+  onFormCheck: (exercise: Exercise) => void;
 }) {
-  const { colors, radius, spacing, typography } = useTheme();
-  const heroImage = exercise.images[0];
+  const { colors, spacing, typography } = useTheme();
+  const reduceMotion = useReducedMotion();
+
+  if (!exercise) return null;
+
+  const images = exercise.images.map(referenceImageUrl);
+  const loggableExercise = loggableExerciseForReference(exercise);
+  const formAiReady = Boolean(
+    loggableExercise && getVisionConfigForMovementPattern(loggableExercise.movementPattern),
+  );
+  const bodyData = buildBodyData(exercise);
+  const primaryLabel = exercise.primaryMuscles.map((item) => MUSCLE_LABELS[item]).join(', ');
 
   return (
-    <Card
-      mode="contained"
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: radius.xl,
-        },
-      ]}
+    <Modal
+      visible
+      animationType={reduceMotion ? 'fade' : 'slide'}
+      presentationStyle="fullScreen"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onDismiss}
     >
-      <Card.Content style={{ gap: spacing.md }}>
-        <View style={styles.previewRow}>
-          <Image
-            source={heroImage ? { uri: heroImage } : undefined}
-            style={[
-              styles.heroImage,
-              { backgroundColor: colors.surfacePressed, borderRadius: radius.lg },
-            ]}
-            contentFit="cover"
-            accessibilityLabel={`${exercise.name} exercise reference`}
+      <SafeAreaView style={[styles.modalSafeArea, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+          <IconButton
+            icon="close"
+            mode="contained-tonal"
+            accessibilityLabel="Close exercise details"
+            onPress={onDismiss}
           />
-          <View style={{ flex: 1, gap: spacing.xs }}>
-            <View style={styles.headerRow}>
-              <Text style={[typography.micro, { color: colors.accent }]}>Selected movement</Text>
-              <IconButton
-                icon={favorite ? 'star' : 'star-outline'}
-                mode="contained-tonal"
-                size={18}
-                accessibilityLabel={favorite ? 'Remove from favorites' : 'Add to favorites'}
-                onPress={onToggleFavorite}
-              />
-            </View>
+          <View style={styles.modalHeaderCopy}>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              Exercise details
+            </Text>
             <Text style={[typography.heading, { color: colors.textPrimary }]} numberOfLines={2}>
               {exercise.name}
             </Text>
-            <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={2}>
-              {exercise.equipmentLabel} · {primaryLabel}
-            </Text>
-            <View style={styles.metaRow}>
-              <Chip compact mode="flat">
-                {exercise.level}
-              </Chip>
-              <Chip compact mode="flat">
-                {exercise.mechanic ?? 'mixed'}
-              </Chip>
-              <Chip
-                compact
-                mode={loggableExerciseName ? 'flat' : 'outlined'}
-                icon={loggableExerciseName ? 'check-circle-outline' : 'book-open-variant'}
-              >
-                {loggableExerciseName ? 'Loggable' : 'Reference only'}
-              </Chip>
-            </View>
           </View>
+          <IconButton
+            icon={favorite ? 'star' : 'star-outline'}
+            mode="contained-tonal"
+            accessibilityLabel={favorite ? 'Remove from favorites' : 'Add to favorites'}
+            onPress={onToggleFavorite}
+          />
         </View>
 
-        <View style={styles.bodyAndCue}>
-          <View style={styles.bodyPair}>
-            <Body
-              data={bodyData}
-              colors={[`${colors.accent}66`, colors.accent]}
-              side="front"
-              scale={0.2}
-              border="none"
-              defaultFill={colors.surfacePressed}
-            />
-            <Body
-              data={bodyData}
-              colors={[`${colors.accent}66`, colors.accent]}
-              side="back"
-              scale={0.2}
-              border="none"
-              defaultFill={colors.surfacePressed}
-            />
-          </View>
-          <View style={[styles.cuePanel, { backgroundColor: colors.surfaceRaised }]}>
-            <Text style={[typography.micro, { color: colors.textMuted }]}>First cue</Text>
-            <Text style={[typography.caption, { color: colors.textPrimary }]} numberOfLines={4}>
-              {firstInstruction}
-            </Text>
-          </View>
-        </View>
+        <ScrollView
+          style={styles.modalScroll}
+          contentContainerStyle={{
+            padding: spacing.lg,
+            paddingBottom: spacing.x4l,
+            gap: spacing.xl,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <ExerciseDemoStage images={images} exerciseName={exercise.name} />
 
-        <List.Item
-          title={onViewHistory ? 'View training history' : 'No linked training history'}
-          description={
-            onViewHistory
-              ? `Linked to ${loggableExerciseName}. Open comparable logged sessions.`
-              : 'This reference entry has not been reviewed and mapped to a loggable exercise.'
-          }
-          onPress={onViewHistory}
-          left={(props) => <List.Icon {...props} icon="chart-line" color={colors.accent} />}
-          right={(props) =>
-            onViewHistory ? (
-              <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
-            ) : null
-          }
-          titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-          descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-          style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-        />
+              <View style={styles.chipRow}>
+                <Chip compact icon="target">
+                  {primaryLabel || 'Other'}
+                </Chip>
+                <Chip compact icon="dumbbell">
+                  {exercise.equipmentLabel}
+                </Chip>
+                <Chip compact mode="flat">
+                  {exercise.level}
+                </Chip>
+                <Chip compact mode="flat">
+                  {exercise.mechanic ?? 'mixed'}
+                </Chip>
+                <Chip
+                  compact
+                  mode={loggableExercise ? 'flat' : 'outlined'}
+                  icon={loggableExercise ? 'check-circle-outline' : 'book-open-variant'}
+                >
+                  {loggableExercise ? 'Loggable' : 'Reference only'}
+                </Chip>
+                {formAiReady ? (
+                  <Chip compact mode="flat" icon="camera-outline">
+                    Form AI
+                  </Chip>
+                ) : null}
+              </View>
 
-        {onAdd ? (
-          <Button mode="contained" icon="playlist-plus" onPress={onAdd}>
-            Add to quick workout
+              <View style={styles.bodyAndCue}>
+                <View style={styles.bodyPair}>
+                  <Body
+                    data={bodyData}
+                    colors={[`${colors.accent}66`, colors.accent]}
+                    side="front"
+                    scale={0.24}
+                    border="none"
+                    defaultFill={colors.surfacePressed}
+                  />
+                  <Body
+                    data={bodyData}
+                    colors={[`${colors.accent}66`, colors.accent]}
+                    side="back"
+                    scale={0.24}
+                    border="none"
+                    defaultFill={colors.surfacePressed}
+                  />
+                </View>
+                <Text
+                  style={[typography.caption, { color: colors.textMuted, flex: 1 }]}
+                  numberOfLines={4}
+                >
+                  Targets {primaryLabel || 'multiple muscles'}
+                  {exercise.secondaryMuscles.length > 0
+                    ? ` — also works ${exercise.secondaryMuscles.map((m) => MUSCLE_LABELS[m]).join(', ')}.`
+                    : '.'}
+                </Text>
+              </View>
+
+              <View style={styles.copySection}>
+                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+                  How to perform it
+                </Text>
+                {exercise.instructions.slice(0, 4).map((instruction, index) => (
+                  <View key={instruction} style={styles.cueRow}>
+                    <View style={[styles.cueNumber, { backgroundColor: colors.accentSoft }]}>
+                      <Text style={[typography.captionBold, { color: colors.accent }]}>
+                        {index + 1}
+                      </Text>
+                    </View>
+                    <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>
+                      {instruction}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <List.Item
+                title={loggableExercise ? 'View training history' : 'No linked training history'}
+                description={
+                  loggableExercise
+                    ? `Linked to ${loggableExercise.name}. Open comparable logged sessions.`
+                    : 'This reference entry has not been reviewed and mapped to a loggable exercise.'
+                }
+                onPress={loggableExercise ? () => onViewHistory(loggableExercise) : undefined}
+                left={(props) => <List.Icon {...props} icon="chart-line" color={colors.accent} />}
+                right={(props) =>
+                  loggableExercise ? (
+                    <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+                  ) : null
+                }
+                titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+                descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+                style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
+              />
+        </ScrollView>
+
+        <View
+          style={[
+            styles.modalFooter,
+            { backgroundColor: colors.background, borderTopColor: colors.border },
+          ]}
+        >
+          <Button mode="text" onPress={onDismiss} style={styles.footerSecondary}>
+            Close
           </Button>
-        ) : null}
-
-        <List.Item
-          title="Use as substitution reference"
-          description="Compare target muscle, equipment, level, and mechanics before swapping a lift."
-          left={(props) => <List.Icon {...props} icon="swap-horizontal" color={colors.accent} />}
-          titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-          descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-          style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-        />
-      </Card.Content>
-    </Card>
+          {formAiReady && loggableExercise ? (
+            <Button
+              mode="outlined"
+              icon="camera-outline"
+              onPress={() => onFormCheck(loggableExercise)}
+              style={styles.footerSecondary}
+            >
+              Form check
+            </Button>
+          ) : null}
+          {loggableExercise ? (
+            <Button
+              mode="contained"
+              icon="playlist-plus"
+              onPress={() => onAdd(loggableExercise)}
+              style={styles.footerPrimary}
+              contentStyle={styles.footerButtonContent}
+            >
+              Add to workout
+            </Button>
+          ) : null}
+        </View>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -470,22 +515,17 @@ const styles = StyleSheet.create({
   search: {
     borderWidth: StyleSheet.hairlineWidth,
   },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  previewRow: {
+  modalSafeArea: { flex: 1 },
+  modalHeader: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    minHeight: 72,
+    paddingHorizontal: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  heroImage: {
-    width: 104,
-    height: 104,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
+  modalHeaderCopy: { flex: 1, minWidth: 0, paddingHorizontal: 4 },
+  modalScroll: { flex: 1 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   bodyAndCue: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -498,13 +538,27 @@ const styles = StyleSheet.create({
     gap: 4,
     minWidth: 118,
   },
-  cuePanel: {
-    flex: 1,
-    borderRadius: 14,
-    padding: 12,
-    gap: 4,
+  copySection: { gap: 12 },
+  cueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  cueNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   listPanel: {
     borderRadius: 14,
   },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  footerSecondary: { flex: 0.8 },
+  footerPrimary: { flex: 1.2 },
+  footerButtonContent: { minHeight: 48 },
 });

@@ -46,12 +46,12 @@ export function TodayWorkoutHero({
     ? 'Calibrate live'
     : formatDecisionTarget(target.decision, units);
   const decisionCopy = !hasPreviousTopSet
-    ? 'Log the first honest top set today. The next run will use saved history for the overload target.'
+    ? 'Log one clean working set to create your first benchmark.'
     : decision.action === 'increase_load'
-      ? 'Load earned. Keep the same rep intent and own the first set.'
+      ? 'Add the suggested load while keeping the same rep quality.'
       : decision.action === 'increase_reps'
-        ? 'Same load. Buy one cleaner rep before chasing plates.'
-        : 'Hold the line today and make the execution boringly clean.';
+        ? 'Keep the load and aim for one more clean rep.'
+        : 'Keep the target steady and focus on clean execution.';
 
   return (
     <Card
@@ -77,9 +77,7 @@ export function TodayWorkoutHero({
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(3, 5, 9, 0.52)' }]} />
         <View style={styles.imageContent}>
           <View style={styles.headerRow}>
-            <Text style={[typography.captionBold, { color: colors.accent }]}>
-              TODAY · {day.name.toUpperCase()}
-            </Text>
+            <Text style={[typography.captionBold, { color: colors.accent }]}>Today’s workout</Text>
             <Chip
               compact
               mode="flat"
@@ -89,8 +87,8 @@ export function TodayWorkoutHero({
               RIR {targetRir}
             </Chip>
           </View>
-          <Text style={[typography.jumbo, { color: colors.textPrimary }]} numberOfLines={2}>
-            Beat one honest top set.
+          <Text style={[typography.display, { color: colors.textPrimary }]} numberOfLines={2}>
+            {day.name}
           </Text>
         </View>
       </View>
@@ -100,10 +98,10 @@ export function TodayWorkoutHero({
           {day.focus.map((m) => MUSCLE_LABELS[m]).join(', ')}
         </Text>
 
-        <View style={styles.metricRow}>
+        <View style={[styles.metricRow, { backgroundColor: colors.surfaceRaised }]}>
           <Metric label="Exercises" value={String(day.prescriptions.length)} />
           <Metric label="Sets" value={String(totalSets)} />
-          <Metric label="Estimate" value={`${day.estimatedMinutes}m`} />
+          <Metric label="Minutes" value={String(day.estimatedMinutes)} />
         </View>
 
         <View
@@ -117,7 +115,7 @@ export function TodayWorkoutHero({
         >
           <View style={styles.rowBetween}>
             <Text style={[typography.captionBold, { color: colors.accent }]}>
-              Progression contract
+              First lift target
             </Text>
             <Icon source="trending-up" size={16} color={colors.accent} />
           </View>
@@ -125,18 +123,12 @@ export function TodayWorkoutHero({
             {target.exerciseName}
           </Text>
           <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{targetText}</Text>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
             {hasPreviousTopSet
               ? `Last session: ${formatProgressionSignal(target.lastSignal, units)}`
               : 'No saved benchmark for this lift yet'}
           </Text>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>{decisionCopy}</Text>
-          <View style={[styles.ruleLine, { borderColor: colors.borderStrong }]}>
-            <Text style={[typography.micro, { color: colors.accent }]}>Rule</Text>
-            <Text style={[typography.micro, { color: colors.textSecondary, flex: 1 }]}>
-              Top range with reps to spare earns the next load.
-            </Text>
-          </View>
         </View>
 
         <Button
@@ -147,40 +139,40 @@ export function TodayWorkoutHero({
           contentStyle={styles.startButton}
           onPress={onStart}
         >
-          Start {day.name}
+          Start workout
         </Button>
 
-        <View style={styles.swapRow}>
-          <Chip
+        <View style={styles.actionRow}>
+          <Button
             compact
-            mode="flat"
+            mode="text"
             icon="swap-horizontal"
             onPress={onSwap}
-            style={{ backgroundColor: colors.surfacePressed }}
-            textStyle={{ color: colors.textSecondary }}
+            textColor={colors.textSecondary}
+            contentStyle={styles.secondaryAction}
           >
-            Swap to {swapLabel}
-          </Chip>
-          <Chip
+            Switch to {swapLabel}
+          </Button>
+          <Button
             compact
-            mode="flat"
-            icon="tune-variant"
-            onPress={onWeakPoint}
-            style={{ backgroundColor: colors.surfacePressed }}
-            textStyle={{ color: colors.textSecondary }}
-          >
-            Weak point
-          </Chip>
-          <Chip
-            compact
-            mode="flat"
+            mode="text"
             icon="playlist-plus"
             onPress={onCustomWorkout}
-            style={{ backgroundColor: colors.surfacePressed }}
-            textStyle={{ color: colors.textSecondary }}
+            textColor={colors.textSecondary}
+            contentStyle={styles.secondaryAction}
           >
-            Custom
-          </Chip>
+            Custom workout
+          </Button>
+          <Button
+            compact
+            mode="text"
+            icon="information-outline"
+            onPress={onWeakPoint}
+            textColor={colors.textSecondary}
+            contentStyle={styles.secondaryAction}
+          >
+            Why this plan
+          </Button>
         </View>
       </Card.Content>
     </Card>
@@ -223,7 +215,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   imageFrame: {
-    height: 218,
+    height: 168,
   },
   imageContent: {
     flex: 1,
@@ -235,6 +227,9 @@ const styles = StyleSheet.create({
   metricRow: {
     flexDirection: 'row',
     gap: 10,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   metric: {
     flex: 1,
@@ -248,13 +243,6 @@ const styles = StyleSheet.create({
   startButton: {
     minHeight: 52,
   },
-  swapRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  ruleLine: {
-    marginTop: 5,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
+  actionRow: { flexDirection: 'row', gap: 2, flexWrap: 'wrap' },
+  secondaryAction: { minHeight: 48 },
 });

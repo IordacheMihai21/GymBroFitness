@@ -217,6 +217,7 @@ describe('muscle intelligence', () => {
               worstRepScore: 68,
               mostCommonIssue: 'Control the eccentric.',
               recommendations: ['Lower with control.'],
+              velocityLossPct: null,
             },
           }),
           makeSet('b', { loadKg: 100, reps: 8, rir: 1 }),

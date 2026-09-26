@@ -201,6 +201,7 @@ describe('workout history summaries', () => {
                 worstRepScore: 70,
                 mostCommonIssue: null,
                 recommendations: ['Clean set.'],
+                velocityLossPct: null,
               },
             },
             {
@@ -226,6 +227,7 @@ describe('workout history summaries', () => {
                 worstRepScore: 83,
                 mostCommonIssue: 'Control the eccentric.',
                 recommendations: ['Slow down.'],
+                velocityLossPct: null,
               },
             },
           ],

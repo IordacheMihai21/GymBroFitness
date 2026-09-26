@@ -6,7 +6,13 @@ const EVEN_WEIGHTS: ScoringWeights = { rom: 0.2, stability: 0.2, alignment: 0.2,
 const IDEAL_TEMPO: TempoTarget = { concentricMs: 700, eccentricMs: 1500 };
 
 function baseInput(overrides: Partial<RepScoringInput> = {}): RepScoringInput {
-  const timing: CompletedRepTiming = { risingMs: 700, fallingMs: 1500, romDegrees: 130 };
+  const timing: CompletedRepTiming = {
+    risingMs: 700,
+    fallingMs: 1500,
+    romDegrees: 130,
+    peakRisingVelocityDegPerSec: null,
+    peakFallingVelocityDegPerSec: null,
+  };
   return {
     repNumber: 1,
     timing,
@@ -29,12 +35,32 @@ describe('scoreRep', () => {
   });
 
   it('caps romScore at 100 even when ROM exceeds the minimum', () => {
-    const analysis = scoreRep(baseInput({ timing: { risingMs: 700, fallingMs: 1500, romDegrees: 999 } }));
+    const analysis = scoreRep(
+      baseInput({
+        timing: {
+          risingMs: 700,
+          fallingMs: 1500,
+          romDegrees: 999,
+          peakRisingVelocityDegPerSec: null,
+          peakFallingVelocityDegPerSec: null,
+        },
+      }),
+    );
     expect(analysis.romScore).toBe(100);
   });
 
   it('scores partial ROM proportionally', () => {
-    const analysis = scoreRep(baseInput({ timing: { risingMs: 700, fallingMs: 1500, romDegrees: 50 } }));
+    const analysis = scoreRep(
+      baseInput({
+        timing: {
+          risingMs: 700,
+          fallingMs: 1500,
+          romDegrees: 50,
+          peakRisingVelocityDegPerSec: null,
+          peakFallingVelocityDegPerSec: null,
+        },
+      }),
+    );
     expect(analysis.romScore).toBe(50);
   });
 
@@ -57,13 +83,25 @@ describe('scoreRep', () => {
     const towardTop = scoreRep(
       baseInput({
         concentricDirection: 'towardTop',
-        timing: { risingMs: 200, fallingMs: 1600, romDegrees: 130 },
+        timing: {
+          risingMs: 200,
+          fallingMs: 1600,
+          romDegrees: 130,
+          peakRisingVelocityDegPerSec: null,
+          peakFallingVelocityDegPerSec: null,
+        },
       }),
     );
     const towardBottom = scoreRep(
       baseInput({
         concentricDirection: 'towardBottom',
-        timing: { risingMs: 200, fallingMs: 1600, romDegrees: 130 },
+        timing: {
+          risingMs: 200,
+          fallingMs: 1600,
+          romDegrees: 130,
+          peakRisingVelocityDegPerSec: null,
+          peakFallingVelocityDegPerSec: null,
+        },
       }),
     );
     // Same raw timings, opposite concentricDirection, should give different tempo scores
@@ -72,7 +110,17 @@ describe('scoreRep', () => {
   });
 
   it('injects a "control the eccentric" violation when the eccentric phase is too fast', () => {
-    const analysis = scoreRep(baseInput({ timing: { risingMs: 700, fallingMs: 200, romDegrees: 130 } }));
+    const analysis = scoreRep(
+      baseInput({
+        timing: {
+          risingMs: 700,
+          fallingMs: 200,
+          romDegrees: 130,
+          peakRisingVelocityDegPerSec: null,
+          peakFallingVelocityDegPerSec: null,
+        },
+      }),
+    );
     expect(analysis.violations.some((v) => v.id === 'control-eccentric')).toBe(true);
   });
 

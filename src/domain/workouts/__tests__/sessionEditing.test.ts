@@ -1,6 +1,12 @@
 import type { PerformedExercise, PerformedSet, WorkoutSession } from '@/types';
 
-import { patchWorkoutSet, toggleWorkoutSetCompletion } from '../sessionEditing';
+import {
+  completeOpenSetsForExercise,
+  patchWorkoutSet,
+  skipAllOpenSets,
+  toggleWorkoutSetCompletion,
+  toggleWorkoutSetSkipped,
+} from '../sessionEditing';
 
 function set(id: string, completed = false): PerformedSet {
   return {
@@ -84,5 +90,74 @@ describe('workout session editing', () => {
       expect.objectContaining({ ok: false, reason: 'invalid_set', setId: 'set-1' }),
     );
     expect(invalid.exercises[0].sets[0].completed).toBe(false);
+  });
+
+  it('can skip and restore an open set without completing it', () => {
+    const original = session();
+    const skipped = toggleWorkoutSetSkipped(original, 0, 0);
+
+    expect(skipped.exercises[0].sets[0]).toMatchObject({ skipped: true, completed: false });
+    expect(toggleWorkoutSetSkipped(skipped, 0, 0).exercises[0].sets[0].skipped).toBe(false);
+  });
+
+  it('can complete a set during review without starting the rest timer', () => {
+    const result = toggleWorkoutSetCompletion(
+      session(),
+      0,
+      0,
+      'weight_reps',
+      new Date('2026-09-20T10:00:00.000Z'),
+      { startRestTimer: false },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.session.exercises[0].sets[0].completed).toBe(true);
+    expect(result.session.restTimer).toBeUndefined();
+  });
+
+  it('marks only open sets skipped when an incomplete review is saved', () => {
+    const original = session();
+    original.exercises[0].sets[0].completed = true;
+    const skipped = skipAllOpenSets(original);
+
+    expect(skipped.exercises[0].sets[0]).toMatchObject({ completed: true, skipped: false });
+    expect(skipped.exercises[1].sets[0]).toMatchObject({ completed: false, skipped: true });
+  });
+
+  it('completes every valid open set for one exercise without starting rest', () => {
+    const original = session();
+    original.exercises[0].sets.push({ ...set('set-1b'), setNumber: 2 });
+    const result = completeOpenSetsForExercise(
+      original,
+      0,
+      'weight_reps',
+      new Date('2026-09-20T10:15:00.000Z'),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.completedCount).toBe(2);
+    expect(result.session.exercises[0].sets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ completed: true, completedAt: '2026-09-20T10:15:00.000Z' }),
+      ]),
+    );
+    expect(result.session.restTimer).toBeUndefined();
+  });
+
+  it('keeps all open sets editable when bulk completion finds invalid input', () => {
+    const original = session();
+    original.exercises[0].sets.push({ ...set('set-invalid'), setNumber: 2, reps: 0 });
+    const result = completeOpenSetsForExercise(original, 0, 'weight_reps');
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        reason: 'invalid_sets',
+        errors: expect.objectContaining({ 'set-invalid': expect.any(String) }),
+      }),
+    );
+    expect(original.exercises[0].sets.every((candidate) => !candidate.completed)).toBe(true);
   });
 });

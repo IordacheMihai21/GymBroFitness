@@ -12,6 +12,7 @@ function makeRep(overrides: Partial<RepAnalysis> = {}): RepAnalysis {
     symmetryScore: 100,
     violations: [],
     overallScore: 100,
+    peakConcentricVelocityDegPerSec: null,
     ...overrides,
   };
 }
@@ -102,6 +103,44 @@ describe('VoiceCoach', () => {
     expect(coach.decide({ repCompleted: null, topViolation: violation }, 100)).toEqual({
       id: violation.id,
       text: violation.message,
+    });
+  });
+
+  describe('confirmation loop', () => {
+    it('confirms a fixed fault instead of a generic "nice rep" when the caller reports one', () => {
+      const coach = new VoiceCoach();
+      const cue = coach.decide(
+        {
+          repCompleted: makeRep({ repNumber: 2 }),
+          topViolation: null,
+          fixedViolationId: 'knee-cave',
+        },
+        0,
+      );
+      expect(cue).toEqual({ id: 'rep-fixed-2', text: 'Fixed — nice adjustment.' });
+    });
+
+    it('prioritizes a still-active fault over confirming a different fixed one', () => {
+      const coach = new VoiceCoach();
+      const stillActive = makeViolation({ id: 'chest-drop', message: 'Keep your chest up.' });
+      const cue = coach.decide(
+        {
+          repCompleted: makeRep({ repNumber: 2, overallScore: 60, violations: [stillActive] }),
+          topViolation: null,
+          fixedViolationId: 'knee-cave',
+        },
+        0,
+      );
+      expect(cue).toEqual({ id: 'rep-issue-2', text: 'Keep your chest up.' });
+    });
+
+    it('does not mention a fix when the caller reports none', () => {
+      const coach = new VoiceCoach();
+      const cue = coach.decide(
+        { repCompleted: makeRep({ repNumber: 2 }), topViolation: null, fixedViolationId: null },
+        0,
+      );
+      expect(cue).toEqual({ id: 'rep-good-2', text: 'Nice rep.' });
     });
   });
 });

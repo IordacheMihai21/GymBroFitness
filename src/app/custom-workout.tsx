@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   Button,
   Card,
@@ -15,9 +15,12 @@ import {
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ExerciseDemoModal } from '@/components/exercise/ExerciseDemoModal';
+import { ExerciseThumbnail } from '@/components/exercise/ExerciseThumbnail';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { availableExercises, requireExercise } from '@/domain/exercises/catalog';
 import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
+import { validateCustomWorkoutSelection } from '@/domain/workouts/customWorkoutSelection';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type { EquipmentType, Exercise, MuscleGroup } from '@/types';
@@ -25,16 +28,34 @@ import { MUSCLE_GROUPS } from '@/types';
 
 export default function CustomWorkoutScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    ids?: string | string[];
+    name?: string | string[];
+  }>();
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
-  const { preferences } = useActiveProgram();
-  const [name, setName] = useState('Custom Workout');
+  const { preferences, loading } = useActiveProgram();
+  const [name, setName] = useState(() => firstParam(params.name) || 'Custom Workout');
   const [query, setQuery] = useState('');
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | null>(null);
   const [equipmentFilter, setEquipmentFilter] = useState<EquipmentType | null>(null);
-  const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>([]);
+  const [selectedExerciseIdsOverride, setSelectedExerciseIdsOverride] = useState<string[] | null>(
+    null,
+  );
+  const [previewExercise, setPreviewExercise] = useState<Exercise | null>(null);
+  const routeSelection = useMemo(
+    () =>
+      loading ? null : validateCustomWorkoutSelection(routeExerciseIds(params.ids), preferences),
+    [loading, params.ids, preferences],
+  );
+  const selectedExerciseIds = useMemo(
+    () => selectedExerciseIdsOverride ?? routeSelection?.ids ?? [],
+    [routeSelection, selectedExerciseIdsOverride],
+  );
+  const routeSelectionIssue = routeSelection?.issue ?? null;
 
   const selectedSet = useMemo(() => new Set(selectedExerciseIds), [selectedExerciseIds]);
+  const previewAlreadySelected = previewExercise ? selectedSet.has(previewExercise.id) : false;
   const candidates = useMemo(() => {
     const excludedSlugs = [
       ...preferences.excludedExerciseSlugs,
@@ -73,22 +94,28 @@ export default function CustomWorkoutScreen() {
   ).length;
 
   function addExercise(exercise: Exercise) {
-    setSelectedExerciseIds((current) => [...current, exercise.id]);
+    setSelectedExerciseIdsOverride((current) =>
+      (current ?? selectedExerciseIds).includes(exercise.id)
+        ? (current ?? selectedExerciseIds)
+        : [...(current ?? selectedExerciseIds), exercise.id],
+    );
+    setPreviewExercise(null);
     Haptics.selectionAsync();
   }
 
   function removeExercise(index: number) {
-    setSelectedExerciseIds((current) =>
-      current.filter((_, candidateIndex) => candidateIndex !== index),
+    setSelectedExerciseIdsOverride((current) =>
+      (current ?? selectedExerciseIds).filter((_, candidateIndex) => candidateIndex !== index),
     );
     Haptics.selectionAsync();
   }
 
   function moveExercise(index: number, direction: -1 | 1) {
-    setSelectedExerciseIds((current) => {
-      const nextIndex = Math.min(current.length - 1, Math.max(0, index + direction));
+    setSelectedExerciseIdsOverride((current) => {
+      const source = current ?? selectedExerciseIds;
+      const nextIndex = Math.min(source.length - 1, Math.max(0, index + direction));
       if (nextIndex === index) return current;
-      const next = [...current];
+      const next = [...source];
       const [moved] = next.splice(index, 1);
       if (!moved) return current;
       next.splice(nextIndex, 0, moved);
@@ -170,6 +197,21 @@ export default function CustomWorkoutScreen() {
           >
             Start custom workout
           </Button>
+
+          {routeSelectionIssue ? (
+            <View
+              style={[
+                styles.routeIssue,
+                { backgroundColor: colors.warningSoft, borderRadius: radius.lg },
+              ]}
+              accessibilityRole="alert"
+            >
+              <Text style={[typography.captionBold, { color: colors.warning }]}>Not added</Text>
+              <Text style={[typography.caption, { color: colors.textPrimary }]}>
+                {routeSelectionIssue}
+              </Text>
+            </View>
+          ) : null}
         </Card.Content>
       </Card>
 
@@ -220,6 +262,14 @@ export default function CustomWorkoutScreen() {
                     </Chip>
                   ) : null}
                 </View>
+                <IconButton
+                  icon="motion-play-outline"
+                  size={17}
+                  mode="contained-tonal"
+                  accessibilityLabel={`Preview ${exercise.name} technique`}
+                  onPress={() => setPreviewExercise(exercise)}
+                  style={styles.removeButton}
+                />
                 <IconButton
                   icon="trash-can-outline"
                   size={17}
@@ -309,11 +359,12 @@ export default function CustomWorkoutScreen() {
             <View key={exercise.id}>
               <List.Item
                 title={exercise.name}
-                description={`${muscleLabels(exercise.primaryMuscles)} - ${equipmentLabels(exercise.equipment)}`}
-                onPress={() => addExercise(exercise)}
-                left={(props) => <List.Icon {...props} icon="plus-circle" color={colors.accent} />}
+                description={`${muscleLabels(exercise.primaryMuscles)} - ${equipmentLabels(exercise.equipment)} · Preview technique`}
+                descriptionNumberOfLines={2}
+                onPress={() => setPreviewExercise(exercise)}
+                left={() => <ExerciseThumbnail exercise={exercise} />}
                 right={(props) => (
-                  <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+                  <List.Icon {...props} icon="arrow-expand" color={colors.textMuted} />
                 )}
                 titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
                 descriptionStyle={[typography.caption, { color: colors.textMuted }]}
@@ -331,6 +382,15 @@ export default function CustomWorkoutScreen() {
           ))
         )}
       </BuilderSection>
+
+      <ExerciseDemoModal
+        key={previewExercise?.id ?? 'closed'}
+        exercise={previewExercise}
+        actionLabel={previewAlreadySelected ? 'Done' : 'Add to workout'}
+        actionIcon={previewAlreadySelected ? 'check' : 'playlist-plus'}
+        onAction={previewAlreadySelected ? () => setPreviewExercise(null) : addExercise}
+        onDismiss={() => setPreviewExercise(null)}
+      />
     </Animated.ScrollView>
   );
 }
@@ -419,6 +479,17 @@ function formatEquipment(value: EquipmentType): string {
     .join(' ');
 }
 
+function firstParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+}
+
+function routeExerciseIds(value: string | string[] | undefined): string[] {
+  return firstParam(value)
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
 const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
@@ -451,6 +522,10 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 4,
   },
+  routeIssue: {
+    padding: 12,
+    gap: 4,
+  },
   selectedRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -467,8 +542,8 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   removeButton: {
-    width: 34,
-    height: 34,
+    width: 48,
+    height: 48,
     margin: 0,
   },
   search: {

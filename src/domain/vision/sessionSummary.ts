@@ -1,4 +1,5 @@
 import type { RepAnalysis } from './formScoring';
+import { latestVelocityLoss, type VelocityLossReading } from './velocityLoss';
 
 export interface FormSetSummary {
   reps: number;
@@ -9,7 +10,12 @@ export interface FormSetSummary {
   averageRomScore: number;
   averageTempoScore: number;
   recommendations: string[];
+  /** The set's most recent velocity-loss reading, or null when no rep in the set had a measured concentric velocity. */
+  velocityLoss: VelocityLossReading | null;
 }
+
+/** Reasonable general-purpose default between the ~15-20% strength-focus and ~25-35% hypertrophy-focus ranges — callers with a known training goal should pass their own. */
+const DEFAULT_VELOCITY_LOSS_STOP_THRESHOLD_PCT = 25;
 
 function average(values: number[]): number {
   if (values.length === 0) return 0;
@@ -50,7 +56,10 @@ function buildRecommendations(reps: RepAnalysis[], mostCommonIssue: string | nul
   return recommendations;
 }
 
-export function buildSetSummary(reps: RepAnalysis[]): FormSetSummary {
+export function buildSetSummary(
+  reps: RepAnalysis[],
+  velocityLossStopThresholdPct = DEFAULT_VELOCITY_LOSS_STOP_THRESHOLD_PCT,
+): FormSetSummary {
   if (reps.length === 0) {
     return {
       reps: 0,
@@ -61,6 +70,7 @@ export function buildSetSummary(reps: RepAnalysis[]): FormSetSummary {
       averageRomScore: 0,
       averageTempoScore: 0,
       recommendations: ['No reps recorded for this set.'],
+      velocityLoss: null,
     };
   }
 
@@ -69,6 +79,10 @@ export function buildSetSummary(reps: RepAnalysis[]): FormSetSummary {
   const mostCommonIssue = mostCommonViolationMessage(reps);
   const averageRomScore = average(reps.map((r) => r.romScore));
   const averageTempoScore = average(reps.map((r) => r.tempoScore));
+  const velocityLoss = latestVelocityLoss(
+    reps.map((r) => r.peakConcentricVelocityDegPerSec),
+    velocityLossStopThresholdPct,
+  );
 
   return {
     reps: reps.length,
@@ -79,5 +93,6 @@ export function buildSetSummary(reps: RepAnalysis[]): FormSetSummary {
     averageRomScore,
     averageTempoScore,
     recommendations: buildRecommendations(reps, mostCommonIssue, averageRomScore, averageTempoScore),
+    velocityLoss,
   };
 }

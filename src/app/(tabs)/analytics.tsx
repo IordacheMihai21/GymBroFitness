@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   BarChart,
   LineChart,
@@ -8,17 +8,19 @@ import {
   type lineDataItem,
 } from 'react-native-gifted-charts';
 import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
-import { Button, Card, Chip, List, ProgressBar } from 'react-native-paper';
+import { Card, Chip, List } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { bodySlugsForMuscle, heatColorForVolumeZone } from '@/domain/muscles/muscleMap';
 import {
   classifyWeeklyVolume,
   volumeZoneLabel,
+  type VolumeLandmarks,
   type VolumeZone,
 } from '@/domain/workouts/volumeLandmarks';
+import { VolumeLandmarkGauge } from '@/components/muscles/VolumeLandmarkGauge';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { buildActivityHeatmap } from '@/domain/workouts/activityHeatmap';
 import { buildPlannedWeek, buildWorkoutHistoryInsights } from '@/domain/workouts/historyInsights';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
@@ -42,6 +44,7 @@ type MuscleLoad = {
   mrv: number;
   /** 0 at MEV, 1 at MRV — clamped to [0,1] for gauge rendering. */
   gaugeFraction: number;
+  landmarks: VolumeLandmarks;
 };
 
 const PERIODS: { label: string; value: Period }[] = [
@@ -136,8 +139,7 @@ export default function AnalyticsScreen() {
   });
 
   return (
-    <Animated.ScrollView
-      entering={FadeIn}
+    <ScrollView
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={{
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
@@ -149,19 +151,14 @@ export default function AnalyticsScreen() {
       <Reveal>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              Training intelligence
+            <Text style={[typography.caption, { color: colors.textSecondary }]}>
+              Your completed workouts
             </Text>
-            <Text style={[typography.title, { color: colors.textPrimary }]}>Analytics</Text>
+            <Text style={[typography.title, { color: colors.textPrimary }]}>Progress</Text>
           </View>
-          <View style={styles.headerActions}>
-            <Chip compact mode="flat" icon="calendar-clock">
-              {insights.totalWorkouts} sessions
-            </Chip>
-            <Button compact mode="outlined" icon="body" onPress={() => router.push('/body')}>
-              Body
-            </Button>
-          </View>
+          <Chip compact mode="flat" icon="calendar-clock">
+            {insights.totalWorkouts} sessions
+          </Chip>
         </View>
       </Reveal>
 
@@ -198,7 +195,10 @@ export default function AnalyticsScreen() {
           <Card.Content style={{ gap: spacing.md }}>
             <View style={styles.headerRow}>
               <View>
-                <Text style={[typography.micro, { color: colors.accent }]}>Strength trend</Text>
+                <View style={styles.inlineHint}>
+                  <Text style={[typography.micro, { color: colors.accent }]}>Strength trend</Text>
+                  <InfoHint term="e1rm" />
+                </View>
                 <Text style={[typography.subheading, { color: colors.textPrimary }]}>
                   {insights.strengthTrend
                     ? `${insights.strengthTrend.exerciseName} e1RM`
@@ -297,7 +297,10 @@ export default function AnalyticsScreen() {
           <Card.Content style={{ gap: spacing.md }}>
             <View style={styles.headerRow}>
               <View>
-                <Text style={[typography.micro, { color: colors.accent }]}>Volume landmarks</Text>
+                <View style={styles.inlineHint}>
+                  <Text style={[typography.micro, { color: colors.accent }]}>Volume landmarks</Text>
+                  <InfoHint term="volumeLandmarks" />
+                </View>
                 <Text style={[typography.subheading, { color: colors.textPrimary }]}>
                   Logged direct sets this week
                 </Text>
@@ -369,28 +372,21 @@ export default function AnalyticsScreen() {
               )}
             </View>
 
-            <View style={{ gap: spacing.sm }}>
+            <View style={{ gap: spacing.md }}>
               {muscleLoads.slice(0, 5).map((item) => (
                 <View key={item.muscle} style={styles.muscleRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-                      {MUSCLE_LABELS[item.muscle]}
-                    </Text>
-                    <Text style={[typography.micro, { color: colors.textMuted }]}>
-                      {item.sets} sets/wk · {volumeZoneLabel(item.zone)} (MEV {item.mev}–MRV{' '}
-                      {item.mrv})
-                    </Text>
-                  </View>
-                  <View style={styles.progressColumn}>
-                    <Text style={[typography.micro, { color: colors.textMuted }]}>
-                      {item.sets} sets
-                    </Text>
-                    <ProgressBar
-                      progress={Math.min(1, item.gaugeFraction)}
-                      color={zoneColor(item.zone)}
-                      style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
-                    />
-                  </View>
+                  <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+                    {MUSCLE_LABELS[item.muscle]}
+                  </Text>
+                  <Text style={[typography.micro, { color: colors.textMuted }]}>
+                    {item.sets} sets/wk · {volumeZoneLabel(item.zone)} (MEV {item.mev}–MRV{' '}
+                    {item.mrv})
+                  </Text>
+                  <VolumeLandmarkGauge
+                    landmarks={item.landmarks}
+                    weeklySets={item.sets}
+                    zone={item.zone}
+                  />
                 </View>
               ))}
             </View>
@@ -452,7 +448,7 @@ export default function AnalyticsScreen() {
           ))}
         </View>
       </View>
-    </Animated.ScrollView>
+    </ScrollView>
   );
 }
 
@@ -490,6 +486,7 @@ function computeMuscleLoads(setsByMuscle: Partial<Record<MuscleGroup, number>>):
         mev: classification.landmarks.mev,
         mrv: classification.landmarks.mrv,
         gaugeFraction: classification.gaugeFraction,
+        landmarks: classification.landmarks,
       };
     })
     .sort(
@@ -590,6 +587,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  inlineHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
   headerActions: {
     alignItems: 'flex-end',
     gap: 6,
@@ -642,17 +644,7 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   muscleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  progressColumn: {
-    width: 112,
-    gap: 5,
-  },
-  progress: {
-    height: 6,
-    borderRadius: 999,
+    gap: 6,
   },
   prGrid: {
     flexDirection: 'row',

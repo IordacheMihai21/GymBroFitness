@@ -64,7 +64,7 @@ export function WeekLogCard({ entries, weekVolumeKg, intensityMatchPct, units }:
               Volume trend
             </Text>
             <Text style={[typography.caption, { color: colors.textMuted }]}>
-              Tonnage only counts completed work
+              Volume only counts completed work
             </Text>
           </View>
           <VolumeSparkline data={trendData} maxValue={maxVolumeT + 2} />

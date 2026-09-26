@@ -1,9 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Avatar, Card, Chip, List, ProgressBar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { Reveal } from '@/components/ui/Reveal';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
@@ -47,8 +46,7 @@ export default function ProfileScreen() {
   const priorityMuscles = preferences.musclePriorities.map((muscle) => MUSCLE_LABELS[muscle]);
 
   return (
-    <Animated.ScrollView
-      entering={FadeIn}
+    <ScrollView
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={{
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
@@ -236,9 +234,7 @@ export default function ProfileScreen() {
                   params: { exerciseId: 'lateral-raise' },
                 })
               }
-              left={(props) => (
-                <List.Icon {...props} icon="camera-outline" color={colors.accent} />
-              )}
+              left={(props) => <List.Icon {...props} icon="camera-outline" color={colors.accent} />}
               right={(props) => (
                 <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
               )}
@@ -259,7 +255,7 @@ export default function ProfileScreen() {
           </Card.Content>
         </Card>
       </Reveal>
-    </Animated.ScrollView>
+    </ScrollView>
   );
 }
 

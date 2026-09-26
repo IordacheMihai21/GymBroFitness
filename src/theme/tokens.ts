@@ -72,7 +72,7 @@ export const lightColors: SemanticColors = {
   borderStrong: palette.gray300,
   textPrimary: palette.gray900,
   textSecondary: palette.gray600,
-  textMuted: palette.gray400,
+  textMuted: palette.gray500,
   textInverse: palette.gray0,
   accent: palette.brand600,
   accentPressed: palette.brand700,
@@ -99,7 +99,7 @@ export const darkColors: SemanticColors = {
   borderStrong: palette.gray700,
   textPrimary: palette.gray50,
   textSecondary: palette.gray300,
-  textMuted: palette.gray500,
+  textMuted: palette.gray400,
   textInverse: palette.gray900,
   accent: palette.brand400,
   accentPressed: palette.brand300,
@@ -144,8 +144,8 @@ export const typography = {
   title: { fontSize: 24, lineHeight: 30, fontWeight: '700' as const },
   heading: { fontSize: 19, lineHeight: 25, fontWeight: '600' as const },
   subheading: { fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
-  body: { fontSize: 15, lineHeight: 21, fontWeight: '400' as const },
-  bodyBold: { fontSize: 15, lineHeight: 21, fontWeight: '600' as const },
+  body: { fontSize: 16, lineHeight: 23, fontWeight: '400' as const },
+  bodyBold: { fontSize: 16, lineHeight: 23, fontWeight: '600' as const },
   caption: { fontSize: 13, lineHeight: 18, fontWeight: '400' as const },
   captionBold: { fontSize: 13, lineHeight: 18, fontWeight: '600' as const },
   micro: { fontSize: 11, lineHeight: 14, fontWeight: '500' as const },
@@ -173,4 +173,4 @@ export const elevation = {
 } as const;
 
 /** Minimum touch target size per accessibility guidance. */
-export const MIN_TOUCH_TARGET = 44;
+export const MIN_TOUCH_TARGET = 48;

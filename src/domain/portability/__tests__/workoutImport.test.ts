@@ -68,4 +68,33 @@ describe('external workout CSV import', () => {
     expect(result.unmappedExercises).toEqual([{ name: 'My Mystery Lift', rowCount: 1 }]);
     expect(result.sessions[0].exercises).toHaveLength(1);
   });
+
+  it('applies a remembered source-specific exercise mapping', () => {
+    const csv = [
+      'Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE',
+      '2025-03-28 09:00:00,Upper,00:45,My Mystery Lift,1,100,8,0,0,,,8',
+    ].join('\n');
+    const result = parseExternalWorkoutCsv(csv, {
+      userId: 'user-1',
+      strongWeightUnit: 'kg',
+      exerciseMappings: { 'strong:my mystery lift': 'barbell-row' },
+    });
+
+    expect(result.unmappedExercises).toEqual([]);
+    expect(result.sessions[0].exercises[0].exerciseId).toBe('barbell-row');
+  });
+
+  it('returns a mappable preview when every exercise is initially unknown', () => {
+    const csv = [
+      'Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE',
+      '2025-03-28 09:00:00,Upper,00:45,Unlisted Movement,1,100,8,0,0,,,8',
+    ].join('\n');
+    const result = parseExternalWorkoutCsv(csv, {
+      userId: 'user-1',
+      strongWeightUnit: 'kg',
+    });
+
+    expect(result.sessions).toEqual([]);
+    expect(result.unmappedExercises).toEqual([{ name: 'Unlisted Movement', rowCount: 1 }]);
+  });
 });

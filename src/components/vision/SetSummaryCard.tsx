@@ -1,6 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Card, Chip } from 'react-native-paper';
 
+import { InfoHint } from '@/components/ui/InfoHint';
+import type { GlossaryTermKey } from '@/domain/glossary/terms';
 import type { RepAnalysis } from '@/domain/vision/formScoring';
 import { buildSetSummary } from '@/domain/vision/sessionSummary';
 import { useTheme } from '@/theme';
@@ -36,8 +38,8 @@ export function SetSummaryCard({ reps }: SetSummaryCardProps) {
           <Stat label="Worst rep" value={summary.worstRep ? `#${summary.worstRep.repNumber} · ${summary.worstRep.overallScore}` : '—'} />
         </View>
         <View style={styles.statRow}>
-          <Stat label="Avg ROM" value={`${summary.averageRomScore}/100`} />
-          <Stat label="Avg tempo" value={`${summary.averageTempoScore}/100`} />
+          <Stat label="Avg ROM" value={`${summary.averageRomScore}/100`} hint="rom" />
+          <Stat label="Avg tempo" value={`${summary.averageTempoScore}/100`} hint="tempo" />
         </View>
 
         {summary.mostCommonIssue ? (
@@ -59,12 +61,23 @@ export function SetSummaryCard({ reps }: SetSummaryCardProps) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: GlossaryTermKey;
+}) {
   const { colors, typography } = useTheme();
   return (
     <View style={{ flex: 1 }}>
       <Text style={[typography.subheading, { color: colors.textPrimary }]}>{value}</Text>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+      <View style={styles.statLabelRow}>
+        <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+        {hint ? <InfoHint term={hint} /> : null}
+      </View>
     </View>
   );
 }
@@ -81,6 +94,11 @@ const styles = StyleSheet.create({
   statRow: {
     flexDirection: 'row',
     gap: 12,
+  },
+  statLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   panel: {
     borderRadius: 14,

@@ -216,5 +216,6 @@ function buildSetFormAnalysis(exerciseId: string, reps: RepAnalysis[]): SetFormA
     worstRepScore: summary.worstRep?.overallScore ?? null,
     mostCommonIssue: summary.mostCommonIssue,
     recommendations: summary.recommendations,
+    velocityLossPct: summary.velocityLoss?.velocityLossPct ?? null,
   };
 }

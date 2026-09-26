@@ -187,6 +187,11 @@ export async function restoreBackup(backup: GymBroBackup): Promise<BackupPreview
   return preview;
 }
 
+export async function loadRestoreRecoveryBackup(): Promise<GymBroBackup | null> {
+  const raw = await AsyncStorage.getItem(BACKUP_RECOVERY_KEY);
+  return raw ? parseBackup(raw) : null;
+}
+
 export function workoutHistoryToCsv(sessions: WorkoutSession[]): string {
   const rows: (string | number | null)[][] = [
     [
@@ -254,9 +259,17 @@ function ensureUniqueIds(items: { id: string }[], label: string): void {
   }
 }
 
+/** Leading characters spreadsheet apps (Excel, Sheets, LibreOffice) treat as a formula trigger. */
+const CSV_FORMULA_TRIGGERS = new Set(['=', '+', '-', '@', '\t', '\r']);
+
 function csvCell(value: string | number | null): string {
   if (value == null) return '';
-  const text = String(value);
+  let text = String(value);
+  // Only freeform strings (e.g. a user-named workout day) can carry this risk —
+  // numbers are system-generated and a leading '-' is a legitimate negative value.
+  if (typeof value === 'string' && CSV_FORMULA_TRIGGERS.has(text[0])) {
+    text = `'${text}`;
+  }
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

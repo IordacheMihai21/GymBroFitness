@@ -102,6 +102,7 @@ export function saveWorkoutSessionSql(db: GymBroDb, session: WorkoutSession): Wo
     ...session,
     status: 'completed',
     finishedAt: session.finishedAt ?? new Date().toISOString(),
+    reviewStartedAt: null,
   };
 
   db.insert(workoutSessionsTable)

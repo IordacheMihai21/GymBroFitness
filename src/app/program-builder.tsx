@@ -14,6 +14,8 @@ import {
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ExerciseDemoModal } from '@/components/exercise/ExerciseDemoModal';
+import { ExerciseThumbnail } from '@/components/exercise/ExerciseThumbnail';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { requireExercise } from '@/domain/exercises/catalog';
 import { exerciseCandidatesForProgramDay } from '@/domain/programs/programEditing';
@@ -44,6 +46,7 @@ export default function ProgramBuilderScreen() {
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | null>(null);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [previewExercise, setPreviewExercise] = useState<Exercise | null>(null);
   const selectedDay = draft.days[selectedDayIndex] ?? draft.days[0];
   const saveIssue = customProgramSaveIssue(draft);
   const candidates = useMemo(() => {
@@ -72,6 +75,11 @@ export default function ProgramBuilderScreen() {
 
   function addExercise(exercise: Exercise) {
     updateDraft(addExerciseToCustomProgramDay(draft, selectedDayIndex, exercise, preferences));
+  }
+
+  function addPreviewedExercise(exercise: Exercise) {
+    addExercise(exercise);
+    setPreviewExercise(null);
   }
 
   function removeExercise(index: number) {
@@ -126,7 +134,11 @@ export default function ProgramBuilderScreen() {
         mode="contained"
         style={[
           styles.card,
-          { backgroundColor: colors.surface, borderColor: colors.borderStrong, borderRadius: radius.xl },
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.borderStrong,
+            borderRadius: radius.xl,
+          },
         ]}
       >
         <Card.Content style={{ gap: spacing.md }}>
@@ -161,7 +173,12 @@ export default function ProgramBuilderScreen() {
           </View>
 
           {status ? (
-            <Text style={[typography.captionBold, { color: saveIssue ? colors.warning : colors.textMuted }]}>
+            <Text
+              style={[
+                typography.captionBold,
+                { color: saveIssue ? colors.warning : colors.textMuted },
+              ]}
+            >
               {status}
             </Text>
           ) : saveIssue ? (
@@ -172,7 +189,11 @@ export default function ProgramBuilderScreen() {
         </Card.Content>
       </Card>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayRail}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.dayRail}
+      >
         {draft.days.map((day, index) => (
           <Chip
             key={day.id}
@@ -189,7 +210,14 @@ export default function ProgramBuilderScreen() {
       {selectedDay ? (
         <Card
           mode="contained"
-          style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.xl }]}
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: radius.xl,
+            },
+          ]}
         >
           <Card.Content style={{ gap: spacing.md }}>
             <View style={styles.headerRow}>
@@ -208,7 +236,9 @@ export default function ProgramBuilderScreen() {
               mode="outlined"
               label="Day name"
               value={selectedDay.name}
-              onChangeText={(name) => updateDraft(renameCustomProgramDay(draft, selectedDayIndex, name))}
+              onChangeText={(name) =>
+                updateDraft(renameCustomProgramDay(draft, selectedDayIndex, name))
+              }
             />
 
             <View style={styles.metricGrid}>
@@ -235,7 +265,7 @@ export default function ProgramBuilderScreen() {
                     <List.Item
                       title={exercise.name}
                       description={`${prescription.workingSets} x ${prescription.minReps}-${prescription.maxReps} · RIR ${prescription.targetRir} · ${formatMuscles(exercise.primaryMuscles)}`}
-                      left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
+                      left={() => <ExerciseThumbnail exercise={exercise} />}
                       right={() => (
                         <View style={styles.rowActions}>
                           <IconButton
@@ -272,7 +302,10 @@ export default function ProgramBuilderScreen() {
 
       <Card
         mode="contained"
-        style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.xl }]}
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.xl },
+        ]}
       >
         <Card.Content style={{ gap: spacing.md }}>
           <View>
@@ -290,7 +323,11 @@ export default function ProgramBuilderScreen() {
             placeholderTextColor={colors.textMuted}
           />
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+          >
             <Chip
               compact
               selected={muscleFilter == null}
@@ -321,10 +358,13 @@ export default function ProgramBuilderScreen() {
               <View key={exercise.id}>
                 <List.Item
                   title={exercise.name}
-                  description={`${formatMuscles(exercise.primaryMuscles)} · ${exercise.movementPattern.replace(/_/g, ' ')}`}
-                  onPress={() => addExercise(exercise)}
-                  left={(props) => <List.Icon {...props} icon="plus-circle" color={colors.accent} />}
-                  right={(props) => <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />}
+                  description={`${formatMuscles(exercise.primaryMuscles)} · ${exercise.movementPattern.replace(/_/g, ' ')} · Preview technique`}
+                  descriptionNumberOfLines={2}
+                  onPress={() => setPreviewExercise(exercise)}
+                  left={() => <ExerciseThumbnail exercise={exercise} />}
+                  right={(props) => (
+                    <List.Icon {...props} icon="arrow-expand" color={colors.textMuted} />
+                  )}
                   titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
                   descriptionStyle={[typography.caption, { color: colors.textMuted }]}
                   style={[styles.candidateRow, { backgroundColor: colors.surfaceRaised }]}
@@ -345,6 +385,14 @@ export default function ProgramBuilderScreen() {
       >
         Save as active program
       </Button>
+
+      <ExerciseDemoModal
+        key={previewExercise?.id ?? 'closed'}
+        exercise={previewExercise}
+        actionLabel={`Add to ${selectedDay?.name ?? 'day'}`}
+        onAction={addPreviewedExercise}
+        onDismiss={() => setPreviewExercise(null)}
+      />
     </Animated.ScrollView>
   );
 }

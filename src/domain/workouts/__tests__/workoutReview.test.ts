@@ -68,6 +68,7 @@ describe('workout session review', () => {
             worstRepScore: 75,
             mostCommonIssue: 'Control the eccentric.',
             recommendations: ['Slow the lowering phase.'],
+            velocityLossPct: null,
           },
         }),
         set('b', { loadKg: 95, reps: 9, rir: 1.5 }),

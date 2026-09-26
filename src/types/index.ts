@@ -271,6 +271,8 @@ export type SetFormAnalysis = {
   worstRepScore: number | null;
   mostCommonIssue: string | null;
   recommendations: string[];
+  /** % drop in concentric speed from this set's first measured rep to its last — null when no rep had a measured velocity. */
+  velocityLossPct: number | null;
 };
 
 export type PerformedSet = {
@@ -326,6 +328,8 @@ export type WorkoutSession = {
   status: WorkoutStatus;
   startedAt: string;
   finishedAt: string | null;
+  /** The live portion ended, but the editable post-workout review is not saved yet. */
+  reviewStartedAt?: string | null;
   exercises: PerformedExercise[];
   readiness?: ReadinessCheckIn;
   totalPausedSeconds: number;
