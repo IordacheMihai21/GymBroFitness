@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 import { LargeSecureStore } from '../client';
 
@@ -52,6 +53,8 @@ describe('LargeSecureStore', () => {
 
     const persisted = await AsyncStorage.getItem('secure-session-roundtrip');
     expect(persisted).not.toContain('secret-token');
+    const secureKey = (SecureStore.setItemAsync as jest.Mock).mock.calls.at(-1)?.[0];
+    expect(secureKey).toMatch(/^[A-Za-z0-9._-]+$/);
     await expect(store.getItem('secure-session-roundtrip')).resolves.toBe(value);
   });
 

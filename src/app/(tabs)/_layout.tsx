@@ -1,9 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs, usePathname, useRouter } from 'expo-router';
-import { AnimatePresence, MotiView } from 'moti';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getInProgressWorkoutSession } from '@/domain/workouts/historyStore';
@@ -116,7 +114,6 @@ function ActiveWorkoutBar() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [lastSessionId, setLastSessionId] = useState<string | null>(null);
-  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     let mounted = true;
@@ -203,57 +200,22 @@ function ActiveWorkoutBar() {
     </>
   );
 
-  if (reduceMotion) {
-    return collapsed ? (
-      <View style={[styles.activeWorkoutFabWrap, { bottom }]}>{pill}</View>
-    ) : (
-      <View
-        style={[
-          styles.activeWorkoutBar,
-          { bottom, backgroundColor: colors.surface, borderColor: colors.accent, borderRadius: radius.lg },
-        ]}
-      >
-        {bar}
-      </View>
-    );
-  }
-
-  return (
-    <AnimatePresence>
-      {collapsed ? (
-        <MotiView
-          key="collapsed-pill"
-          from={{ opacity: 0, scale: 0.4 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.4 }}
-          transition={{ type: 'spring', damping: 14, mass: 0.5 }}
-          exitTransition={{ type: 'timing', duration: 120 }}
-          style={[styles.activeWorkoutFabWrap, { bottom }]}
-        >
-          {pill}
-        </MotiView>
-      ) : (
-        <MotiView
-          key="expanded-bar"
-          from={{ opacity: 0, scale: 0.92, translateY: 10 }}
-          animate={{ opacity: 1, scale: 1, translateY: 0 }}
-          exit={{ opacity: 0, scale: 0.85, translateX: 46, translateY: 6 }}
-          transition={{ type: 'spring', damping: 16, mass: 0.6 }}
-          exitTransition={{ type: 'timing', duration: 140 }}
-          style={[
-            styles.activeWorkoutBar,
-            {
-              bottom,
-              backgroundColor: colors.surface,
-              borderColor: colors.accent,
-              borderRadius: radius.lg,
-            },
-          ]}
-        >
-          {bar}
-        </MotiView>
-      )}
-    </AnimatePresence>
+  return collapsed ? (
+    <View style={[styles.activeWorkoutFabWrap, { bottom }]}>{pill}</View>
+  ) : (
+    <View
+      style={[
+        styles.activeWorkoutBar,
+        {
+          bottom,
+          backgroundColor: colors.surface,
+          borderColor: colors.accent,
+          borderRadius: radius.lg,
+        },
+      ]}
+    >
+      {bar}
+    </View>
   );
 }
 

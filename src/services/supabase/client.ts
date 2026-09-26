@@ -20,7 +20,9 @@ type CipherEnvelope = {
 
 export class LargeSecureStore {
   private secureKeyName(key: string, keyId: string): string {
-    return `${key}/aes-key/${keyId}`;
+    // SecureStore accepts only alphanumeric characters plus '.', '-' and '_'.
+    // Supabase's own storage key already follows that contract.
+    return `${key}.aes-key.${keyId}`;
   }
 
   private async encrypt(key: string, value: string): Promise<CipherEnvelope> {
