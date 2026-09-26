@@ -2,6 +2,8 @@ import { generateProgram } from '../generator';
 import {
   buildOnboardingPreferences,
   buildOnboardingProfile,
+  defaultEquipmentForEnvironment,
+  fitOnboardingDays,
   validateOnboardingInput,
   type OnboardingInput,
 } from '../onboarding';
@@ -12,8 +14,11 @@ const baseInput: OnboardingInput = {
   goal: 'hypertrophy',
   experience: 'intermediate',
   environment: 'commercial_gym',
+  equipment: defaultEquipmentForEnvironment('commercial_gym'),
   daysPerWeek: 4,
+  preferredDays: [0, 1, 3, 4],
   sessionMinutes: 60,
+  musclePriorities: [],
 };
 
 describe('onboarding', () => {
@@ -34,7 +39,9 @@ describe('onboarding', () => {
     const preferences = buildOnboardingPreferences({
       ...baseInput,
       environment: 'home_gym',
+      equipment: defaultEquipmentForEnvironment('home_gym'),
       daysPerWeek: 3,
+      preferredDays: [0, 2, 4],
       sessionMinutes: 45,
       units: 'lb',
     });
@@ -96,5 +103,38 @@ describe('onboarding', () => {
     });
 
     expect(issues.map((issue) => issue.field)).toEqual(['displayName']);
+  });
+
+  it('preserves exact training days, equipment and muscle priorities', () => {
+    const preferences = buildOnboardingPreferences({
+      ...baseInput,
+      equipment: ['barbell', 'squat_rack', 'bench', 'bodyweight'],
+      preferredDays: [0, 2, 5, 6],
+      musclePriorities: ['back', 'shoulders', 'biceps'],
+    });
+
+    expect(preferences.equipment).toEqual(['barbell', 'squat_rack', 'bench', 'bodyweight']);
+    expect(preferences.preferredDays).toEqual([0, 2, 5, 6]);
+    expect(preferences.musclePriorities).toEqual(['back', 'shoulders', 'biceps']);
+  });
+
+  it('fits schedule changes without duplicate training days', () => {
+    expect(fitOnboardingDays(3, [0, 1, 3, 4])).toEqual([0, 1, 3]);
+    expect(fitOnboardingDays(5, [0, 3])).toEqual([0, 3, 1, 2, 4]);
+  });
+
+  it('rejects incomplete schedules, empty equipment and too many priorities', () => {
+    const issues = validateOnboardingInput({
+      ...baseInput,
+      equipment: [],
+      preferredDays: [0, 1],
+      musclePriorities: ['chest', 'back', 'shoulders', 'biceps'],
+    });
+
+    expect(issues.map((issue) => issue.field)).toEqual([
+      'preferredDays',
+      'equipment',
+      'musclePriorities',
+    ]);
   });
 });

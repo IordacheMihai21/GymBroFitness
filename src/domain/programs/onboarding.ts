@@ -2,7 +2,9 @@ import { ENVIRONMENT_EQUIPMENT } from '@/domain/exercises/catalog';
 import type {
   CoachingTone,
   DayOfWeek,
+  EquipmentType,
   ExperienceLevel,
+  MuscleGroup,
   TrainingEnvironment,
   TrainingGoal,
   TrainingPreferences,
@@ -19,8 +21,11 @@ export type OnboardingInput = {
   goal: TrainingGoal;
   experience: ExperienceLevel;
   environment: Exclude<TrainingEnvironment, 'custom'>;
+  equipment: EquipmentType[];
   daysPerWeek: DaysPerWeek;
+  preferredDays: DayOfWeek[];
   sessionMinutes: SessionMinutes;
+  musclePriorities: MuscleGroup[];
   units: Units;
   coachingTone?: CoachingTone;
 };
@@ -46,6 +51,25 @@ export function validateOnboardingInput(input: OnboardingInput): OnboardingValid
     issues.push({ field: 'displayName', message: 'Use at least 2 characters for your name.' });
   }
 
+  if (input.preferredDays.length !== input.daysPerWeek) {
+    issues.push({
+      field: 'preferredDays',
+      message: `Select exactly ${input.daysPerWeek} training days.`,
+    });
+  }
+
+  if (new Set(input.preferredDays).size !== input.preferredDays.length) {
+    issues.push({ field: 'preferredDays', message: 'Training days must be unique.' });
+  }
+
+  if (input.equipment.length === 0) {
+    issues.push({ field: 'equipment', message: 'Select at least one available equipment type.' });
+  }
+
+  if (input.musclePriorities.length > 3) {
+    issues.push({ field: 'musclePriorities', message: 'Choose up to three priority muscles.' });
+  }
+
   return issues;
 }
 
@@ -67,11 +91,11 @@ export function buildOnboardingPreferences(input: OnboardingInput): TrainingPref
     nutritionContext: 'unknown',
     experience: input.experience,
     environment: input.environment,
-    equipment: ENVIRONMENT_EQUIPMENT[input.environment],
+    equipment: [...input.equipment],
     daysPerWeek: input.daysPerWeek,
-    preferredDays: DEFAULT_DAYS[input.daysPerWeek],
+    preferredDays: [...input.preferredDays],
     sessionMinutes: input.sessionMinutes,
-    musclePriorities: [],
+    musclePriorities: [...input.musclePriorities],
     preferredExerciseSlugs: [],
     dislikedExerciseSlugs: [],
     excludedExerciseSlugs: [],
@@ -79,6 +103,19 @@ export function buildOnboardingPreferences(input: OnboardingInput): TrainingPref
     units: input.units,
     coachingTone: input.coachingTone ?? coachingToneFor(input.experience),
   };
+}
+
+export function defaultEquipmentForEnvironment(
+  environment: OnboardingInput['environment'],
+): EquipmentType[] {
+  return [...ENVIRONMENT_EQUIPMENT[environment]];
+}
+
+export function fitOnboardingDays(daysPerWeek: DaysPerWeek, current: DayOfWeek[]): DayOfWeek[] {
+  const defaults = DEFAULT_DAYS[daysPerWeek];
+  return [...current, ...defaults]
+    .filter((day, index, days) => days.indexOf(day) === index)
+    .slice(0, daysPerWeek);
 }
 
 function coachingToneFor(experience: ExperienceLevel): CoachingTone {

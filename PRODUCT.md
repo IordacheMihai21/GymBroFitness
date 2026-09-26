@@ -8,7 +8,7 @@ adaptive
 
 ## Users
 
-GymBroFitness serves lifters who already train with intent and want a fast, trustworthy way to run hypertrophy-focused gym sessions. It must also work for people who do not care about training terminology and simply want to track what they lifted, beat the right target, and see progress without friction.
+GymBroFitness serves lifters who already understand gym training and want a fast, trustworthy way to run hypertrophy-focused sessions. The product assumes familiarity with sets, reps, RIR, progression and training splits; it explains its own decisions without turning the core experience into beginner education.
 
 ## Product Purpose
 
@@ -24,7 +24,7 @@ The app is used on a phone in the gym, often between sets, with one hand, low pa
 
 ## Capabilities and Constraints
 
-Confirmed capabilities include generated hypertrophy programs, active workout logging, RIR input, rest timer, local SQLite workout history, personal records, analytics, exercise atlas, interactive body map, local settings, and saved workout templates. Authentication, onboarding, Supabase sync, program editing, and import/export are planned but not complete.
+Confirmed capabilities include generated hypertrophy programs, active workout logging, RIR input, rest timer, local SQLite workout history, personal records, analytics, exercise atlas, interactive body map, local settings, saved workout templates, onboarding, program editing (swap/reorder/edit prescriptions), manual backup/restore and CSV import/export, optional email/password authentication, and optional cloud sync/backup via Supabase (opt-in, never required — see PRIVACY.md). Not yet built: in-app/web self-serve account deletion (required by Google Play policy before this ships with real accounts), freemium entitlements, and Play Store submission assets (privacy policy hosting, store listing, signing/build profiles).
 
 ## Brand Commitments
 

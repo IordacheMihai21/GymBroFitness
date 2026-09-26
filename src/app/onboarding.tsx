@@ -1,8 +1,15 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Button, Card, Chip, HelperText, ProgressBar, TextInput } from 'react-native-paper';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
@@ -10,6 +17,8 @@ import { generateProgram } from '@/domain/programs/generator';
 import {
   buildOnboardingPreferences,
   buildOnboardingProfile,
+  defaultEquipmentForEnvironment,
+  fitOnboardingDays,
   validateOnboardingInput,
   type OnboardingInput,
   type OnboardingValidationIssue,
@@ -17,18 +26,29 @@ import {
 import { saveTrainingProfile } from '@/domain/programs/profileStore';
 import { saveActiveProgram } from '@/domain/programs/programStore';
 import { useTheme } from '@/theme';
-import type { ExperienceLevel } from '@/types';
+import {
+  EQUIPMENT_TYPES,
+  PRIORITY_MUSCLES,
+  type DayOfWeek,
+  type EquipmentType,
+  type ExperienceLevel,
+  type MuscleGroup,
+} from '@/types';
 
-const STEPS = ['Profile', 'Training', 'Plan'] as const;
+const STEPS = ['Profile', 'Goal', 'Week', 'Setup', 'Plan'] as const;
 
 const EXPERIENCE_OPTIONS: {
   value: ExperienceLevel;
   title: string;
   detail: string;
 }[] = [
-  { value: 'beginner', title: 'Building base', detail: 'Simple loading, fewer edge cases' },
-  { value: 'intermediate', title: 'Progressive lifter', detail: 'Balanced volume and overload' },
-  { value: 'advanced', title: 'Advanced', detail: 'Tighter RIR and higher skill bias' },
+  { value: 'beginner', title: 'Under 1 year', detail: 'Building consistent technique and loading' },
+  {
+    value: 'intermediate',
+    title: '1–3 years',
+    detail: 'Consistent training with established lifts',
+  },
+  { value: 'advanced', title: '4+ years', detail: 'Stable technique and deliberate programming' },
 ];
 
 const GOAL_OPTIONS: {
@@ -38,18 +58,18 @@ const GOAL_OPTIONS: {
 }[] = [
   {
     value: 'hypertrophy',
-    title: 'Build muscle',
-    detail: 'Moderate-to-high reps with enough weekly volume to grow',
+    title: 'Hypertrophy',
+    detail: 'Growth-biased rep ranges, volume and exercise selection',
   },
   {
     value: 'strength',
-    title: 'Get stronger',
-    detail: 'Lower-rep compound work with longer recovery between sets',
+    title: 'Strength',
+    detail: 'Lower-rep compounds with longer rest periods',
   },
   {
     value: 'mixed',
-    title: 'Strength + muscle',
-    detail: 'Strength-focused compounds and hypertrophy accessories',
+    title: 'Powerbuilding',
+    detail: 'Strength-biased compounds and hypertrophy accessories',
   },
 ];
 
@@ -58,14 +78,44 @@ const ENVIRONMENT_OPTIONS: {
   title: string;
   detail: string;
 }[] = [
-  { value: 'commercial_gym', title: 'Full gym', detail: 'Barbell, machines, cables' },
-  { value: 'home_gym', title: 'Home setup', detail: 'Bench, DBs, pull-up bar' },
-  { value: 'bodyweight', title: 'Minimal', detail: 'Bodyweight and bands' },
+  { value: 'commercial_gym', title: 'Commercial gym', detail: 'Free weights, cables and machines' },
+  { value: 'home_gym', title: 'Home gym', detail: 'Adjustable dumbbells, bench, bar and bands' },
+  { value: 'bodyweight', title: 'Minimal setup', detail: 'Bodyweight, pull-up bar and bands' },
 ];
 
 const DAY_OPTIONS: OnboardingInput['daysPerWeek'][] = [2, 3, 4, 5, 6];
 const SESSION_OPTIONS: OnboardingInput['sessionMinutes'][] = [30, 45, 60, 75, 90];
 const UNIT_OPTIONS: OnboardingInput['units'][] = ['kg', 'lb'];
+const WEEKDAYS: { value: DayOfWeek; short: string; label: string }[] = [
+  { value: 0, short: 'Mon', label: 'Monday' },
+  { value: 1, short: 'Tue', label: 'Tuesday' },
+  { value: 2, short: 'Wed', label: 'Wednesday' },
+  { value: 3, short: 'Thu', label: 'Thursday' },
+  { value: 4, short: 'Fri', label: 'Friday' },
+  { value: 5, short: 'Sat', label: 'Saturday' },
+  { value: 6, short: 'Sun', label: 'Sunday' },
+];
+
+const EQUIPMENT_LABELS: Record<EquipmentType, string> = {
+  barbell: 'Barbell',
+  dumbbell: 'Dumbbells',
+  adjustable_dumbbell: 'Adjustable DBs',
+  bench: 'Flat bench',
+  incline_bench: 'Incline bench',
+  squat_rack: 'Squat rack',
+  pull_up_bar: 'Pull-up bar',
+  dip_station: 'Dip station',
+  cable_machine: 'Cable stack',
+  plate_loaded_machine: 'Plate-loaded',
+  selectorized_machine: 'Selectorized',
+  smith_machine: 'Smith machine',
+  resistance_band: 'Bands',
+  kettlebell: 'Kettlebells',
+  leg_press: 'Leg press',
+  hack_squat: 'Hack squat',
+  ez_bar: 'EZ bar',
+  bodyweight: 'Bodyweight',
+};
 
 export default function OnboardingScreen() {
   const { colors, radius, spacing, typography, elevation } = useTheme();
@@ -77,8 +127,13 @@ export default function OnboardingScreen() {
   const [goal, setGoal] = useState<OnboardingInput['goal']>('hypertrophy');
   const [experience, setExperience] = useState<OnboardingInput['experience']>('intermediate');
   const [environment, setEnvironment] = useState<OnboardingInput['environment']>('commercial_gym');
-  const [daysPerWeek, setDaysPerWeek] = useState<OnboardingInput['daysPerWeek']>(4);
+  const [equipment, setEquipment] = useState<EquipmentType[]>(
+    defaultEquipmentForEnvironment('commercial_gym'),
+  );
+  const [daysPerWeek, setDaysPerWeekState] = useState<OnboardingInput['daysPerWeek']>(4);
+  const [preferredDays, setPreferredDays] = useState<DayOfWeek[]>([0, 1, 3, 4]);
   const [sessionMinutes, setSessionMinutes] = useState<OnboardingInput['sessionMinutes']>(60);
+  const [musclePriorities, setMusclePriorities] = useState<MuscleGroup[]>([]);
   const [issues, setIssues] = useState<OnboardingValidationIssue[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -90,10 +145,24 @@ export default function OnboardingScreen() {
       goal,
       experience,
       environment,
+      equipment,
       daysPerWeek,
+      preferredDays,
       sessionMinutes,
+      musclePriorities,
     }),
-    [daysPerWeek, displayName, environment, experience, goal, sessionMinutes, units],
+    [
+      daysPerWeek,
+      displayName,
+      environment,
+      equipment,
+      experience,
+      goal,
+      musclePriorities,
+      preferredDays,
+      sessionMinutes,
+      units,
+    ],
   );
 
   const previewPreferences = useMemo(() => buildOnboardingPreferences(input), [input]);
@@ -101,17 +170,24 @@ export default function OnboardingScreen() {
     () => generateProgram(previewPreferences, 'preview-user'),
     [previewPreferences],
   );
-
   const progress = (step + 1) / STEPS.length;
+
+  function issuesForCurrentStep(nextIssues: OnboardingValidationIssue[]) {
+    const fields: (keyof OnboardingInput)[][] = [
+      ['displayName'],
+      [],
+      ['preferredDays'],
+      ['equipment', 'musclePriorities'],
+      [],
+    ];
+    return nextIssues.filter((issue) => fields[step].includes(issue.field));
+  }
 
   function advance() {
     setStatus(null);
-    if (step === 0) {
-      const nextIssues = validateOnboardingInput(input);
-      setIssues(nextIssues);
-      if (nextIssues.length > 0) return;
-    }
-    setIssues([]);
+    const nextIssues = issuesForCurrentStep(validateOnboardingInput(input));
+    setIssues(nextIssues);
+    if (nextIssues.length > 0) return;
     setStep((current) => Math.min(current + 1, STEPS.length - 1));
   }
 
@@ -119,6 +195,52 @@ export default function OnboardingScreen() {
     setStatus(null);
     setIssues([]);
     setStep((current) => Math.max(current - 1, 0));
+  }
+
+  function changeDaysPerWeek(value: OnboardingInput['daysPerWeek']) {
+    setDaysPerWeekState(value);
+    setPreferredDays((current) => fitOnboardingDays(value, current));
+  }
+
+  function toggleTrainingDay(day: DayOfWeek) {
+    setStatus(null);
+    setIssues([]);
+    setPreferredDays((current) => {
+      if (current.includes(day)) return current.filter((item) => item !== day);
+      if (current.length >= daysPerWeek) {
+        setStatus(
+          `Remove one day before selecting another. Your plan is set to ${daysPerWeek} days.`,
+        );
+        return current;
+      }
+      return [...current, day].sort((a, b) => a - b);
+    });
+  }
+
+  function selectEnvironment(value: OnboardingInput['environment']) {
+    setEnvironment(value);
+    setEquipment(defaultEquipmentForEnvironment(value));
+    setIssues([]);
+  }
+
+  function toggleEquipment(value: EquipmentType) {
+    setIssues([]);
+    setEquipment((current) =>
+      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
+    );
+  }
+
+  function togglePriority(value: MuscleGroup) {
+    setStatus(null);
+    setIssues([]);
+    setMusclePriorities((current) => {
+      if (current.includes(value)) return current.filter((item) => item !== value);
+      if (current.length >= 3) {
+        setStatus('Choose up to three priority muscles. Remove one before adding another.');
+        return current;
+      }
+      return [...current, value];
+    });
   }
 
   async function createProfile() {
@@ -136,7 +258,7 @@ export default function OnboardingScreen() {
       await saveActiveProgram(program);
       router.replace('/');
     } catch {
-      setStatus('Could not create the training profile. Try another setup.');
+      setStatus('The plan could not be created from this setup. Review equipment and try again.');
     } finally {
       setSaving(false);
     }
@@ -151,8 +273,7 @@ export default function OnboardingScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={{ flex: 1, backgroundColor: colors.background }}
     >
-      <Animated.ScrollView
-        entering={FadeIn.duration(220)}
+      <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
@@ -164,7 +285,9 @@ export default function OnboardingScreen() {
         <View style={styles.topRow}>
           <View style={{ flex: 1 }}>
             <Text style={[typography.caption, { color: colors.textMuted }]}>GymBroFitness</Text>
-            <Text style={[typography.title, { color: colors.textPrimary }]}>Build your plan</Text>
+            <Text style={[typography.title, { color: colors.textPrimary }]}>
+              Build your training block
+            </Text>
           </View>
           <View
             style={[
@@ -212,45 +335,73 @@ export default function OnboardingScreen() {
           ]}
         >
           <Card.Content style={{ gap: spacing.lg }}>
-            <Animated.View key={step} entering={FadeInUp.duration(220)} style={{ gap: spacing.lg }}>
-              {step === 0 ? (
-                <LocalProfileStep
-                  displayName={displayName}
-                  units={units}
-                  setDisplayName={setDisplayName}
-                  setUnits={setUnits}
-                  nameIssue={issueFor('displayName')}
-                />
-              ) : null}
-
-              {step === 1 ? (
-                <TrainingStep
-                  goal={goal}
-                  experience={experience}
-                  environment={environment}
-                  daysPerWeek={daysPerWeek}
-                  sessionMinutes={sessionMinutes}
-                  setGoal={setGoal}
-                  setExperience={setExperience}
-                  setEnvironment={setEnvironment}
-                  setDaysPerWeek={setDaysPerWeek}
-                  setSessionMinutes={setSessionMinutes}
-                />
-              ) : null}
-
-              {step === 2 ? (
-                <ReviewStep
-                  displayName={displayName}
-                  preferences={previewPreferences}
-                  program={previewProgram}
-                />
-              ) : null}
-            </Animated.View>
+            {step === 0 ? (
+              <ProfileStep
+                displayName={displayName}
+                units={units}
+                setDisplayName={setDisplayName}
+                setUnits={setUnits}
+                nameIssue={issueFor('displayName')}
+              />
+            ) : null}
+            {step === 1 ? (
+              <GoalStep
+                goal={goal}
+                experience={experience}
+                setGoal={setGoal}
+                setExperience={setExperience}
+              />
+            ) : null}
+            {step === 2 ? (
+              <ScheduleStep
+                daysPerWeek={daysPerWeek}
+                preferredDays={preferredDays}
+                sessionMinutes={sessionMinutes}
+                setDaysPerWeek={changeDaysPerWeek}
+                toggleTrainingDay={toggleTrainingDay}
+                setSessionMinutes={setSessionMinutes}
+                dayIssue={issueFor('preferredDays')}
+              />
+            ) : null}
+            {step === 3 ? (
+              <SetupStep
+                environment={environment}
+                equipment={equipment}
+                musclePriorities={musclePriorities}
+                selectEnvironment={selectEnvironment}
+                toggleEquipment={toggleEquipment}
+                togglePriority={togglePriority}
+                equipmentIssue={issueFor('equipment')}
+                priorityIssue={issueFor('musclePriorities')}
+              />
+            ) : null}
+            {step === 4 ? (
+              <ReviewStep
+                displayName={displayName}
+                preferences={previewPreferences}
+                program={previewProgram}
+              />
+            ) : null}
           </Card.Content>
         </Card>
 
         {status ? (
-          <Text style={[typography.caption, { color: colors.danger }]}>{status}</Text>
+          <Text
+            accessibilityRole="alert"
+            style={[
+              typography.caption,
+              {
+                color: status.startsWith('The plan') ? colors.danger : colors.warning,
+                backgroundColor: status.startsWith('The plan')
+                  ? colors.dangerSoft
+                  : colors.warningSoft,
+                borderRadius: radius.md,
+                padding: spacing.md,
+              },
+            ]}
+          >
+            {status}
+          </Text>
         ) : null}
 
         <View style={styles.actionRow}>
@@ -269,16 +420,16 @@ export default function OnboardingScreen() {
               loading={saving}
               disabled={saving}
             >
-              Save plan
+              Activate plan
             </Button>
           )}
         </View>
-      </Animated.ScrollView>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-function LocalProfileStep({
+function ProfileStep({
   displayName,
   units,
   setDisplayName,
@@ -296,9 +447,9 @@ function LocalProfileStep({
   return (
     <View style={{ gap: spacing.md }}>
       <SectionHeader
-        eyebrow="Local profile"
-        title="No account required."
-        body="Your profile, plan and workout history stay on this device unless you export them."
+        eyebrow="Local setup"
+        title="Set your training profile."
+        body="No account is required. Your block and workout history are created on this device first."
       />
       <TextInput
         mode="outlined"
@@ -316,78 +467,203 @@ function LocalProfileStep({
         {nameIssue}
       </HelperText>
       <InlineChips
-        label="Units"
+        label="Load units"
         options={UNIT_OPTIONS}
         selected={units}
         onSelect={setUnits}
         format={(value) => value.toUpperCase()}
       />
       <Text style={[typography.caption, { color: colors.textMuted }]}>
-        You can add optional profile details and advanced preferences later in Settings.
+        Advanced preferences remain editable without resetting completed workouts.
       </Text>
     </View>
   );
 }
 
-function TrainingStep({
+function GoalStep({
   goal,
   experience,
-  environment,
-  daysPerWeek,
-  sessionMinutes,
   setGoal,
   setExperience,
-  setEnvironment,
-  setDaysPerWeek,
-  setSessionMinutes,
 }: {
   goal: OnboardingInput['goal'];
   experience: OnboardingInput['experience'];
-  environment: OnboardingInput['environment'];
-  daysPerWeek: OnboardingInput['daysPerWeek'];
-  sessionMinutes: OnboardingInput['sessionMinutes'];
   setGoal: (value: OnboardingInput['goal']) => void;
   setExperience: (value: OnboardingInput['experience']) => void;
-  setEnvironment: (value: OnboardingInput['environment']) => void;
-  setDaysPerWeek: (value: OnboardingInput['daysPerWeek']) => void;
-  setSessionMinutes: (value: OnboardingInput['sessionMinutes']) => void;
 }) {
   const { spacing } = useTheme();
-
   return (
-    <View style={{ gap: spacing.lg }}>
+    <View style={{ gap: spacing.xl }}>
       <SectionHeader
         eyebrow="Training model"
-        title="Set the constraints that change the plan."
-        body="Your goal changes rep ranges and rest. Experience and schedule shape the rest of the plan."
+        title="Define the block, not your identity."
+        body="Goal controls rep ranges and rest. Training age calibrates exercise complexity, starting volume and RIR."
       />
-      <OptionGrid label="Primary goal" options={GOAL_OPTIONS} selected={goal} onSelect={setGoal} />
       <OptionGrid
-        label="Experience"
+        label="Primary objective"
+        options={GOAL_OPTIONS}
+        selected={goal}
+        onSelect={setGoal}
+      />
+      <OptionGrid
+        label="Consistent lifting history"
         options={EXPERIENCE_OPTIONS}
         selected={experience}
         onSelect={setExperience}
       />
-      <OptionGrid
-        label="Environment"
-        options={ENVIRONMENT_OPTIONS}
-        selected={environment}
-        onSelect={setEnvironment}
+    </View>
+  );
+}
+
+function ScheduleStep({
+  daysPerWeek,
+  preferredDays,
+  sessionMinutes,
+  setDaysPerWeek,
+  toggleTrainingDay,
+  setSessionMinutes,
+  dayIssue,
+}: {
+  daysPerWeek: OnboardingInput['daysPerWeek'];
+  preferredDays: DayOfWeek[];
+  sessionMinutes: OnboardingInput['sessionMinutes'];
+  setDaysPerWeek: (value: OnboardingInput['daysPerWeek']) => void;
+  toggleTrainingDay: (value: DayOfWeek) => void;
+  setSessionMinutes: (value: OnboardingInput['sessionMinutes']) => void;
+  dayIssue?: string;
+}) {
+  const { colors, spacing, typography } = useTheme();
+  return (
+    <View style={{ gap: spacing.xl }}>
+      <SectionHeader
+        eyebrow="Weekly structure"
+        title="Make the program fit the week."
+        body="Session length is a hard constraint: optional work is trimmed before the main movements."
       />
       <InlineChips
-        label="Days per week"
+        label="Training frequency"
         options={DAY_OPTIONS}
         selected={daysPerWeek}
         onSelect={setDaysPerWeek}
-        format={(value) => `${value}d`}
+        format={(value) => `${value} days`}
       />
+      <View style={{ gap: spacing.sm }}>
+        <View style={styles.labelRow}>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>Training days</Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            {preferredDays.length}/{daysPerWeek}
+          </Text>
+        </View>
+        <View style={styles.chipRow}>
+          {WEEKDAYS.map((day) => {
+            const active = preferredDays.includes(day.value);
+            return (
+              <Chip
+                key={day.value}
+                compact
+                accessibilityLabel={day.label}
+                selected={active}
+                mode={active ? 'flat' : 'outlined'}
+                onPress={() => toggleTrainingDay(day.value)}
+                style={[
+                  styles.choiceChip,
+                  active ? { backgroundColor: colors.accentSoft } : undefined,
+                ]}
+                textStyle={active ? { color: colors.accent } : undefined}
+              >
+                {day.short}
+              </Chip>
+            );
+          })}
+        </View>
+        <HelperText type="error" visible={Boolean(dayIssue)}>
+          {dayIssue}
+        </HelperText>
+      </View>
       <InlineChips
-        label="Session target"
+        label="Session ceiling"
         options={SESSION_OPTIONS}
         selected={sessionMinutes}
         onSelect={setSessionMinutes}
-        format={(value) => `${value}m`}
+        format={(value) => `${value} min`}
       />
+    </View>
+  );
+}
+
+function SetupStep({
+  environment,
+  equipment,
+  musclePriorities,
+  selectEnvironment,
+  toggleEquipment,
+  togglePriority,
+  equipmentIssue,
+  priorityIssue,
+}: {
+  environment: OnboardingInput['environment'];
+  equipment: EquipmentType[];
+  musclePriorities: MuscleGroup[];
+  selectEnvironment: (value: OnboardingInput['environment']) => void;
+  toggleEquipment: (value: EquipmentType) => void;
+  togglePriority: (value: MuscleGroup) => void;
+  equipmentIssue?: string;
+  priorityIssue?: string;
+}) {
+  const { colors, spacing, typography } = useTheme();
+  return (
+    <View style={{ gap: spacing.xl }}>
+      <SectionHeader
+        eyebrow="Exercise pool"
+        title="Control what can enter the block."
+        body="Start from a gym preset, then keep only the equipment you can reliably use."
+      />
+      <OptionGrid
+        label="Training environment"
+        options={ENVIRONMENT_OPTIONS}
+        selected={environment}
+        onSelect={selectEnvironment}
+      />
+      <View style={{ gap: spacing.sm }}>
+        <View style={styles.labelRow}>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>Equipment</Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            {equipment.length} selected
+          </Text>
+        </View>
+        <ToggleChips
+          options={EQUIPMENT_TYPES}
+          selected={equipment}
+          onToggle={toggleEquipment}
+          format={(value) => EQUIPMENT_LABELS[value]}
+        />
+        <HelperText type="error" visible={Boolean(equipmentIssue)}>
+          {equipmentIssue}
+        </HelperText>
+      </View>
+      <View style={{ gap: spacing.sm }}>
+        <View style={styles.labelRow}>
+          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+            Priority muscles
+          </Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            Optional · {musclePriorities.length}/3
+          </Text>
+        </View>
+        <ToggleChips
+          options={PRIORITY_MUSCLES}
+          selected={musclePriorities}
+          onToggle={togglePriority}
+          format={(value) => MUSCLE_LABELS[value]}
+        />
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          Priorities receive limited extra weekly volume while the rest of the program remains
+          balanced.
+        </Text>
+        <HelperText type="error" visible={Boolean(priorityIssue)}>
+          {priorityIssue}
+        </HelperText>
+      </View>
     </View>
   );
 }
@@ -401,25 +677,37 @@ function ReviewStep({
   preferences: ReturnType<typeof buildOnboardingPreferences>;
   program: ReturnType<typeof generateProgram>;
 }) {
-  const { colors, spacing, typography } = useTheme();
-
+  const { colors, radius, spacing, typography } = useTheme();
+  const scheduledDays = preferences.preferredDays
+    .map((day) => WEEKDAYS.find((option) => option.value === day)?.short)
+    .filter(Boolean)
+    .join(' · ');
   return (
-    <View style={{ gap: spacing.lg }}>
+    <View style={{ gap: spacing.xl }}>
       <SectionHeader
-        eyebrow="Ready"
-        title="Your first block is ready to save."
-        body={`This creates the local profile and activates the generated ${formatGoal(preferences.goal)} plan.`}
+        eyebrow="Block preview"
+        title="Review before activation."
+        body="This is the exact local plan GymBroFitness will activate. You can edit its days and exercises later without rewriting history."
       />
       <View style={styles.summaryGrid}>
         <SummaryCell label="profile" value={displayName.trim()} />
         <SummaryCell label="split" value={program.name} />
-        <SummaryCell label="goal" value={formatGoal(preferences.goal)} />
-        <SummaryCell label="schedule" value={`${preferences.daysPerWeek}d/wk`} />
-        <SummaryCell label="session" value={`${preferences.sessionMinutes} min`} />
+        <SummaryCell label="objective" value={formatGoal(preferences.goal)} />
+        <SummaryCell label="training age" value={formatExperience(preferences.experience)} />
+        <SummaryCell label="schedule" value={scheduledDays} />
+        <SummaryCell label="session ceiling" value={`${preferences.sessionMinutes} min`} />
+      </View>
+      <View
+        style={[styles.rationale, { backgroundColor: colors.accentSoft, borderRadius: radius.lg }]}
+      >
+        <Text style={[typography.captionBold, { color: colors.accent }]}>Why this block</Text>
+        <Text style={[typography.caption, { color: colors.textSecondary }]}>
+          {program.rationale}
+        </Text>
       </View>
       <View style={{ gap: spacing.sm }}>
         <Text style={[typography.captionBold, { color: colors.textPrimary }]}>Generated week</Text>
-        {program.days.map((day) => (
+        {program.days.map((day, index) => (
           <View
             key={day.id}
             style={[
@@ -427,18 +715,28 @@ function ReviewStep({
               { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
             ]}
           >
+            <View style={styles.dayIndex}>
+              <Text style={[typography.captionBold, { color: colors.accent }]}>{index + 1}</Text>
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{day.name}</Text>
               <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {
+                  WEEKDAYS.find((option) => option.value === preferences.preferredDays[index])
+                    ?.label
+                }
+                {' · '}
                 {day.focus.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}
               </Text>
             </View>
-            <Text style={[typography.captionBold, { color: colors.accent }]}>
-              {day.prescriptions.length} ex
-            </Text>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              {day.estimatedMinutes}m
-            </Text>
+            <View style={styles.dayMeta}>
+              <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+                {day.prescriptions.length} exercises
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                ~{day.estimatedMinutes} min
+              </Text>
+            </View>
           </View>
         ))}
       </View>
@@ -447,14 +745,17 @@ function ReviewStep({
 }
 
 function formatGoal(goal: OnboardingInput['goal']): string {
-  if (goal === 'hypertrophy') return 'muscle-building';
-  if (goal === 'strength') return 'strength';
-  return 'strength + muscle';
+  if (goal === 'hypertrophy') return 'Hypertrophy';
+  if (goal === 'strength') return 'Strength';
+  return 'Powerbuilding';
+}
+
+function formatExperience(experience: ExperienceLevel): string {
+  return EXPERIENCE_OPTIONS.find((option) => option.value === experience)?.title ?? experience;
 }
 
 function SectionHeader({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) {
   const { colors, typography } = useTheme();
-
   return (
     <View style={{ gap: 6 }}>
       <Text style={[typography.micro, { color: colors.accent }]}>{eyebrow}</Text>
@@ -476,7 +777,6 @@ function OptionGrid<T extends string>({
   onSelect: (value: T) => void;
 }) {
   const { colors, spacing, typography } = useTheme();
-
   return (
     <View style={{ gap: spacing.sm }}>
       <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{label}</Text>
@@ -486,11 +786,17 @@ function OptionGrid<T extends string>({
           return (
             <Pressable
               key={option.value}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: active }}
               onPress={() => onSelect(option.value)}
-              style={[
+              style={({ pressed }) => [
                 styles.optionRow,
                 {
-                  backgroundColor: active ? colors.accentSoft : colors.surfaceRaised,
+                  backgroundColor: pressed
+                    ? colors.surfacePressed
+                    : active
+                      ? colors.accentSoft
+                      : colors.surfaceRaised,
                   borderColor: active ? colors.accent : colors.border,
                 },
               ]}
@@ -539,14 +845,13 @@ function InlineChips<T extends string | number>({
   format?: (value: T) => string;
 }) {
   const { colors, typography } = useTheme();
-
   return (
     <View style={{ gap: 8 }}>
       <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{label}</Text>
       <View style={styles.chipRow}>
         {options.map((option) => (
           <Chip
-            key={option}
+            key={String(option)}
             compact
             selected={selected === option}
             mode={selected === option ? 'flat' : 'outlined'}
@@ -565,26 +870,52 @@ function InlineChips<T extends string | number>({
   );
 }
 
+function ToggleChips<T extends string>({
+  options,
+  selected,
+  onToggle,
+  format,
+}: {
+  options: readonly T[];
+  selected: T[];
+  onToggle: (value: T) => void;
+  format: (value: T) => string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.chipRow}>
+      {options.map((option) => {
+        const active = selected.includes(option);
+        return (
+          <Chip
+            key={option}
+            compact
+            selected={active}
+            mode={active ? 'flat' : 'outlined'}
+            onPress={() => onToggle(option)}
+            style={[styles.choiceChip, active ? { backgroundColor: colors.accentSoft } : undefined]}
+            textStyle={active ? { color: colors.accent } : undefined}
+          >
+            {format(option)}
+          </Chip>
+        );
+      })}
+    </View>
+  );
+}
+
 function SummaryCell({ label, value }: { label: string; value: string }) {
   const { colors, typography } = useTheme();
-
   return (
     <View style={[styles.summaryCell, { backgroundColor: colors.surfaceRaised }]}>
       <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-        {value}
-      </Text>
+      <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   stepBadge: {
     minWidth: 52,
     minHeight: 38,
@@ -593,18 +924,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
   },
-  stepLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  progress: {
-    height: 5,
-    borderRadius: 999,
-  },
-  heroCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
+  stepLabels: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  progress: { height: 5, borderRadius: 999 },
+  heroCard: { borderWidth: StyleSheet.hairlineWidth },
   actionRow: {
     minHeight: 52,
     flexDirection: 'row',
@@ -618,40 +940,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  radioDot: {
-    width: 16,
-    height: 16,
-    borderWidth: 2,
-    borderRadius: 999,
-  },
-  chipRow: {
+  radioDot: { width: 16, height: 16, borderWidth: 2, borderRadius: 999 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  choiceChip: { minHeight: 48, justifyContent: 'center' },
+  labelRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  choiceChip: {
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   summaryCell: {
-    width: '48%',
-    minHeight: 56,
+    flexGrow: 1,
+    flexBasis: '47%',
+    minHeight: 62,
     borderRadius: 14,
     justifyContent: 'center',
     gap: 4,
     padding: 12,
   },
+  rationale: { gap: 6, padding: 14 },
   dayRow: {
-    minHeight: 64,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -660,4 +974,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
+  dayIndex: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  dayMeta: { alignItems: 'flex-end', gap: 2 },
 });

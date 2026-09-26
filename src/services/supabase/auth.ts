@@ -36,6 +36,18 @@ export async function signOut(): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Permanently deletes the signed-in user's account via the `delete_own_account`
+ * Postgres function (SECURITY DEFINER, scoped to auth.uid() with no parameter
+ * — see the `self_service_account_deletion` migration). This only removes the
+ * server-side account; callers must also sign out locally afterward, since a
+ * deleted user's existing JWT can remain technically valid until it expires.
+ */
+export async function deleteOwnAccount(): Promise<void> {
+  const { error } = await requireClient().rpc('delete_own_account');
+  if (error) throw error;
+}
+
 export async function getCurrentSession(): Promise<Session | null> {
   const client = getSupabaseClient();
   if (!client) return null;

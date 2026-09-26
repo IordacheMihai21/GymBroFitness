@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '../client';
 import {
+  deleteOwnAccount,
   getCurrentSession,
   signInWithEmail,
   signOut,
@@ -68,6 +69,25 @@ describe('supabase auth wrappers', () => {
   it('resolves signOut as a no-op when sync is not configured', async () => {
     mockedGetClient.mockReturnValue(null);
     await expect(signOut()).resolves.toBeUndefined();
+  });
+
+  it('throws a clear error from deleteOwnAccount when sync is not configured', async () => {
+    mockedGetClient.mockReturnValue(null);
+    await expect(deleteOwnAccount()).rejects.toThrow('Sync is not configured');
+  });
+
+  it('calls the delete_own_account RPC and resolves on success', async () => {
+    const rpc = jest.fn().mockResolvedValue({ error: null });
+    mockedGetClient.mockReturnValue({ rpc });
+    await expect(deleteOwnAccount()).resolves.toBeUndefined();
+    expect(rpc).toHaveBeenCalledWith('delete_own_account');
+  });
+
+  it('rejects with the underlying error from deleteOwnAccount on failure', async () => {
+    const rpcError = new Error('permission denied');
+    const rpc = jest.fn().mockResolvedValue({ error: rpcError });
+    mockedGetClient.mockReturnValue({ rpc });
+    await expect(deleteOwnAccount()).rejects.toThrow('permission denied');
   });
 
   it('returns null from getCurrentSession when sync is not configured', async () => {

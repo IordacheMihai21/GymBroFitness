@@ -12,7 +12,7 @@ import {
 
 import { useSupabaseSession } from '@/hooks/useSupabaseSession';
 import { isSupabaseConfigured } from '@/services/supabase/client';
-import { signInWithEmail, signOut, signUpWithEmail } from '@/services/supabase/auth';
+import { deleteOwnAccount, signInWithEmail, signOut, signUpWithEmail } from '@/services/supabase/auth';
 import {
   clearLocalSyncMarker,
   inspectCloudSync,
@@ -75,6 +75,8 @@ function SignedInRow({ userId, email }: { userId: string; email: string }) {
     CloudSyncInspection,
     { action: 'confirm_remote' }
   > | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   function finishSync(action: 'pushed' | 'pulled') {
     setSyncMessage(
@@ -121,6 +123,21 @@ function SignedInRow({ userId, email }: { userId: string; email: string }) {
     }
   }
 
+  async function confirmDeleteAccount() {
+    setDeletingAccount(true);
+    setError(null);
+    try {
+      await deleteOwnAccount();
+      await clearLocalSyncMarker(userId);
+      await signOut();
+      setDeleteConfirmOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete account.');
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
   return (
     <View style={{ gap: spacing.sm }}>
       <Text style={[typography.body, { color: colors.textPrimary }]}>Signed in as {email}</Text>
@@ -157,6 +174,43 @@ function SignedInRow({ userId, email }: { userId: string; email: string }) {
       >
         Sign out
       </Button>
+      <Button
+        mode="text"
+        textColor={colors.danger}
+        disabled={signingOut || syncing || deletingAccount}
+        onPress={() => setDeleteConfirmOpen(true)}
+      >
+        Delete account
+      </Button>
+
+      <Portal>
+        <Dialog visible={deleteConfirmOpen} onDismiss={() => setDeleteConfirmOpen(false)}>
+          <Dialog.Icon icon="alert-circle-outline" />
+          <Dialog.Title>Delete your account?</Dialog.Title>
+          <Dialog.Content style={{ gap: spacing.sm }}>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>
+              This permanently deletes your account ({email}) and your cloud backup. Workout data
+              already saved on this device is not affected.
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              This cannot be undone.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setDeleteConfirmOpen(false)} disabled={deletingAccount}>
+              Cancel
+            </Button>
+            <Button
+              textColor={colors.danger}
+              loading={deletingAccount}
+              disabled={deletingAccount}
+              onPress={() => void confirmDeleteAccount()}
+            >
+              Delete account
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       <Portal>
         <Dialog visible={pendingRestore != null} onDismiss={() => setPendingRestore(null)}>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Text } from 'react-native';
-import { Button, Dialog, IconButton, Portal } from 'react-native-paper';
+import { Pressable, Text } from 'react-native';
+import { Button, Dialog, Icon, Portal } from 'react-native-paper';
 
 import { glossaryTerm, type GlossaryTermKey } from '@/domain/glossary/terms';
 import { useTheme } from '@/theme';
@@ -17,13 +17,15 @@ export function InfoHint({ term }: InfoHintProps) {
 
   return (
     <>
-      <IconButton
-        icon="information-outline"
-        size={16}
-        style={{ margin: 0, marginLeft: -4 }}
+      <Pressable
         onPress={() => setVisible(true)}
+        hitSlop={12}
+        style={{ padding: 4 }}
+        accessibilityRole="button"
         accessibilityLabel={`What does ${entry.label} mean?`}
-      />
+      >
+        <Icon source="information-outline" size={16} color={colors.textMuted} />
+      </Pressable>
       <Portal>
         <Dialog visible={visible} onDismiss={() => setVisible(false)}>
           <Dialog.Title>{entry.label}</Dialog.Title>

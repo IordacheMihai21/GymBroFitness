@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Delete your GymBroFitness account</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0A0D14;
+    color: #E7EAF0;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px 64px;
+  }
+  main { width: 100%; max-width: 440px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  p.lede { color: #98A2B3; margin-top: 0; line-height: 1.5; }
+  label { display: block; font-size: 13px; color: #98A2B3; margin: 16px 0 6px; }
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #262B36;
+    background: #11151D;
+    color: #E7EAF0;
+    font-size: 15px;
+  }
+  button {
+    width: 100%;
+    margin-top: 22px;
+    padding: 13px 14px;
+    border-radius: 12px;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #deleteBtn { background: #E5484D; color: white; }
+  #deleteBtn:disabled { opacity: 0.5; cursor: default; }
+  #status {
+    margin-top: 18px;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 12px 14px;
+    border-radius: 10px;
+    display: none;
+  }
+  #status.show { display: block; }
+  #status.error { background: rgba(229,72,77,0.12); color: #FF8A8F; }
+  #status.success { background: rgba(52,199,89,0.12); color: #6FE39B; }
+  #status.info { background: rgba(77,150,255,0.12); color: #7FB2FF; }
+  .fine { font-size: 12px; color: #667085; margin-top: 28px; line-height: 1.5; }
+  a { color: #7FB2FF; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Delete your account</h1>
+  <p class="lede">
+    Sign in with your GymBroFitness account below to permanently delete it and your synced
+    cloud backup. This does not affect any workout data stored locally on your own device.
+  </p>
+
+  <form id="deleteForm">
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" required />
+
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required />
+
+    <button id="deleteBtn" type="submit">Delete my account</button>
+  </form>
+
+  <div id="status"></div>
+
+  <p class="fine">
+    Prefer not to enter your password here? Email
+    <a href="mailto:INSERT_SUPPORT_EMAIL">INSERT_SUPPORT_EMAIL</a> from the address on your
+    account and we'll delete it for you. See the <a href="./PRIVACY.md">privacy policy</a> for
+    what's stored and for how long.
+  </p>
+</main>
+
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+  const supabase = createClient(
+    'https://ddyqwuiqgdrjicsweite.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeXF3dWlxZ2Ryamljc3dlaXRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MzA4OTIsImV4cCI6MjEwNjAwNjg5Mn0.Qc3H6FK4R31WlV27JAWYxHrEGbaqDukntY7HLH_NTPs',
+  );
+
+  const form = document.getElementById('deleteForm');
+  const button = document.getElementById('deleteBtn');
+  const status = document.getElementById('status');
+
+  function showStatus(kind, message) {
+    status.className = `show ${kind}`;
+    status.textContent = message;
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    if (!confirm('This permanently deletes your GymBroFitness account and cloud backup. This cannot be undone. Continue?')) {
+      return;
+    }
+
+    button.disabled = true;
+    showStatus('info', 'Signing in…');
+
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInError || !signInData.session) {
+      showStatus('error', signInError?.message ?? 'Could not sign in with those credentials.');
+      button.disabled = false;
+      return;
+    }
+
+    showStatus('info', 'Deleting your account…');
+    const { error: deleteError } = await supabase.rpc('delete_own_account');
+
+    if (deleteError) {
+      showStatus('error', deleteError.message ?? 'Could not delete the account. Please try again or email support.');
+      button.disabled = false;
+      return;
+    }
+
+    await supabase.auth.signOut();
+    showStatus('success', 'Your account and cloud backup have been deleted.');
+    form.reset();
+    button.disabled = false;
+  });
+</script>
+</body>
+</html>
