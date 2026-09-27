@@ -18,4 +18,13 @@ describe('pose model error copy', () => {
       'latest native build',
     );
   });
+
+  it('reports an embedded Android asset resolution failure as a model file problem', () => {
+    const message = describePoseModelError(
+      new Error('java.net.MalformedURLException: no protocol: assets_models_movenetlightningint8'),
+      false,
+    );
+    expect(message).toContain('on-device model file');
+    expect(message).not.toContain('native module');
+  });
 });

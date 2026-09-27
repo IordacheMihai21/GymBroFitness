@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Asset } from 'expo-asset';
 import { loadTensorflowModel, type TensorflowModel } from 'react-native-fast-tflite';
 
 // MoveNet Lightning (int8), TF Hub google/movenet/singlepose/lightning/tflite/int8/4,
@@ -36,7 +37,7 @@ export function usePoseModel(): PoseModelPlugin {
   useEffect(() => {
     let active = true;
 
-    loadTensorflowModel(MOVENET_MODEL, [])
+    loadBundledPoseModel()
       .then((model) => {
         if (active) setModelState({ state: 'loaded', model, error: undefined });
       })
@@ -56,6 +57,26 @@ export function usePoseModel(): PoseModelPlugin {
     setAttempt((current) => current + 1);
   }, []);
   return { ...modelState, retry };
+}
+
+/**
+ * Materialize Metro's bundled model into a real local file before handing it
+ * to fast-tflite. In Android release builds, Image.resolveAssetSource() can
+ * resolve a non-image resource to a bare name such as
+ * `assets_models_movenetlightningint8`; fast-tflite treats that value as a URL
+ * and fails with "no protocol". Expo Asset understands Android resources and
+ * copies the embedded model to the app cache, producing the file:// URI the
+ * native loader expects.
+ */
+async function loadBundledPoseModel(): Promise<TensorflowModel> {
+  const asset = Asset.fromModule(MOVENET_MODEL);
+  await asset.downloadAsync();
+
+  if (!asset.localUri) {
+    throw new Error('The bundled pose model could not be materialized to a local file.');
+  }
+
+  return loadTensorflowModel({ url: asset.localUri }, []);
 }
 
 function normalizeModelError(value: unknown): Error {
