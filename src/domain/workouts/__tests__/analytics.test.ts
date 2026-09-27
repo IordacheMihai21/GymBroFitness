@@ -52,6 +52,13 @@ describe('volumeLoadKg with sub-efforts', () => {
   it('matches the pre-existing behavior when there are no sub-efforts', () => {
     expect(volumeLoadKg([makeSet()])).toBe(800);
   });
+
+  it('excludes warm-ups while counting completed failure sets as working volume', () => {
+    const warmup = makeSet({ id: 'warmup', kind: 'warmup', loadKg: 40, reps: 10 });
+    const failure = makeSet({ id: 'failure', kind: 'failure', loadKg: 80, reps: 9, rir: null });
+
+    expect(volumeLoadKg([warmup, failure])).toBe(720);
+  });
 });
 
 describe('detectPersonalRecords with sub-efforts', () => {

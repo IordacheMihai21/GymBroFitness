@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { IconButton, Menu, TextInput } from 'react-native-paper';
+import { Divider, IconButton, Menu, TextInput } from 'react-native-paper';
 
 import { formatPlateBreakdown, plateBreakdown } from '@/domain/workouts/plateMath';
 import { formatRir } from '@/domain/workouts/rir';
@@ -8,6 +8,7 @@ import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
 import type {
   EquipmentType,
   PerformedSet,
+  SetKind,
   SetTechnique,
   SubEffort,
   TrackingType,
@@ -47,6 +48,20 @@ const TECHNIQUE_ADD_LABEL: Record<SetTechnique, string> = {
   myo_reps: 'Add cluster',
   cluster_set: 'Add cluster',
   top_backoff: 'Add backoff',
+};
+
+const SET_KINDS: SetKind[] = ['working', 'warmup', 'failure'];
+
+const SET_KIND_LABELS: Record<SetKind, string> = {
+  working: 'Working set',
+  warmup: 'Warm-up set',
+  failure: 'To failure',
+};
+
+/** Short badge text for a non-default set kind; omitted entirely for 'working'. */
+const SET_KIND_BADGE: Partial<Record<SetKind, string>> = {
+  warmup: 'Warm-up',
+  failure: 'Failure',
 };
 
 type SetRowProps = {
@@ -119,6 +134,7 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
   const supportsReps = trackingType !== 'time';
   const supportsTechniques =
     trackingType === 'weight_reps' || trackingType === 'weighted_bodyweight';
+  const hasSetActions = Boolean(onCopyPrevious || onCopyToRemaining || onToggleSkip);
 
   useImperativeHandle(
     ref,
@@ -133,6 +149,11 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
   function selectTechnique(next: SetTechnique) {
     setMenuVisible(false);
     onChange({ technique: next, subEfforts: next === 'standard' ? [] : subEfforts });
+  }
+
+  function selectKind(next: SetKind) {
+    setMenuVisible(false);
+    onChange(next === 'failure' ? { kind: next, rir: 0 } : { kind: next });
   }
 
   function addSubEffort() {
@@ -177,9 +198,32 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
         </View>
         <View style={styles.setMeta}>
           <View style={styles.setTitleRow}>
-            <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
+            <Text
+              style={[typography.micro, styles.previousLabel, { color: colors.textMuted }]}
+              numberOfLines={1}
+            >
               {previousLabel ?? 'No previous set'}
             </Text>
+            {SET_KIND_BADGE[set.kind] ? (
+              <View
+                style={[
+                  styles.techniqueBadge,
+                  {
+                    backgroundColor:
+                      set.kind === 'failure' ? colors.warningSoft : colors.surfacePressed,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    typography.micro,
+                    { color: set.kind === 'failure' ? colors.warning : colors.textSecondary },
+                  ]}
+                >
+                  {SET_KIND_BADGE[set.kind]}
+                </Text>
+              </View>
+            ) : null}
             {technique !== 'standard' ? (
               <View style={[styles.techniqueBadge, { backgroundColor: colors.accentSoft }]}>
                 <Text style={[typography.micro, { color: colors.accent }]}>
@@ -199,62 +243,77 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
         </View>
 
         <View style={styles.actionGroup}>
-          {supportsTechniques || onCopyPrevious || onCopyToRemaining || onToggleSkip ? (
-            <Menu
-              visible={menuVisible}
-              onDismiss={() => setMenuVisible(false)}
-              anchor={
-                <IconButton
-                  icon="dots-horizontal"
-                  mode={technique !== 'standard' ? 'contained' : 'contained-tonal'}
-                  size={16}
-                  onPress={() => setMenuVisible(true)}
-                  disabled={menuLocked}
-                  style={styles.compactButton}
-                />
-              }
-            >
-              {onCopyPrevious ? (
-                <Menu.Item
-                  onPress={copyPrevious}
-                  title="Copy previous set"
-                  leadingIcon="content-copy"
-                />
-              ) : null}
-              {onCopyToRemaining ? (
-                <Menu.Item
-                  onPress={() => {
-                    setMenuVisible(false);
-                    onCopyToRemaining();
-                  }}
-                  title="Apply to remaining sets"
-                  leadingIcon="playlist-edit"
-                  disabled={set.skipped}
-                />
-              ) : null}
-              {onToggleSkip ? (
-                <Menu.Item
-                  onPress={() => {
-                    setMenuVisible(false);
-                    onToggleSkip();
-                  }}
-                  title={set.skipped ? 'Restore set' : 'Skip set'}
-                  leadingIcon={set.skipped ? 'backup-restore' : 'skip-next-outline'}
-                />
-              ) : null}
-              {supportsTechniques
-                ? TECHNIQUES.map((item) => (
-                    <Menu.Item
-                      key={item}
-                      onPress={() => selectTechnique(item)}
-                      title={TECHNIQUE_LABELS[item]}
-                      leadingIcon={item === technique ? 'check' : undefined}
-                      disabled={set.skipped}
-                    />
-                  ))
-                : null}
-            </Menu>
-          ) : null}
+          <Menu
+            visible={menuVisible}
+            onDismiss={() => setMenuVisible(false)}
+            anchor={
+              <IconButton
+                icon="dots-horizontal"
+                mode={
+                  technique !== 'standard' || set.kind !== 'working'
+                    ? 'contained'
+                    : 'contained-tonal'
+                }
+                size={16}
+                onPress={() => setMenuVisible(true)}
+                disabled={menuLocked}
+                accessibilityLabel={`Set ${set.setNumber} options`}
+                accessibilityState={{ expanded: menuVisible }}
+                style={styles.compactButton}
+              />
+            }
+          >
+            {onCopyPrevious ? (
+              <Menu.Item
+                onPress={copyPrevious}
+                title="Copy previous set"
+                leadingIcon="content-copy"
+              />
+            ) : null}
+            {onCopyToRemaining ? (
+              <Menu.Item
+                onPress={() => {
+                  setMenuVisible(false);
+                  onCopyToRemaining();
+                }}
+                title="Apply to remaining sets"
+                leadingIcon="playlist-edit"
+                disabled={set.skipped}
+              />
+            ) : null}
+            {onToggleSkip ? (
+              <Menu.Item
+                onPress={() => {
+                  setMenuVisible(false);
+                  onToggleSkip();
+                }}
+                title={set.skipped ? 'Restore set' : 'Skip set'}
+                leadingIcon={set.skipped ? 'backup-restore' : 'skip-next-outline'}
+              />
+            ) : null}
+            {hasSetActions ? <Divider /> : null}
+            {SET_KINDS.map((item) => (
+              <Menu.Item
+                key={item}
+                onPress={() => selectKind(item)}
+                title={SET_KIND_LABELS[item]}
+                leadingIcon={item === set.kind ? 'check' : undefined}
+                disabled={set.skipped}
+              />
+            ))}
+            {supportsTechniques ? <Divider /> : null}
+            {supportsTechniques
+              ? TECHNIQUES.map((item) => (
+                  <Menu.Item
+                    key={item}
+                    onPress={() => selectTechnique(item)}
+                    title={TECHNIQUE_LABELS[item]}
+                    leadingIcon={item === technique ? 'check' : undefined}
+                    disabled={set.skipped}
+                  />
+                ))
+              : null}
+          </Menu>
 
           <IconButton
             icon={set.skipped ? 'skip-next-outline' : 'check'}
@@ -466,7 +525,12 @@ const styles = StyleSheet.create({
   setTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
+  },
+  previousLabel: {
+    minWidth: 0,
+    flexShrink: 1,
   },
   techniqueBadge: {
     borderRadius: 999,

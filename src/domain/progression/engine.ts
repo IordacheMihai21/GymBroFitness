@@ -53,7 +53,9 @@ function measure(
   if (working.length === 0) return null;
   const efforts = working.map((s) => effortValue(s, isTime));
   const loads = working.map((s) => s.loadKg ?? 0);
-  const rirs = working.map((s) => s.rir).filter((r): r is number => r != null);
+  const rirs = working
+    .map((s) => (s.kind === 'failure' ? 0 : s.rir))
+    .filter((r): r is number => r != null);
   const first = efforts[0];
   const last = efforts[efforts.length - 1];
   return {
@@ -66,7 +68,7 @@ function measure(
     setsBelowFloor: efforts.filter((r) => r < minTarget).length,
     avgRir: rirs.length > 0 ? rirs.reduce((a, b) => a + b, 0) / rirs.length : null,
     rirCount: rirs.length,
-    hitFailure: rirs.some((r) => r === 0),
+    hitFailure: working.some((set) => set.kind === 'failure') || rirs.some((r) => r === 0),
     sharpIntrasetDrop: working.length >= 2 && first > 0 && last / first < 0.6,
   };
 }

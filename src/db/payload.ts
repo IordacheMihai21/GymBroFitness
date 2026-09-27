@@ -34,7 +34,7 @@ const performedSetSchema = z
   .object({
     id: z.string().min(1),
     setNumber: z.number().int().positive(),
-    kind: z.string(),
+    kind: z.enum(['warmup', 'working', 'failure']),
     loadKg: z.number().nullable(),
     reps: z.number().nullable(),
     durationSeconds: z.number().nullable(),

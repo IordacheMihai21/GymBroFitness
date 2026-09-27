@@ -59,7 +59,7 @@ describe('workout_sessions table', () => {
             {
               id: 'set-1',
               setNumber: 1,
-              kind: 'working',
+              kind: 'failure',
               loadKg: 100,
               reps: 8,
               durationSeconds: null,
@@ -97,6 +97,7 @@ describe('workout_sessions table', () => {
     expect(decoded.ok && decoded.data.exercises[0].sets[0].subEfforts).toEqual([
       { loadKg: 80, reps: 6, restSeconds: 0 },
     ]);
+    expect(decoded.ok && decoded.data.exercises[0].sets[0].kind).toBe('failure');
     expect(decoded.ok && decoded.data.readiness).toEqual(session.readiness);
   });
 

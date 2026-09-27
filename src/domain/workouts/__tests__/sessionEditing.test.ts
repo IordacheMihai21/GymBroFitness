@@ -70,6 +70,14 @@ describe('workout session editing', () => {
     expect(patchWorkoutSet(paused, 0, 0, { reps: 10 })).toBe(paused);
   });
 
+  it('persists a set-kind edit in the immutable session snapshot', () => {
+    const original = session();
+    const patched = patchWorkoutSet(original, 0, 0, { kind: 'warmup' });
+
+    expect(patched.exercises[0].sets[0].kind).toBe('warmup');
+    expect(original.exercises[0].sets[0].kind).toBe('working');
+  });
+
   it('validates, completes, starts rest and navigates using the updated session', () => {
     const now = new Date('2026-09-20T10:00:00.000Z');
     const result = toggleWorkoutSetCompletion(session(), 0, 0, 'weight_reps', now);
