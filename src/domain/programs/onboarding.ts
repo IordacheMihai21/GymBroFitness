@@ -115,7 +115,8 @@ export function fitOnboardingDays(daysPerWeek: DaysPerWeek, current: DayOfWeek[]
   const defaults = DEFAULT_DAYS[daysPerWeek];
   return [...current, ...defaults]
     .filter((day, index, days) => days.indexOf(day) === index)
-    .slice(0, daysPerWeek);
+    .slice(0, daysPerWeek)
+    .sort((a, b) => a - b);
 }
 
 function coachingToneFor(experience: ExperienceLevel): CoachingTone {

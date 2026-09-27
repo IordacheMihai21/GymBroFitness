@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
@@ -121,6 +121,7 @@ export default function OnboardingScreen() {
   const { colors, radius, spacing, typography, elevation } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const scrollRef = useRef<ScrollView>(null);
   const [step, setStep] = useState(0);
   const [displayName, setDisplayName] = useState('');
   const [units, setUnits] = useState<OnboardingInput['units']>('kg');
@@ -137,6 +138,10 @@ export default function OnboardingScreen() {
   const [issues, setIssues] = useState<OnboardingValidationIssue[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [step]);
 
   const input = useMemo<OnboardingInput>(
     () => ({
@@ -166,10 +171,19 @@ export default function OnboardingScreen() {
   );
 
   const previewPreferences = useMemo(() => buildOnboardingPreferences(input), [input]);
-  const previewProgram = useMemo(
-    () => generateProgram(previewPreferences, 'preview-user'),
-    [previewPreferences],
-  );
+  const preview = useMemo(() => {
+    try {
+      return {
+        program: generateProgram(previewPreferences, 'preview-user'),
+        error: null,
+      };
+    } catch {
+      return {
+        program: null,
+        error: 'The plan needs a broader equipment selection before it can be generated.',
+      };
+    }
+  }, [previewPreferences]);
   const progress = (step + 1) / STEPS.length;
 
   function issuesForCurrentStep(nextIssues: OnboardingValidationIssue[]) {
@@ -188,6 +202,10 @@ export default function OnboardingScreen() {
     const nextIssues = issuesForCurrentStep(validateOnboardingInput(input));
     setIssues(nextIssues);
     if (nextIssues.length > 0) return;
+    if (step === 3 && preview.error) {
+      setStatus(preview.error);
+      return;
+    }
     setStep((current) => Math.min(current + 1, STEPS.length - 1));
   }
 
@@ -224,10 +242,16 @@ export default function OnboardingScreen() {
   }
 
   function toggleEquipment(value: EquipmentType) {
+    setStatus(null);
     setIssues([]);
-    setEquipment((current) =>
-      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
-    );
+    setEquipment((current) => {
+      if (!current.includes(value)) return [...current, value];
+      if (current.length === 1) {
+        setStatus('Keep at least one equipment option selected.');
+        return current;
+      }
+      return current.filter((item) => item !== value);
+    });
   }
 
   function togglePriority(value: MuscleGroup) {
@@ -274,6 +298,7 @@ export default function OnboardingScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
     >
       <ScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
@@ -375,11 +400,11 @@ export default function OnboardingScreen() {
                 priorityIssue={issueFor('musclePriorities')}
               />
             ) : null}
-            {step === 4 ? (
+            {step === 4 && preview.program ? (
               <ReviewStep
                 displayName={displayName}
                 preferences={previewPreferences}
-                program={previewProgram}
+                program={preview.program}
               />
             ) : null}
           </Card.Content>
@@ -538,7 +563,7 @@ function ScheduleStep({
       <SectionHeader
         eyebrow="Weekly structure"
         title="Make the program fit the week."
-        body="Session length is a hard constraint: optional work is trimmed before the main movements."
+        body="Session length guides the exercise budget. Estimates can vary with priorities, rest and exercise availability."
       />
       <InlineChips
         label="Training frequency"
@@ -581,7 +606,7 @@ function ScheduleStep({
         </HelperText>
       </View>
       <InlineChips
-        label="Session ceiling"
+        label="Session target"
         options={SESSION_OPTIONS}
         selected={sessionMinutes}
         onSelect={setSessionMinutes}
@@ -695,7 +720,7 @@ function ReviewStep({
         <SummaryCell label="objective" value={formatGoal(preferences.goal)} />
         <SummaryCell label="training age" value={formatExperience(preferences.experience)} />
         <SummaryCell label="schedule" value={scheduledDays} />
-        <SummaryCell label="session ceiling" value={`${preferences.sessionMinutes} min`} />
+        <SummaryCell label="session target" value={`${preferences.sessionMinutes} min`} />
       </View>
       <View
         style={[styles.rationale, { backgroundColor: colors.accentSoft, borderRadius: radius.lg }]}

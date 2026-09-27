@@ -120,7 +120,7 @@ describe('onboarding', () => {
 
   it('fits schedule changes without duplicate training days', () => {
     expect(fitOnboardingDays(3, [0, 1, 3, 4])).toEqual([0, 1, 3]);
-    expect(fitOnboardingDays(5, [0, 3])).toEqual([0, 3, 1, 2, 4]);
+    expect(fitOnboardingDays(5, [0, 3])).toEqual([0, 1, 2, 3, 4]);
   });
 
   it('rejects incomplete schedules, empty equipment and too many priorities', () => {
