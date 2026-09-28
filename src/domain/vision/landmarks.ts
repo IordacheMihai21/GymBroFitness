@@ -1,13 +1,9 @@
 /**
  * Landmark shape and joint extraction for the on-device pose model.
  *
- * Uses MoveNet's 17-point COCO keypoint layout (nose, eyes, ears, shoulders,
- * elbows, wrists, hips, knees, ankles) rather than BlazePose's 33 points —
- * see docs/PLAN.md's form-analysis architecture note for why: every rule in
- * the initial 5 exercises (curl, squat, lateral raise, push-up, overhead
- * press) only needs this subset, and MoveNet ships a well-maintained,
- * actively-updated React Native integration path (react-native-fast-tflite)
- * that MediaPipe's browser-only package does not.
+ * The native detector is MediaPipe Pose Landmarker Full (33 points). The
+ * existing biomechanics engine consumes this stable 17-joint anatomical
+ * subset: nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles.
  */
 
 export interface Landmark {

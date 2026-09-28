@@ -1,16 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  runAtTargetFps,
-  useFrameProcessor,
-  type Frame,
-} from 'react-native-vision-camera';
-import { useResizePlugin } from 'vision-camera-resize-plugin';
+import { runAtTargetFps, useFrameProcessor, type Frame } from 'react-native-vision-camera';
 import { useRunOnJS } from 'react-native-worklets-core';
-import { NitroModules } from 'react-native-nitro-modules';
-import type { TensorflowModel } from 'react-native-fast-tflite';
 import * as Speech from 'expo-speech';
 
-import { decodeMoveNetOutput, MOVENET_INPUT_SIZE } from '@/domain/vision/moveNetDecode';
+import { detectMediaPipePose } from '@/vision/mediaPipePose';
 import {
   cameraAngleMismatchMessage,
   detectCameraOrientation,
@@ -80,8 +73,7 @@ const INITIAL_STATE: FormAnalysisState = {
  * thread via `runOnJS`, where smoothing/rep-state/scoring/the skeleton
  * overlay all run as plain, already-tested JS.
  */
-export function useFormAnalysis(model: TensorflowModel | undefined, config: VisionExerciseConfig) {
-  const { resize } = useResizePlugin();
+export function useFormAnalysis(config: VisionExerciseConfig) {
   const [state, setState] = useState<FormAnalysisState>(INITIAL_STATE);
 
   const smoother = useMemo(() => new LandmarkSmoother(), []);
@@ -92,6 +84,7 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
   const repViolationsRef = useRef<Map<string, FormViolation>>(new Map());
   const repsRef = useRef<RepAnalysis[]>([]);
   const performanceTracker = useMemo(() => new FormAnalysisPerformanceTracker(), []);
+  const missedFramesRef = useRef(0);
 
   // A ref (not just the state below) so the frame-processor callback can read
   // the current mute setting without depending on it — toggling mute must not
@@ -104,17 +97,9 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
     if (!enabled) Speech.stop();
   }, []);
 
-  // The TFLite model is a Nitro HybridObject (native C++ state). VisionCamera
-  // v4's frame-processor worklet runtime (react-native-worklets-core) can't
-  // capture that native state directly across the worklet boundary — it has
-  // to be boxed into a plain JS-safe handle here and unboxed back inside the
-  // worklet on every call. This is the exact workaround react-native-fast-
-  // tflite's own README documents for VisionCamera v4 (unnecessary only on
-  // v5, which this app isn't using — see docs/PLAN.md).
-  const boxedModel = useMemo(() => (model ? NitroModules.box(model) : undefined), [model]);
-
   const onFrameLandmarks = useCallback(
     (rawLandmarks: PoseLandmarks, inferenceMs: number) => {
+      missedFramesRef.current = 0;
       const timestampMs = Date.now();
       const performance = performanceTracker.record(timestampMs, inferenceMs);
       const smoothed = smoother.smooth(rawLandmarks, timestampMs);
@@ -242,45 +227,41 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
 
   const reportLandmarks = useRunOnJS(onFrameLandmarks, [onFrameLandmarks]);
 
-  // A plain (non-Skia) frame processor: on some devices (confirmed on a real
-  // Samsung Galaxy S24) the camera's native hardware buffer can't be wrapped
-  // into a Skia SkImage — useSkiaFrameProcessor's frame.render() throws
-  // "Failed to convert NativeBuffer to SkImage!" on every frame, since Skia's
-  // GPU import path doesn't recognize that device's buffer format. Inference
-  // (resize + model.runSync) never needs Skia at all, and the camera preview
-  // renders itself natively regardless of what the frame processor does — so
-  // dropping Skia here sidesteps that whole class of device incompatibility.
-  // The skeleton overlay is drawn separately in JS (SkeletonOverlay.tsx) from
-  // the landmarks already bridged to onFrameLandmarks below.
+  const onFrameMissing = useCallback(
+    (inferenceMs: number) => {
+      missedFramesRef.current += 1;
+      const timestampMs = Date.now();
+      const performance = performanceTracker.record(timestampMs, inferenceMs);
+      // Keep one missed result from flashing the overlay. MediaPipe's video
+      // tracker normally recovers on the following frame; two misses mean the
+      // person genuinely left the usable frame.
+      if (missedFramesRef.current < 2) return;
+      smoother.reset();
+      setState((previous) => ({
+        ...previous,
+        trackingQuality: 'lost',
+        currentAngle: null,
+        landmarks: null,
+        performance: performance ?? previous.performance,
+      }));
+    },
+    [performanceTracker, smoother],
+  );
+  const reportMissing = useRunOnJS(onFrameMissing, [onFrameMissing]);
+
+  // MediaPipe owns image rotation, person detection, ROI tracking, and pose
+  // inference natively. JS receives upright normalized coordinates only.
   const frameProcessor = useFrameProcessor(
     (frame: Frame) => {
       'worklet';
-      if (boxedModel == null) return;
-      // Keep inference on VisionCamera's serial frame-processor runtime. The
-      // model is a boxed Nitro HybridObject; dispatching it through runAsync
-      // crashes inside RN Worklets on the current VisionCamera/TFLite stack.
-      // A conservative cap also gives ImageReader enough time to release each
-      // hardware buffer before another inference starts.
-      runAtTargetFps(5, () => {
+      runAtTargetFps(10, () => {
         'worklet';
-        const startedAt = performance.now();
-        const model = boxedModel.unbox();
-        const resized = resize(frame, {
-          scale: { width: MOVENET_INPUT_SIZE, height: MOVENET_INPUT_SIZE },
-          pixelFormat: 'rgb',
-          dataType: 'uint8',
-        });
-        const inputBuffer = resized.buffer.slice(
-          resized.byteOffset,
-          resized.byteOffset + resized.byteLength,
-        ) as ArrayBuffer;
-        const outputs = model.runSync([inputBuffer]);
-        const landmarks = decodeMoveNetOutput(new Float32Array(outputs[0]));
-
-        reportLandmarks(landmarks, performance.now() - startedAt);
+        const result = detectMediaPipePose(frame);
+        if (result.landmarks) reportLandmarks(result.landmarks, result.inferenceMs);
+        else reportMissing(result.inferenceMs);
       });
     },
-    [boxedModel, resize, reportLandmarks],
+    [reportLandmarks, reportMissing],
   );
 
   const resetSet = useCallback(() => {
@@ -292,6 +273,7 @@ export function useFormAnalysis(model: TensorflowModel | undefined, config: Visi
     temporalFilter.reset();
     voiceCoach.reset();
     performanceTracker.reset();
+    missedFramesRef.current = 0;
     Speech.stop();
     setState(INITIAL_STATE);
   }, [smoother, velocityTracker, temporalFilter, voiceCoach, performanceTracker]);

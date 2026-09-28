@@ -1,7 +1,7 @@
 import { useIsFocused } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
-import { ActivityIndicator, Button, IconButton } from 'react-native-paper';
+import { Button, IconButton } from 'react-native-paper';
 import {
   Camera,
   type CameraRuntimeError,
@@ -10,8 +10,7 @@ import {
   useCameraPermission,
 } from 'react-native-vision-camera';
 
-import { usePoseModel } from '@/vision/poseModel';
-import { describePoseModelError } from '@/vision/poseModelErrors';
+import { isMediaPipePoseAvailable } from '@/vision/mediaPipePose';
 import { useFormAnalysis } from '@/vision/useFormAnalysis';
 import type { VisionExerciseConfig } from '@/domain/vision/exerciseVisionConfigs/types';
 import type { RepAnalysis } from '@/domain/vision/formScoring';
@@ -43,12 +42,9 @@ export function FormCameraView({ config, onFinishSet }: FormCameraViewProps) {
   const [cameraError, setCameraError] = useState<CameraRuntimeError | null>(null);
   const [cameraRestartKey, setCameraRestartKey] = useState(0);
   const [analysisReady, setAnalysisReady] = useState(false);
-  const modelPlugin = usePoseModel();
-  const model = modelPlugin.state === 'loaded' ? modelPlugin.model : undefined;
-  const { frameProcessor, state, finishSet, speechEnabled, setSpeechEnabled } = useFormAnalysis(
-    model,
-    config,
-  );
+  const poseLandmarkerAvailable = isMediaPipePoseAvailable();
+  const { frameProcessor, state, finishSet, speechEnabled, setSpeechEnabled } =
+    useFormAnalysis(config);
 
   useEffect(() => {
     function pauseForBackground() {
@@ -98,14 +94,14 @@ export function FormCameraView({ config, onFinishSet }: FormCameraViewProps) {
     isFocused && appState === 'active' && hasWindowFocus && cameraError == null;
 
   useEffect(() => {
-    const canAnalyze = cameraShouldRun && modelPlugin.state === 'loaded';
+    const canAnalyze = cameraShouldRun && poseLandmarkerAvailable;
     // CameraX can start delivering analysis frames while its ImageReader is
     // still being recreated after resume. Let the preview settle first so no
     // stale buffers overlap the new frame-processor pipeline. Disable it on
     // the next task immediately when focus is lost.
     const timeout = setTimeout(() => setAnalysisReady(canAnalyze), canAnalyze ? 1000 : 0);
     return () => clearTimeout(timeout);
-  }, [cameraRestartKey, cameraShouldRun, modelPlugin.state]);
+  }, [cameraRestartKey, cameraShouldRun, poseLandmarkerAvailable]);
 
   async function handleRequestPermission() {
     setRequestingPermission(true);
@@ -182,10 +178,9 @@ export function FormCameraView({ config, onFinishSet }: FormCameraViewProps) {
             device={device}
             format={format}
             fps={cameraFps}
+            pixelFormat="rgb"
             isActive={cameraShouldRun}
-            frameProcessor={
-              analysisReady && modelPlugin.state === 'loaded' ? frameProcessor : undefined
-            }
+            frameProcessor={analysisReady ? frameProcessor : undefined}
             onError={(error) => {
               if (lifecycleActiveRef.current) {
                 setCameraError(error);
@@ -194,30 +189,13 @@ export function FormCameraView({ config, onFinishSet }: FormCameraViewProps) {
             onInitialized={() => setCameraError(null)}
           />
         ) : null}
-        {modelPlugin.state === 'loaded' && <SkeletonOverlay landmarks={state.landmarks} />}
-        {modelPlugin.state === 'loading' ? (
-          <View
-            accessibilityLiveRegion="polite"
-            style={[
-              StyleSheet.absoluteFill,
-              styles.centered,
-              { backgroundColor: `${colors.background}E6` },
-            ]}
-          >
-            <ActivityIndicator color={colors.accent} />
-            <Text
-              style={[typography.captionBold, { color: colors.textPrimary, marginTop: spacing.md }]}
-            >
-              Preparing Form AI…
-            </Text>
-          </View>
-        ) : null}
-        {modelPlugin.state === 'error' ? (
+        <SkeletonOverlay landmarks={state.landmarks} />
+        {!poseLandmarkerAvailable ? (
           <RecoveryOverlay
             title="Form AI could not start"
-            detail={describePoseModelError(modelPlugin.error)}
-            action="Try model again"
-            onRetry={modelPlugin.retry}
+            detail="This build does not include MediaPipe Pose Landmarker. Install the latest native build."
+            action="Restart camera"
+            onRetry={() => setCameraRestartKey((current) => current + 1)}
           />
         ) : null}
         {cameraError ? (
@@ -314,7 +292,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cameraFrame: {
-    aspectRatio: 1,
+    // Matches the portrait 480×640 analysis frame. Avoiding a square `cover`
+    // crop is essential: landmark coordinates and preview pixels now share
+    // the same geometry.
+    aspectRatio: 3 / 4,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
   },

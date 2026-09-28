@@ -47,6 +47,17 @@ No Hevy, Strong, or other proprietary application imagery, copy, or code is incl
 
 The RepDB dataset and images are used only inside GymBroFitness, as permitted by the free-tier license. They are not relicensed as part of the app's own source code.
 
+## MediaPipe Pose Landmarker
+
+- Official runtime and model: Google MediaPipe Tasks Vision / Pose Landmarker Full
+- Documentation and sample: https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/android and https://github.com/google-ai-edge/mediapipe-samples
+- React Native frame-processor reference: https://github.com/munishbp/react-native-mediapipe-pose-plugin
+- Reference commit reviewed: `962f9f54e947d56ba83dcec44d0558a36e2f1253`
+- Reviewed: 28 September 2026
+- Licenses: MediaPipe/sample/model under Apache-2.0; React Native reference bridge under MIT
+- Local files: `assets/models/pose_landmarker_full.task`, `plugins/with-mediapipe-pose.js`, `plugins/mediapipe/PoseLandmarkerFrameProcessorPlugin.kt`, `src/vision/mediaPipePose.ts`
+- Adaptation: GymBroFitness uses only Pose Landmarker, passes the real CameraX rotation into MediaPipe, maps its 33 landmarks onto the app's existing 17-joint biomechanics contract, and keeps all inference on-device. No upstream application UI or product copy is included.
+
 ## Strong and Hevy CSV import contract
 
 - Reference: `gossamr/swift-workout-importer`

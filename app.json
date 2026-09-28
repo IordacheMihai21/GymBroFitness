@@ -36,6 +36,7 @@
       ],
       "expo-secure-store",
       "expo-sqlite",
+      "./plugins/with-mediapipe-pose",
       [
         "expo-notifications",
         {
