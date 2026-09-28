@@ -52,6 +52,7 @@ export function RirPickerSheet({
       ref={modalRef}
       snapPoints={['38%']}
       onDismiss={onDismiss}
+      enableContentPanningGesture={false}
       backgroundStyle={{ backgroundColor: colors.surface }}
       handleIndicatorStyle={{ backgroundColor: colors.borderStrong }}
       backdropComponent={renderBackdrop}
@@ -70,6 +71,7 @@ export function RirPickerSheet({
           data={RIR_VALUES.map((v) => ({ value: v, label: formatRir(v) }))}
           value={draft}
           onValueChanged={({ item }) => setDraft(item.value)}
+          enableScrollByTapOnItem
           itemHeight={40}
           visibleItemCount={5}
           width="60%"

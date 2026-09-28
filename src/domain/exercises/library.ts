@@ -26,6 +26,9 @@ export type LibraryExercise = {
 
 export const EXERCISE_LIBRARY = libraryData as LibraryExercise[];
 
+const CATALOG_LIBRARY_PREFIX = 'catalog:';
+const CATALOG_LIBRARY_SUPPLEMENT_IDS = ['bayesian-cable-curl'] as const;
+
 /**
  * Explicit bridge from reference-only data to the smaller loggable catalog.
  * Entries are reviewed manually; absence means "reference only", never an
@@ -129,7 +132,39 @@ export const CATALOG_IMAGE_OVERRIDES: Readonly<Record<string, string>> = {
   'weighted-push-up': 'Pushups',
 };
 
+/**
+ * Reviewed loggable movements missing from the public reference dataset.
+ * They remain useful without borrowed imagery: the detail view renders the
+ * app's own coaching cues instead of showing a visually similar but incorrect
+ * exercise demonstration.
+ */
+export const CATALOG_LIBRARY_SUPPLEMENTS: LibraryExercise[] =
+  CATALOG_LIBRARY_SUPPLEMENT_IDS.map((catalogId) => {
+    const exercise = getExercise(catalogId);
+    if (!exercise) throw new Error(`Unknown catalog library supplement: ${catalogId}`);
+    return {
+      id: `${CATALOG_LIBRARY_PREFIX}${exercise.id}`,
+      name: exercise.name,
+      primaryMuscles: exercise.primaryMuscles,
+      secondaryMuscles: exercise.secondaryMuscles,
+      equipmentLabel: exercise.equipment.map((item) => item.replace(/_/g, ' ')).join(', '),
+      category: exercise.movementPattern.replace(/_/g, ' '),
+      level: exercise.difficulty === 'advanced' ? 'expert' : exercise.difficulty,
+      mechanic: exercise.exerciseType,
+      instructions: exercise.instructions,
+      images: [],
+    };
+  });
+
+export const BROWSABLE_EXERCISE_LIBRARY: LibraryExercise[] = [
+  ...EXERCISE_LIBRARY,
+  ...CATALOG_LIBRARY_SUPPLEMENTS,
+];
+
 export function loggableExerciseForReference(reference: LibraryExercise): Exercise | null {
+  if (reference.id.startsWith(CATALOG_LIBRARY_PREFIX)) {
+    return getExercise(reference.id.slice(CATALOG_LIBRARY_PREFIX.length)) ?? null;
+  }
   const catalogId = REFERENCE_TO_CATALOG_ID[reference.id];
   return catalogId ? (getExercise(catalogId) ?? null) : null;
 }
@@ -184,13 +219,18 @@ export function referenceImageUrl(image: string): string {
 export function searchLibrary(
   query: string,
   muscle: MuscleGroup | null,
-  pool: LibraryExercise[] = EXERCISE_LIBRARY,
+  pool: LibraryExercise[] = BROWSABLE_EXERCISE_LIBRARY,
 ): LibraryExercise[] {
   const normalizedQuery = query.trim().toLowerCase();
   return pool.filter((exercise) => {
     const matchesMuscle = !muscle || exercise.primaryMuscles.includes(muscle);
+    const loggableExercise = loggableExerciseForReference(exercise);
+    const searchableNames = loggableExercise
+      ? [exercise.name, loggableExercise.name, loggableExercise.slug, ...loggableExercise.aliases]
+      : [exercise.name];
     const matchesQuery =
-      normalizedQuery.length === 0 || exercise.name.toLowerCase().includes(normalizedQuery);
+      normalizedQuery.length === 0 ||
+      searchableNames.some((name) => name.toLowerCase().includes(normalizedQuery));
     return matchesMuscle && matchesQuery;
   });
 }

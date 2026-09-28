@@ -70,6 +70,21 @@ describe('onboarding', () => {
     expect(program.rationale).toContain('4 training days');
   });
 
+  it('starts beginner compound and isolation exercises with three working sets', () => {
+    const preferences = buildOnboardingPreferences({
+      ...baseInput,
+      experience: 'beginner',
+    });
+    const program = generateProgram(preferences, 'beginner-user');
+
+    expect(program.days.flatMap((day) => day.prescriptions)).not.toHaveLength(0);
+    expect(
+      program.days
+        .flatMap((day) => day.prescriptions)
+        .every((prescription) => prescription.workingSets >= 3),
+    ).toBe(true);
+  });
+
   it('changes compound prescriptions when the user chooses a different goal', () => {
     const hypertrophy = generateProgram(buildOnboardingPreferences(baseInput), 'user-1');
     const strength = generateProgram(

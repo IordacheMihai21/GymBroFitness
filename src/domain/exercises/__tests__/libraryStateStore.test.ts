@@ -24,6 +24,16 @@ describe('exercise library state', () => {
     });
   });
 
+  it('persists favorites and recents for reviewed catalog supplements', async () => {
+    await toggleExerciseFavorite('catalog:bayesian-cable-curl');
+    await recordRecentExercise('catalog:bayesian-cable-curl');
+
+    await expect(loadExerciseLibraryState()).resolves.toMatchObject({
+      favoriteIds: ['catalog:bayesian-cable-curl'],
+      recentIds: ['catalog:bayesian-cable-curl'],
+    });
+  });
+
   it('preserves an invalid payload for recovery', async () => {
     const raw = '{"version":1,"favoriteIds":"bad"}';
     await AsyncStorage.setItem('@GymBroFitness/exercise-library-state/v1', raw);

@@ -2,12 +2,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { preserveAsyncStoragePayload } from '@/domain/persistence/asyncStorageRecovery';
 
-import { EXERCISE_LIBRARY } from './library';
+import { BROWSABLE_EXERCISE_LIBRARY } from './library';
 
 const STORAGE_KEY = '@GymBroFitness/exercise-library-state/v1';
 const VERSION = 1;
 const MAX_RECENT = 20;
-const referenceIds = new Set(EXERCISE_LIBRARY.map((exercise) => exercise.id));
+const referenceIds = new Set(BROWSABLE_EXERCISE_LIBRARY.map((exercise) => exercise.id));
 
 export type ExerciseLibraryState = {
   version: typeof VERSION;

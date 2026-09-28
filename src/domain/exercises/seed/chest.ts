@@ -323,7 +323,13 @@ export const chestExercises = [
   defineExercise({
     slug: 'dip',
     name: 'Chest Dip',
-    aliases: ['Parallel Bar Dip'],
+    aliases: [
+      'Parallel Bar Dip',
+      'Weighted Dip',
+      'Weighted Dips',
+      'Weighted Chest Dip',
+      'Belted Dip',
+    ],
     description: 'Bodyweight dip with forward lean targeting the lower chest and triceps.',
     primaryMuscles: ['chest'],
     secondaryMuscles: ['triceps', 'shoulders'],

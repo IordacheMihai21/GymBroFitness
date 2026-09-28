@@ -123,7 +123,36 @@ export const armExercises = [
     scienceExplanation:
       'The cable keeps resistance on the biceps at the bottom and top, unlike free weights which unload at both ends.',
     progressionInstructions: 'Small stack pins after topping the range.',
-    equivalentAlternatives: ['barbell-curl', 'dumbbell-curl'],
+    equivalentAlternatives: ['barbell-curl', 'dumbbell-curl', 'bayesian-cable-curl'],
+  }),
+  defineExercise({
+    slug: 'bayesian-cable-curl',
+    name: 'Bayesian Cable Curl',
+    aliases: ['Bayesian Curl', 'Bayesian Curls', 'Behind-the-Body Cable Curl'],
+    description:
+      'Single-arm low-cable curl performed facing away from the stack with the working arm behind the torso.',
+    primaryMuscles: ['biceps'],
+    secondaryMuscles: ['forearms'],
+    equipment: ['cable_machine'],
+    movementPattern: 'elbow_flexion',
+    difficulty: 'intermediate',
+    exerciseType: 'isolation',
+    laterality: 'unilateral',
+    instructions: [
+      'Set a single handle on the lowest pulley and face away from the cable stack.',
+      'Step forward until the working arm starts slightly behind your torso with the shoulder stable.',
+      'Curl without letting the elbow drift forward, then lower under control to a full stretch.',
+    ],
+    commonMistakes: [
+      'Rotating the torso toward the working arm.',
+      'Letting the elbow travel forward to finish the curl.',
+      'Using too much load and losing the stretched starting position.',
+    ],
+    scienceExplanation:
+      'The arm-behind-torso setup trains elbow flexion with the long head of the biceps at a longer muscle length while the cable maintains tension through the rep.',
+    progressionInstructions:
+      'Keep the shoulder and elbow position fixed; add a stack increment only after all three sets reach the top of the rep range.',
+    equivalentAlternatives: ['incline-dumbbell-curl', 'cable-curl'],
   }),
   defineExercise({
     slug: 'band-curl',
@@ -247,6 +276,7 @@ export const armExercises = [
   defineExercise({
     slug: 'triceps-dip',
     name: 'Triceps Dip',
+    aliases: ['Weighted Triceps Dip', 'Weighted Triceps Dips'],
     description: 'Upright dip keeping the torso vertical to bias the triceps.',
     primaryMuscles: ['triceps'],
     secondaryMuscles: ['chest', 'shoulders'],

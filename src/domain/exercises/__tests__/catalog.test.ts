@@ -73,6 +73,18 @@ describe('exercise catalog integrity', () => {
     expect(getExercise('flat_bench_press')?.name).toBe('Barbell Bench Press');
     expect(canonicalExerciseId('not-a-real-exercise')).toBeNull();
   });
+
+  it('includes Bayesian curls and resolves weighted dips to the loaded dip variation', () => {
+    expect(getExercise('Bayesian Curls')).toMatchObject({
+      id: 'bayesian-cable-curl',
+      trackingType: 'weight_reps',
+      laterality: 'unilateral',
+    });
+    expect(getExercise('Weighted Dips')).toMatchObject({
+      id: 'dip',
+      trackingType: 'weighted_bodyweight',
+    });
+  });
 });
 
 describe('equipment filtering', () => {

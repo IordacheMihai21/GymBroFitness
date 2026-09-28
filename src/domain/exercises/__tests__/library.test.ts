@@ -1,11 +1,13 @@
 import { getExercise } from '../catalog';
 import {
+  BROWSABLE_EXERCISE_LIBRARY,
   CATALOG_IMAGE_OVERRIDES,
   EXERCISE_LIBRARY,
   loggableExerciseForReference,
   referenceExerciseForCatalog,
   referenceImageUrl,
   REFERENCE_TO_CATALOG_ID,
+  searchLibrary,
 } from '../library';
 
 describe('reference library mapping', () => {
@@ -72,5 +74,16 @@ describe('reference library mapping', () => {
         'https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Plank/0.jpg',
       ),
     ).toContain('a859101d633a01c4a1a920d6a8ce41dabba0705f');
+  });
+
+  it('finds reviewed catalog supplements and mapped aliases from the exercise library', () => {
+    const bayesian = searchLibrary('Bayesian curls', null);
+    const weightedDips = searchLibrary('weighted dips', null);
+
+    expect(bayesian).toHaveLength(1);
+    expect(loggableExerciseForReference(bayesian[0])?.id).toBe('bayesian-cable-curl');
+    expect(bayesian[0].images).toEqual([]);
+    expect(loggableExerciseForReference(weightedDips[0])?.id).toBe('dip');
+    expect(BROWSABLE_EXERCISE_LIBRARY).toContainEqual(bayesian[0]);
   });
 });

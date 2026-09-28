@@ -10,7 +10,7 @@ import { ExerciseDemoStage } from '@/components/exercise/ExerciseDemoStage';
 import { ExerciseListItem } from '@/components/exercise/ExerciseListItem';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import {
-  EXERCISE_LIBRARY,
+  BROWSABLE_EXERCISE_LIBRARY,
   loggableExerciseForReference,
   referenceImageUrl,
   searchLibrary,
@@ -76,7 +76,7 @@ export default function LibraryScreen() {
   );
 
   const baseResults = useMemo(
-    () => searchLibrary(query, muscle, EXERCISE_LIBRARY),
+    () => searchLibrary(query, muscle, BROWSABLE_EXERCISE_LIBRARY),
     [query, muscle],
   );
 
@@ -127,7 +127,7 @@ export default function LibraryScreen() {
                 <Text style={[typography.title, { color: colors.textPrimary }]}>Exercises</Text>
               </View>
               <Chip compact mode="flat" icon="database-search">
-                {EXERCISE_LIBRARY.length}
+                {BROWSABLE_EXERCISE_LIBRARY.length}
               </Chip>
             </View>
 

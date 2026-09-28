@@ -52,7 +52,7 @@ export const TARGET_RIR: Record<ExperienceLevel, number> = {
 
 /** Default working sets per exercise slot. */
 export const DEFAULT_SETS: Record<ExperienceLevel, { compound: number; isolation: number }> = {
-  beginner: { compound: 3, isolation: 2 },
+  beginner: { compound: 3, isolation: 3 },
   intermediate: { compound: 3, isolation: 3 },
   advanced: { compound: 4, isolation: 3 },
 };
