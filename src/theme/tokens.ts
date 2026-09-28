@@ -57,6 +57,8 @@ export type SemanticColors = {
   warningSoft: string;
   danger: string;
   dangerSoft: string;
+  musclePrimary: string;
+  muscleSecondary: string;
   info: string;
   infoSoft: string;
   brandGradientStart: string;
@@ -84,6 +86,8 @@ export const lightColors: SemanticColors = {
   warningSoft: '#FBF0D9',
   danger: palette.red600,
   dangerSoft: '#FBE4E2',
+  musclePrimary: palette.red600,
+  muscleSecondary: '#D99A95',
   info: palette.blue600,
   infoSoft: '#E3EEF8',
   brandGradientStart: palette.brand500,
@@ -111,6 +115,8 @@ export const darkColors: SemanticColors = {
   warningSoft: '#332A12',
   danger: palette.red400,
   dangerSoft: '#361A18',
+  musclePrimary: palette.red400,
+  muscleSecondary: '#7A3935',
   info: palette.blue400,
   infoSoft: '#132638',
   brandGradientStart: palette.brand400,

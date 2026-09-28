@@ -1,13 +1,13 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
 import { Button, Chip, IconButton, List, Searchbar } from 'react-native-paper';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReducedMotion } from 'react-native-reanimated';
 
 import { ExerciseDemoStage } from '@/components/exercise/ExerciseDemoStage';
 import { ExerciseListItem } from '@/components/exercise/ExerciseListItem';
+import { ExerciseMuscleMap } from '@/components/exercise/ExerciseMuscleMap';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import {
   BROWSABLE_EXERCISE_LIBRARY,
@@ -22,7 +22,6 @@ import {
   recordRecentExercise,
   toggleExerciseFavorite,
 } from '@/domain/exercises/libraryStateStore';
-import { bodySlugsForMuscle } from '@/domain/muscles/muscleMap';
 import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
 import { MUSCLE_GROUPS, type Exercise, type MuscleGroup } from '@/types';
 import { useTheme } from '@/theme';
@@ -274,7 +273,10 @@ export default function LibraryScreen() {
         }}
         onFormCheck={(exercise) => {
           setDetailExercise(null);
-          router.push({ pathname: '/form-check/[exerciseId]', params: { exerciseId: exercise.id } });
+          router.push({
+            pathname: '/form-check/[exerciseId]',
+            params: { exerciseId: exercise.id },
+          });
         }}
       />
     </View>
@@ -308,7 +310,6 @@ function LibraryExerciseDetailModal({
   const formAiReady = Boolean(
     loggableExercise && getVisionConfigForMovementPattern(loggableExercise.movementPattern),
   );
-  const bodyData = buildBodyData(exercise);
   const primaryLabel = exercise.primaryMuscles.map((item) => MUSCLE_LABELS[item]).join(', ');
 
   return (
@@ -329,9 +330,7 @@ function LibraryExerciseDetailModal({
             onPress={onDismiss}
           />
           <View style={styles.modalHeaderCopy}>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              Exercise details
-            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>Exercise details</Text>
             <Text style={[typography.heading, { color: colors.textPrimary }]} numberOfLines={2}>
               {exercise.name}
             </Text>
@@ -355,99 +354,75 @@ function LibraryExerciseDetailModal({
         >
           <ExerciseDemoStage images={images} exerciseName={exercise.name} />
 
-              <View style={styles.chipRow}>
-                <Chip compact icon="target">
-                  {primaryLabel || 'Other'}
-                </Chip>
-                <Chip compact icon="dumbbell">
-                  {exercise.equipmentLabel}
-                </Chip>
-                <Chip compact mode="flat">
-                  {exercise.level}
-                </Chip>
-                <Chip compact mode="flat">
-                  {exercise.mechanic ?? 'mixed'}
-                </Chip>
-                <Chip
-                  compact
-                  mode={loggableExercise ? 'flat' : 'outlined'}
-                  icon={loggableExercise ? 'check-circle-outline' : 'book-open-variant'}
-                >
-                  {loggableExercise ? 'Loggable' : 'Reference only'}
-                </Chip>
-                {formAiReady ? (
-                  <Chip compact mode="flat" icon="camera-outline">
-                    Form AI
-                  </Chip>
-                ) : null}
-              </View>
+          <View style={styles.chipRow}>
+            <Chip compact icon="target">
+              {primaryLabel || 'Other'}
+            </Chip>
+            <Chip compact icon="dumbbell">
+              {exercise.equipmentLabel}
+            </Chip>
+            <Chip compact mode="flat">
+              {exercise.level}
+            </Chip>
+            <Chip compact mode="flat">
+              {exercise.mechanic ?? 'mixed'}
+            </Chip>
+            <Chip
+              compact
+              mode={loggableExercise ? 'flat' : 'outlined'}
+              icon={loggableExercise ? 'check-circle-outline' : 'book-open-variant'}
+            >
+              {loggableExercise ? 'Loggable' : 'Reference only'}
+            </Chip>
+            {formAiReady ? (
+              <Chip compact mode="flat" icon="camera-outline">
+                Form AI
+              </Chip>
+            ) : null}
+          </View>
 
-              <View style={styles.bodyAndCue}>
-                <View style={styles.bodyPair}>
-                  <Body
-                    data={bodyData}
-                    colors={[`${colors.accent}66`, colors.accent]}
-                    side="front"
-                    scale={0.24}
-                    border="none"
-                    defaultFill={colors.surfacePressed}
-                  />
-                  <Body
-                    data={bodyData}
-                    colors={[`${colors.accent}66`, colors.accent]}
-                    side="back"
-                    scale={0.24}
-                    border="none"
-                    defaultFill={colors.surfacePressed}
-                  />
+          <ExerciseMuscleMap
+            exerciseName={exercise.name}
+            primaryMuscles={exercise.primaryMuscles}
+            secondaryMuscles={exercise.secondaryMuscles}
+          />
+
+          <View style={styles.copySection}>
+            <Text style={[typography.subheading, { color: colors.textPrimary }]}>
+              How to perform it
+            </Text>
+            {exercise.instructions.slice(0, 4).map((instruction, index) => (
+              <View key={instruction} style={styles.cueRow}>
+                <View style={[styles.cueNumber, { backgroundColor: colors.accentSoft }]}>
+                  <Text style={[typography.captionBold, { color: colors.accent }]}>
+                    {index + 1}
+                  </Text>
                 </View>
-                <Text
-                  style={[typography.caption, { color: colors.textMuted, flex: 1 }]}
-                  numberOfLines={4}
-                >
-                  Targets {primaryLabel || 'multiple muscles'}
-                  {exercise.secondaryMuscles.length > 0
-                    ? ` — also works ${exercise.secondaryMuscles.map((m) => MUSCLE_LABELS[m]).join(', ')}.`
-                    : '.'}
+                <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>
+                  {instruction}
                 </Text>
               </View>
+            ))}
+          </View>
 
-              <View style={styles.copySection}>
-                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  How to perform it
-                </Text>
-                {exercise.instructions.slice(0, 4).map((instruction, index) => (
-                  <View key={instruction} style={styles.cueRow}>
-                    <View style={[styles.cueNumber, { backgroundColor: colors.accentSoft }]}>
-                      <Text style={[typography.captionBold, { color: colors.accent }]}>
-                        {index + 1}
-                      </Text>
-                    </View>
-                    <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>
-                      {instruction}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-
-              <List.Item
-                title={loggableExercise ? 'View training history' : 'No linked training history'}
-                description={
-                  loggableExercise
-                    ? `Linked to ${loggableExercise.name}. Open comparable logged sessions.`
-                    : 'This reference entry has not been reviewed and mapped to a loggable exercise.'
-                }
-                onPress={loggableExercise ? () => onViewHistory(loggableExercise) : undefined}
-                left={(props) => <List.Icon {...props} icon="chart-line" color={colors.accent} />}
-                right={(props) =>
-                  loggableExercise ? (
-                    <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
-                  ) : null
-                }
-                titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-                descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-                style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-              />
+          <List.Item
+            title={loggableExercise ? 'View training history' : 'No linked training history'}
+            description={
+              loggableExercise
+                ? `Linked to ${loggableExercise.name}. Open comparable logged sessions.`
+                : 'This reference entry has not been reviewed and mapped to a loggable exercise.'
+            }
+            onPress={loggableExercise ? () => onViewHistory(loggableExercise) : undefined}
+            left={(props) => <List.Icon {...props} icon="chart-line" color={colors.accent} />}
+            right={(props) =>
+              loggableExercise ? (
+                <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+              ) : null
+            }
+            titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+            descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+            style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
+          />
         </ScrollView>
 
         <View
@@ -486,25 +461,6 @@ function LibraryExerciseDetailModal({
   );
 }
 
-function buildBodyData(exercise: LibraryExercise): ExtendedBodyPart[] {
-  const primary = exercise.primaryMuscles.flatMap((muscle) =>
-    bodySlugsForMuscle(muscle).map((slug) => ({
-      slug,
-      intensity: 2,
-    })),
-  );
-  const secondary = exercise.secondaryMuscles
-    .filter((muscle) => !exercise.primaryMuscles.includes(muscle))
-    .flatMap((muscle) =>
-      bodySlugsForMuscle(muscle).map((slug) => ({
-        slug,
-        intensity: 1,
-      })),
-    );
-
-  return [...primary, ...secondary];
-}
-
 const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
@@ -526,18 +482,6 @@ const styles = StyleSheet.create({
   modalHeaderCopy: { flex: 1, minWidth: 0, paddingHorizontal: 4 },
   modalScroll: { flex: 1 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  bodyAndCue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  bodyPair: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    minWidth: 118,
-  },
   copySection: { gap: 12 },
   cueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   cueNumber: {

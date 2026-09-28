@@ -1,4 +1,4 @@
-import type { Slug } from 'react-native-body-highlighter';
+import type { ExtendedBodyPart, Slug } from 'react-native-body-highlighter';
 
 import type { MuscleGroup } from '@/types';
 import type { VolumeZone } from '@/domain/workouts/volumeLandmarks';
@@ -88,6 +88,25 @@ const SLUG_TO_MUSCLE = Object.entries(MUSCLE_BODY_SLUGS).reduce(
 
 export function bodySlugsForMuscle(muscle: MuscleGroup): Slug[] {
   return MUSCLE_BODY_SLUGS[muscle];
+}
+
+/** Primary muscles use the strong layer; secondary muscles use the dim layer. */
+export function exerciseBodyData(
+  primaryMuscles: MuscleGroup[],
+  secondaryMuscles: MuscleGroup[],
+): ExtendedBodyPart[] {
+  const primary = new Set(primaryMuscles);
+  const targets = new Map<Slug, 1 | 2>();
+
+  for (const muscle of secondaryMuscles) {
+    if (primary.has(muscle)) continue;
+    for (const slug of bodySlugsForMuscle(muscle)) targets.set(slug, 1);
+  }
+  for (const muscle of primaryMuscles) {
+    for (const slug of bodySlugsForMuscle(muscle)) targets.set(slug, 2);
+  }
+
+  return [...targets].map(([slug, intensity]) => ({ slug, intensity }));
 }
 
 export function primaryBodySlugForMuscle(muscle: MuscleGroup): Slug {

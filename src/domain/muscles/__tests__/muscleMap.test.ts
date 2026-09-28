@@ -4,6 +4,7 @@ import {
   bodySidesForMuscle,
   bodySlugsForMuscle,
   defaultMuscleForBodySide,
+  exerciseBodyData,
   heatKeyForFatigue,
   heatKeyForVolumeZone,
   muscleFromBodySlug,
@@ -33,6 +34,13 @@ describe('muscleMap', () => {
     }
     expect(defaultMuscleForBodySide('front')).toBe('chest');
     expect(defaultMuscleForBodySide('back')).toBe('back');
+  });
+
+  it('builds deduplicated primary and secondary exercise target layers', () => {
+    expect(exerciseBodyData(['chest'], ['chest', 'triceps'])).toEqual([
+      { slug: 'triceps', intensity: 1 },
+      { slug: 'chest', intensity: 2 },
+    ]);
   });
 
   it('normalizes science zones into product heat states', () => {

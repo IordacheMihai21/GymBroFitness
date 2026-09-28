@@ -5,6 +5,7 @@ import { useReducedMotion } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ExerciseDemoStage } from '@/components/exercise/ExerciseDemoStage';
+import { ExerciseMuscleMap } from '@/components/exercise/ExerciseMuscleMap';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { referenceExerciseForCatalog } from '@/domain/exercises/library';
 import { useTheme } from '@/theme';
@@ -80,6 +81,12 @@ export function ExerciseDemoModal({
           showsVerticalScrollIndicator={false}
         >
           <ExerciseDemoStage images={images} exerciseName={exercise.name} />
+
+          <ExerciseMuscleMap
+            exerciseName={exercise.name}
+            primaryMuscles={exercise.primaryMuscles}
+            secondaryMuscles={exercise.secondaryMuscles}
+          />
 
           <View style={styles.chipRow}>
             <Chip compact icon="target">
