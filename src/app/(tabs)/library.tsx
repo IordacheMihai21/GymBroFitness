@@ -12,9 +12,10 @@ import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import {
   BROWSABLE_EXERCISE_LIBRARY,
   loggableExerciseForReference,
-  referenceImageUrl,
+  preferredLibraryImages,
   searchLibrary,
   type LibraryExercise,
+  workoutReadyLibrary,
 } from '@/domain/exercises/library';
 import {
   EMPTY_EXERCISE_LIBRARY_STATE,
@@ -27,10 +28,11 @@ import { MUSCLE_GROUPS, type Exercise, type MuscleGroup } from '@/types';
 import { useTheme } from '@/theme';
 
 type LevelFilter = 'all' | LibraryExercise['level'];
-type ScopeFilter = 'all' | 'favorites' | 'recent';
+type ScopeFilter = 'all' | 'workout-ready' | 'favorites' | 'recent';
 
 const SCOPE_FILTERS: { label: string; value: ScopeFilter; icon: string }[] = [
   { label: 'All', value: 'all', icon: 'format-list-bulleted' },
+  { label: 'Workout ready', value: 'workout-ready', icon: 'playlist-plus' },
   { label: 'Favorites', value: 'favorites', icon: 'star-outline' },
   { label: 'Recent', value: 'recent', icon: 'history' },
 ];
@@ -81,14 +83,16 @@ export default function LibraryScreen() {
 
   const results = useMemo(() => {
     const scoped =
-      scope === 'favorites'
-        ? baseResults.filter((exercise) => libraryState.favoriteIds.includes(exercise.id))
-        : scope === 'recent'
-          ? libraryState.recentIds.flatMap((id) => {
-              const exercise = baseResults.find((item) => item.id === id);
-              return exercise ? [exercise] : [];
-            })
-          : baseResults;
+      scope === 'workout-ready'
+        ? workoutReadyLibrary(baseResults)
+        : scope === 'favorites'
+          ? baseResults.filter((exercise) => libraryState.favoriteIds.includes(exercise.id))
+          : scope === 'recent'
+            ? libraryState.recentIds.flatMap((id) => {
+                const exercise = baseResults.find((item) => item.id === id);
+                return exercise ? [exercise] : [];
+              })
+            : baseResults;
     return level === 'all' ? scoped : scoped.filter((exercise) => exercise.level === level);
   }, [baseResults, level, libraryState.favoriteIds, libraryState.recentIds, scope]);
 
@@ -308,7 +312,7 @@ function LibraryExerciseDetailModal({
 
   if (!exercise) return null;
 
-  const images = exercise.images.map(referenceImageUrl);
+  const images = preferredLibraryImages(exercise);
   const loggableExercise = loggableExerciseForReference(exercise);
   const formAiReady = Boolean(
     loggableExercise && getVisionConfigForMovementPattern(loggableExercise.movementPattern),

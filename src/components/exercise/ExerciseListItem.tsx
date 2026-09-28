@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { StyleSheet } from 'react-native';
 import { List } from 'react-native-paper';
 
-import { referenceImageUrl, type LibraryExercise } from '@/domain/exercises/library';
+import { preferredLibraryImages, type LibraryExercise } from '@/domain/exercises/library';
 import { useTheme } from '@/theme';
 
 type ExerciseListItemProps = {
@@ -13,7 +13,7 @@ type ExerciseListItemProps = {
 
 export function ExerciseListItem({ exercise, onPress, selected = false }: ExerciseListItemProps) {
   const { colors, radius, typography } = useTheme();
-  const thumbnail = exercise.images[0] ? referenceImageUrl(exercise.images[0]) : undefined;
+  const thumbnail = preferredLibraryImages(exercise)[0];
   const muscleLabel = exercise.primaryMuscles.join(', ') || 'Other';
 
   return (

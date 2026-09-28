@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   Button,
   Card,
@@ -739,6 +739,48 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
         </Card.Content>
       </Card>
 
+      <Card
+        mode="contained"
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: radius.xl,
+          },
+        ]}
+      >
+        <Card.Content style={{ gap: spacing.sm }}>
+          <SectionHeader
+            eyebrow="Credits"
+            title="Exercise library sources"
+            detail="GymBroFitness keeps its own programming and coaching logic. These projects provide reviewed reference data and demonstration imagery."
+          />
+          <List.Item
+            title="Exercise data by RepDB"
+            description="Consistent start and finish illustrations for supported movements."
+            onPress={() => void Linking.openURL('https://repdb.co')}
+            left={(props) => (
+              <List.Icon {...props} icon="motion-play-outline" color={colors.accent} />
+            )}
+            right={(props) => <List.Icon {...props} icon="open-in-new" color={colors.textMuted} />}
+            titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+            descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+            style={[styles.creditRow, { backgroundColor: colors.surfaceRaised }]}
+          />
+          <List.Item
+            title="Free Exercise DB"
+            description="Public-domain exercise reference catalog and fallback images."
+            onPress={() => void Linking.openURL('https://github.com/yuhonas/free-exercise-db')}
+            left={(props) => <List.Icon {...props} icon="database-outline" color={colors.accent} />}
+            right={(props) => <List.Icon {...props} icon="open-in-new" color={colors.textMuted} />}
+            titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+            descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+            style={[styles.creditRow, { backgroundColor: colors.surfaceRaised }]}
+          />
+        </Card.Content>
+      </Card>
+
       <Portal>
         <Dialog visible={importCandidate != null} onDismiss={() => setImportCandidate(null)}>
           <Dialog.Title>Review restore</Dialog.Title>
@@ -1271,6 +1313,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  creditRow: {
+    minHeight: 72,
+    borderRadius: 14,
   },
   mappingResults: {
     maxHeight: 320,

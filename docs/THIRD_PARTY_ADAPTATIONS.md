@@ -33,6 +33,20 @@
 
 No Hevy, Strong, or other proprietary application imagery, copy, or code is included in this flow.
 
+## RepDB free-tier exercise demonstrations
+
+- Reference: `RepDB/exercise-dataset`
+- Repository: https://github.com/RepDB/exercise-dataset
+- Commit reviewed: `9ed9357f09c7566ea0256c57ebd6374ebb8b575e`
+- Reviewed: 28 September 2026
+- License: RepDB Free Tier License v1.0 (`LICENSE-DATA.md` in the upstream repository)
+- Required attribution: “Exercise data by RepDB (repdb.co)” with a visible link
+- Local files: `scripts/import-repdb-media.mjs`, `src/domain/exercises/seed/repdb-media.json`, `src/domain/exercises/library.ts`, `src/app/settings.tsx`
+- Adaptation: 77 reviewed catalog movements use RepDB's flat start/peak illustrations through URLs pinned to the reviewed commit. GymBroFitness retains its own names, instructions, programming metadata, coaching rules, and workout history identity. Images are never used for generative-AI derivation and are not republished as a standalone dataset or API. Missing or unmatched movements keep the existing public-domain reference or the app's cue-only fallback.
+- Attribution placement: Settings → Credits → Exercise library sources.
+
+The RepDB dataset and images are used only inside GymBroFitness, as permitted by the free-tier license. They are not relicensed as part of the app's own source code.
+
 ## Strong and Hevy CSV import contract
 
 - Reference: `gossamr/swift-workout-importer`

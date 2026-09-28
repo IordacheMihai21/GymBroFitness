@@ -1,0 +1,221 @@
+{
+  "source": "https://github.com/RepDB/exercise-dataset",
+  "commit": "9ed9357f09c7566ea0256c57ebd6374ebb8b575e",
+  "media": {
+    "barbell-curl": ["images/flat/barbell-curl-start.webp", "images/flat/barbell-curl-peak.webp"],
+    "ez-bar-curl": ["images/flat/ez-bar-curl-start.webp", "images/flat/ez-bar-curl-peak.webp"],
+    "dumbbell-curl": ["images/flat/bicep-curl-start.webp", "images/flat/bicep-curl-peak.webp"],
+    "hammer-curl": ["images/flat/hammer-curl-start.webp", "images/flat/hammer-curl-peak.webp"],
+    "incline-dumbbell-curl": [
+      "images/flat/incline-db-curl-start.webp",
+      "images/flat/incline-db-curl-peak.webp"
+    ],
+    "cable-curl": ["images/flat/cable-curl-start.webp", "images/flat/cable-curl-peak.webp"],
+    "preacher-curl": [
+      "images/flat/preacher-curl-start.webp",
+      "images/flat/preacher-curl-peak.webp"
+    ],
+    "triceps-pushdown": [
+      "images/flat/tricep-pushdown-start.webp",
+      "images/flat/tricep-pushdown-peak.webp"
+    ],
+    "overhead-triceps-extension": [
+      "images/flat/overhead-tricep-extension-start.webp",
+      "images/flat/overhead-tricep-extension-peak.webp"
+    ],
+    "skull-crusher": [
+      "images/flat/skull-crusher-start.webp",
+      "images/flat/skull-crusher-peak.webp"
+    ],
+    "close-grip-bench-press": [
+      "images/flat/close-grip-bench-press-start.webp",
+      "images/flat/close-grip-bench-press-peak.webp"
+    ],
+    "triceps-dip": ["images/flat/dips-start.webp", "images/flat/dips-peak.webp"],
+    "bench-dip": ["images/flat/bench-dips-start.webp", "images/flat/bench-dips-peak.webp"],
+    "diamond-push-up": [
+      "images/flat/diamond-push-ups-start.webp",
+      "images/flat/diamond-push-ups-peak.webp"
+    ],
+    "pull-up": ["images/flat/pull-up-start.webp", "images/flat/pull-up-peak.webp"],
+    "chin-up": ["images/flat/chin-ups-start.webp", "images/flat/chin-ups-peak.webp"],
+    "band-assisted-pull-up": [
+      "images/flat/band-assisted-pull-ups-start.webp",
+      "images/flat/band-assisted-pull-ups-peak.webp"
+    ],
+    "lat-pulldown": ["images/flat/lat-pulldown-start.webp", "images/flat/lat-pulldown-peak.webp"],
+    "barbell-row": ["images/flat/barbell-row-start.webp", "images/flat/barbell-row-peak.webp"],
+    "dumbbell-row": [
+      "images/flat/single-arm-db-row-start.webp",
+      "images/flat/single-arm-db-row-peak.webp"
+    ],
+    "chest-supported-row": [
+      "images/flat/chest-supported-db-row-start.webp",
+      "images/flat/chest-supported-db-row-peak.webp"
+    ],
+    "seated-cable-row": [
+      "images/flat/seated-cable-row-start.webp",
+      "images/flat/seated-cable-row-peak.webp"
+    ],
+    "inverted-row": ["images/flat/inverted-row-start.webp", "images/flat/inverted-row-peak.webp"],
+    "straight-arm-pulldown": [
+      "images/flat/straight-arm-pulldown-start.webp",
+      "images/flat/straight-arm-pulldown-peak.webp"
+    ],
+    "dumbbell-pullover": [
+      "images/flat/db-pullover-start.webp",
+      "images/flat/db-pullover-peak.webp"
+    ],
+    "face-pull": ["images/flat/face-pull-start.webp", "images/flat/face-pull-peak.webp"],
+    "back-extension": [
+      "images/flat/back-extension-start.webp",
+      "images/flat/back-extension-peak.webp"
+    ],
+    "standing-calf-raise": [
+      "images/flat/machine-calf-raise-start.webp",
+      "images/flat/machine-calf-raise-peak.webp"
+    ],
+    "seated-calf-raise": [
+      "images/flat/seated-calf-raise-start.webp",
+      "images/flat/seated-calf-raise-peak.webp"
+    ],
+    "single-leg-calf-raise": [
+      "images/flat/single-leg-calf-raise-start.webp",
+      "images/flat/single-leg-calf-raise-peak.webp"
+    ],
+    "cable-crunch": ["images/flat/cable-crunch-start.webp", "images/flat/cable-crunch-peak.webp"],
+    "hanging-knee-raise": [
+      "images/flat/hanging-knee-raise-start.webp",
+      "images/flat/hanging-knee-raise-peak.webp"
+    ],
+    "hanging-leg-raise": [
+      "images/flat/hanging-leg-raise-start.webp",
+      "images/flat/hanging-leg-raise-peak.webp"
+    ],
+    "reverse-crunch": [
+      "images/flat/reverse-crunches-start.webp",
+      "images/flat/reverse-crunches-peak.webp"
+    ],
+    "plank": ["images/flat/plank-main.webp"],
+    "ab-wheel-rollout": [
+      "images/flat/ab-wheel-rollout-start.webp",
+      "images/flat/ab-wheel-rollout-peak.webp"
+    ],
+    "pallof-press": [
+      "images/flat/cable-pallof-press-start.webp",
+      "images/flat/cable-pallof-press-peak.webp"
+    ],
+    "barbell-bench-press": [
+      "images/flat/bench-press-start.webp",
+      "images/flat/bench-press-peak.webp"
+    ],
+    "dumbbell-bench-press": [
+      "images/flat/db-bench-press-start.webp",
+      "images/flat/db-bench-press-peak.webp"
+    ],
+    "incline-dumbbell-press": [
+      "images/flat/incline-db-press-start.webp",
+      "images/flat/incline-db-press-peak.webp"
+    ],
+    "incline-barbell-press": [
+      "images/flat/incline-bench-press-start.webp",
+      "images/flat/incline-bench-press-peak.webp"
+    ],
+    "machine-chest-press": [
+      "images/flat/chest-press-machine-start.webp",
+      "images/flat/chest-press-machine-peak.webp"
+    ],
+    "smith-machine-bench-press": [
+      "images/flat/smith-machine-bench-press-start.webp",
+      "images/flat/smith-machine-bench-press-peak.webp"
+    ],
+    "push-up": ["images/flat/push-up-start.webp", "images/flat/push-up-peak.webp"],
+    "incline-push-up": [
+      "images/flat/incline-push-ups-start.webp",
+      "images/flat/incline-push-ups-peak.webp"
+    ],
+    "deficit-push-up": [
+      "images/flat/deficit-push-ups-start.webp",
+      "images/flat/deficit-push-ups-peak.webp"
+    ],
+    "cable-fly": ["images/flat/cable-fly-start.webp", "images/flat/cable-fly-peak.webp"],
+    "pec-deck": ["images/flat/pec-deck-start.webp", "images/flat/pec-deck-peak.webp"],
+    "dumbbell-fly": ["images/flat/db-fly-start.webp", "images/flat/db-fly-peak.webp"],
+    "dip": ["images/flat/weighted-dips-start.webp", "images/flat/weighted-dips-peak.webp"],
+    "barbell-back-squat": ["images/flat/squat-start.webp", "images/flat/squat-peak.webp"],
+    "goblet-squat": ["images/flat/goblet-squat-start.webp", "images/flat/goblet-squat-peak.webp"],
+    "smith-machine-squat": [
+      "images/flat/smith-machine-squat-start.webp",
+      "images/flat/smith-machine-squat-peak.webp"
+    ],
+    "hack-squat-machine": ["images/flat/hack-squat-start.webp", "images/flat/hack-squat-peak.webp"],
+    "leg-press": ["images/flat/leg-press-start.webp", "images/flat/leg-press-peak.webp"],
+    "leg-extension": [
+      "images/flat/leg-extension-start.webp",
+      "images/flat/leg-extension-peak.webp"
+    ],
+    "romanian-deadlift": [
+      "images/flat/romanian-deadlift-start.webp",
+      "images/flat/romanian-deadlift-peak.webp"
+    ],
+    "dumbbell-rdl": [
+      "images/flat/dumbbell-romanian-deadlift-start.webp",
+      "images/flat/dumbbell-romanian-deadlift-peak.webp"
+    ],
+    "seated-leg-curl": [
+      "images/flat/seated-leg-curl-start.webp",
+      "images/flat/seated-leg-curl-peak.webp"
+    ],
+    "lying-leg-curl": ["images/flat/leg-curl-start.webp", "images/flat/leg-curl-peak.webp"],
+    "nordic-curl": [
+      "images/flat/nordic-hamstring-curl-start.webp",
+      "images/flat/nordic-hamstring-curl-peak.webp"
+    ],
+    "hip-thrust": ["images/flat/hip-thrust-start.webp", "images/flat/hip-thrust-peak.webp"],
+    "glute-bridge": ["images/flat/glute-bridge-start.webp", "images/flat/glute-bridge-peak.webp"],
+    "machine-hip-thrust": [
+      "images/flat/smith-machine-hip-thrust-start.webp",
+      "images/flat/smith-machine-hip-thrust-peak.webp"
+    ],
+    "bulgarian-split-squat": [
+      "images/flat/bulgarian-split-squat-start.webp",
+      "images/flat/bulgarian-split-squat-peak.webp"
+    ],
+    "split-squat": ["images/flat/split-squat-start.webp", "images/flat/split-squat-peak.webp"],
+    "walking-lunge": [
+      "images/flat/walking-lunge-start.webp",
+      "images/flat/walking-lunge-peak.webp"
+    ],
+    "step-up": ["images/flat/step-ups-start.webp", "images/flat/step-ups-peak.webp"],
+    "overhead-press": ["images/flat/ohp-start.webp", "images/flat/ohp-peak.webp"],
+    "seated-dumbbell-press": [
+      "images/flat/seated-db-press-start.webp",
+      "images/flat/seated-db-press-peak.webp"
+    ],
+    "machine-shoulder-press": [
+      "images/flat/machine-shoulder-press-start.webp",
+      "images/flat/machine-shoulder-press-peak.webp"
+    ],
+    "pike-push-up": ["images/flat/pike-push-ups-start.webp", "images/flat/pike-push-ups-peak.webp"],
+    "lateral-raise": [
+      "images/flat/lateral-raise-start.webp",
+      "images/flat/lateral-raise-peak.webp"
+    ],
+    "cable-lateral-raise": [
+      "images/flat/cable-lateral-raise-start.webp",
+      "images/flat/cable-lateral-raise-peak.webp"
+    ],
+    "machine-lateral-raise": [
+      "images/flat/plate-loaded-lateral-raise-start.webp",
+      "images/flat/plate-loaded-lateral-raise-peak.webp"
+    ],
+    "reverse-fly": [
+      "images/flat/dumbbell-reverse-fly-start.webp",
+      "images/flat/dumbbell-reverse-fly-peak.webp"
+    ],
+    "band-pull-apart": [
+      "images/flat/band-pull-apart-start.webp",
+      "images/flat/band-pull-apart-peak.webp"
+    ]
+  }
+}

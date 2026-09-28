@@ -1,7 +1,8 @@
 import type { Exercise, MuscleGroup } from '@/types';
 
-import { getExercise } from './catalog';
+import { EXERCISE_CATALOG, getExercise } from './catalog';
 import libraryData from './seed/library.json';
+import repDbMediaData from './seed/repdb-media.json';
 
 const FREE_EXERCISE_DB_COMMIT = 'a859101d633a01c4a1a920d6a8ce41dabba0705f';
 
@@ -27,7 +28,8 @@ export type LibraryExercise = {
 export const EXERCISE_LIBRARY = libraryData as LibraryExercise[];
 
 const CATALOG_LIBRARY_PREFIX = 'catalog:';
-const CATALOG_LIBRARY_SUPPLEMENT_IDS = ['bayesian-cable-curl'] as const;
+const REPDB_MEDIA = repDbMediaData.media as Readonly<Record<string, string[]>>;
+const REPDB_IMAGE_BASE = `https://raw.githubusercontent.com/RepDB/exercise-dataset/${repDbMediaData.commit}/`;
 
 /**
  * Explicit bridge from reference-only data to the smaller loggable catalog.
@@ -138,23 +140,16 @@ export const CATALOG_IMAGE_OVERRIDES: Readonly<Record<string, string>> = {
  * app's own coaching cues instead of showing a visually similar but incorrect
  * exercise demonstration.
  */
-export const CATALOG_LIBRARY_SUPPLEMENTS: LibraryExercise[] =
-  CATALOG_LIBRARY_SUPPLEMENT_IDS.map((catalogId) => {
-    const exercise = getExercise(catalogId);
-    if (!exercise) throw new Error(`Unknown catalog library supplement: ${catalogId}`);
-    return {
-      id: `${CATALOG_LIBRARY_PREFIX}${exercise.id}`,
-      name: exercise.name,
-      primaryMuscles: exercise.primaryMuscles,
-      secondaryMuscles: exercise.secondaryMuscles,
-      equipmentLabel: exercise.equipment.map((item) => item.replace(/_/g, ' ')).join(', '),
-      category: exercise.movementPattern.replace(/_/g, ' '),
-      level: exercise.difficulty === 'advanced' ? 'expert' : exercise.difficulty,
-      mechanic: exercise.exerciseType,
-      instructions: exercise.instructions,
-      images: [],
-    };
-  });
+const catalogIdsRepresentedByReferences = new Set(
+  EXERCISE_LIBRARY.flatMap((reference) => {
+    const catalogId = reviewedCatalogIdForReference(reference);
+    return catalogId ? [catalogId] : [];
+  }),
+);
+
+export const CATALOG_LIBRARY_SUPPLEMENTS: LibraryExercise[] = EXERCISE_CATALOG.filter(
+  (exercise) => !catalogIdsRepresentedByReferences.has(exercise.id),
+).map(catalogExerciseAsLibraryEntry);
 
 export const BROWSABLE_EXERCISE_LIBRARY: LibraryExercise[] = [
   ...EXERCISE_LIBRARY,
@@ -165,7 +160,7 @@ export function loggableExerciseForReference(reference: LibraryExercise): Exerci
   if (reference.id.startsWith(CATALOG_LIBRARY_PREFIX)) {
     return getExercise(reference.id.slice(CATALOG_LIBRARY_PREFIX.length)) ?? null;
   }
-  const catalogId = REFERENCE_TO_CATALOG_ID[reference.id];
+  const catalogId = reviewedCatalogIdForReference(reference);
   return catalogId ? (getExercise(catalogId) ?? null) : null;
 }
 
@@ -175,6 +170,11 @@ export function loggableExerciseForReference(reference: LibraryExercise): Exerci
  * but does not make an otherwise-unreviewed reference entry loggable.
  */
 export function referenceExerciseForCatalog(exercise: Exercise): LibraryExercise | null {
+  const repDbImages = repDbImagesForCatalog(exercise);
+  if (repDbImages.length > 0) {
+    return { ...catalogExerciseAsLibraryEntry(exercise), images: repDbImages };
+  }
+
   const overrideReferenceId = CATALOG_IMAGE_OVERRIDES[exercise.id];
   if (overrideReferenceId) {
     const reference = EXERCISE_LIBRARY.find((candidate) => candidate.id === overrideReferenceId);
@@ -202,6 +202,16 @@ export function exerciseThumbnailUrl(exercise: Exercise): string | undefined {
   return referenceExerciseForCatalog(exercise)?.images[0];
 }
 
+/** Prefer the reviewed RepDB visual for linked catalog exercises, then the public-domain reference. */
+export function preferredLibraryImages(reference: LibraryExercise): string[] {
+  const loggableExercise = loggableExerciseForReference(reference);
+  if (loggableExercise) {
+    const repDbImages = repDbImagesForCatalog(loggableExercise);
+    if (repDbImages.length > 0) return repDbImages;
+  }
+  return reference.images.map(referenceImageUrl);
+}
+
 function pinReferenceImages(reference: LibraryExercise): LibraryExercise {
   return {
     ...reference,
@@ -214,6 +224,29 @@ export function referenceImageUrl(image: string): string {
     '/yuhonas/free-exercise-db/main/',
     `/yuhonas/free-exercise-db/${FREE_EXERCISE_DB_COMMIT}/`,
   );
+}
+
+function repDbImagesForCatalog(exercise: Exercise): string[] {
+  return (REPDB_MEDIA[exercise.id] ?? []).map((path) => `${REPDB_IMAGE_BASE}${path}`);
+}
+
+function reviewedCatalogIdForReference(reference: LibraryExercise): string | null {
+  return REFERENCE_TO_CATALOG_ID[reference.id] ?? getExercise(reference.name)?.id ?? null;
+}
+
+function catalogExerciseAsLibraryEntry(exercise: Exercise): LibraryExercise {
+  return {
+    id: `${CATALOG_LIBRARY_PREFIX}${exercise.id}`,
+    name: exercise.name,
+    primaryMuscles: exercise.primaryMuscles,
+    secondaryMuscles: exercise.secondaryMuscles,
+    equipmentLabel: exercise.equipment.map((item) => item.replace(/_/g, ' ')).join(', '),
+    category: exercise.movementPattern.replace(/_/g, ' '),
+    level: exercise.difficulty === 'advanced' ? 'expert' : exercise.difficulty,
+    mechanic: exercise.exerciseType,
+    instructions: exercise.instructions,
+    images: [],
+  };
 }
 
 export function searchLibrary(
@@ -232,5 +265,24 @@ export function searchLibrary(
       normalizedQuery.length === 0 ||
       searchableNames.some((name) => name.toLowerCase().includes(normalizedQuery));
     return matchesMuscle && matchesQuery;
+  });
+}
+
+/**
+ * One discoverable library row per loggable catalog identity, preserving the
+ * current search order while presenting GymBro's canonical name and metadata.
+ */
+export function workoutReadyLibrary(pool: LibraryExercise[]): LibraryExercise[] {
+  const seenCatalogIds = new Set<string>();
+  return pool.flatMap((reference) => {
+    const catalogExercise = loggableExerciseForReference(reference);
+    if (!catalogExercise || seenCatalogIds.has(catalogExercise.id)) return [];
+    seenCatalogIds.add(catalogExercise.id);
+    return [
+      {
+        ...catalogExerciseAsLibraryEntry(catalogExercise),
+        images: preferredLibraryImages(reference),
+      },
+    ];
   });
 }
