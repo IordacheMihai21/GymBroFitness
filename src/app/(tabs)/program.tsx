@@ -233,10 +233,50 @@ export default function ProgramScreen() {
       </Portal>
 
       <Reveal index={2}>
-        <ProgressionCockpit summary={progressionSummary} units={preferences.units} />
+        <DetailCard eyebrow="Saved workouts" title="Ready to replay">
+          {templates.length === 0 ? (
+            <List.Item
+              title="No saved workouts yet"
+              description="Build a custom workout and tap Save workout. It will appear here immediately."
+              onPress={() => router.push('/custom-workout')}
+              left={(props) => (
+                <List.Icon {...props} icon="content-save-outline" color={colors.accent} />
+              )}
+              right={(props) => (
+                <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+              )}
+              titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+              descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+              style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
+            />
+          ) : (
+            templates.slice(0, 4).map((template, index) => (
+              <View key={template.id}>
+                <List.Item
+                  title={template.name}
+                  description={`${template.day.prescriptions.length} exercises · est. ${template.day.estimatedMinutes}m`}
+                  onPress={() => startTemplate(template.id)}
+                  left={(props) => (
+                    <List.Icon {...props} icon="playlist-play" color={colors.accent} />
+                  )}
+                  right={(props) => (
+                    <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+                  )}
+                  titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
+                  descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+                />
+                {index < Math.min(templates.length, 4) - 1 ? <Divider /> : null}
+              </View>
+            ))
+          )}
+        </DetailCard>
       </Reveal>
 
       <Reveal index={3}>
+        <ProgressionCockpit summary={progressionSummary} units={preferences.units} />
+      </Reveal>
+
+      <Reveal index={4}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -260,7 +300,7 @@ export default function ProgramScreen() {
         </ScrollView>
       </Reveal>
 
-      <Reveal index={4}>
+      <Reveal index={5}>
         <Card
           mode="contained"
           style={[
@@ -324,7 +364,7 @@ export default function ProgramScreen() {
         </Card>
       </Reveal>
 
-      <Reveal index={5}>
+      <Reveal index={6}>
         <DetailCard eyebrow="Prescription" title="Exercise order">
           {selectedDay.prescriptions.map((prescription, index) => (
             <View key={`${prescription.exerciseId}-${index}`}>
@@ -366,7 +406,7 @@ export default function ProgramScreen() {
         </DetailCard>
       </Reveal>
 
-      <Reveal index={6}>
+      <Reveal index={7}>
         <DetailCard
           eyebrow="Weekly dose"
           title="Muscle volume"
@@ -398,42 +438,6 @@ export default function ProgramScreen() {
               <VolumeRow key={item.muscle} item={item} />
             ))}
           </View>
-        </DetailCard>
-      </Reveal>
-
-      <Reveal index={7}>
-        <DetailCard eyebrow="Saved templates" title="Replayable days">
-          {templates.length === 0 ? (
-            <List.Item
-              title="No saved templates yet"
-              description="Finish a workout and save it as a template to replay a custom day here."
-              left={(props) => (
-                <List.Icon {...props} icon="content-save-outline" color={colors.accent} />
-              )}
-              titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-              descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-              style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-            />
-          ) : (
-            templates.slice(0, 4).map((template, index) => (
-              <View key={template.id}>
-                <List.Item
-                  title={template.name}
-                  description={`${template.day.prescriptions.length} exercises · est. ${template.day.estimatedMinutes}m`}
-                  onPress={() => startTemplate(template.id)}
-                  left={(props) => (
-                    <List.Icon {...props} icon="playlist-play" color={colors.accent} />
-                  )}
-                  right={(props) => (
-                    <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
-                  )}
-                  titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-                  descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-                />
-                {index < Math.min(templates.length, 4) - 1 ? <Divider /> : null}
-              </View>
-            ))
-          )}
         </DetailCard>
       </Reveal>
     </ScrollView>

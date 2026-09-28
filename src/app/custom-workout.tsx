@@ -19,9 +19,13 @@ import { ExerciseDemoModal } from '@/components/exercise/ExerciseDemoModal';
 import { ExerciseThumbnail } from '@/components/exercise/ExerciseThumbnail';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { availableExercises, requireExercise } from '@/domain/exercises/catalog';
+import { saveTemplate } from '@/domain/programs/templateStore';
+import { buildTemplateFromProgramDay } from '@/domain/programs/templates';
 import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
 import { validateCustomWorkoutSelection } from '@/domain/workouts/customWorkoutSelection';
+import { buildCustomWorkoutDay } from '@/features/workout/workout.helpers';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
+import { useKeyboardAwareScroll } from '@/hooks/useKeyboardAwareScroll';
 import { useTheme } from '@/theme';
 import type { EquipmentType, Exercise, MuscleGroup } from '@/types';
 import { MUSCLE_GROUPS } from '@/types';
@@ -35,6 +39,9 @@ export default function CustomWorkoutScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const { preferences, loading } = useActiveProgram();
+  const { scrollRef, inputAnchorRef, onScroll, revealInput } = useKeyboardAwareScroll(
+    Math.max(insets.top, spacing.xxl),
+  );
   const [name, setName] = useState(() => firstParam(params.name) || 'Custom Workout');
   const [query, setQuery] = useState('');
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | null>(null);
@@ -43,6 +50,9 @@ export default function CustomWorkoutScreen() {
     null,
   );
   const [previewExercise, setPreviewExercise] = useState<Exercise | null>(null);
+  const [savingWorkout, setSavingWorkout] = useState(false);
+  const [savedTemplateId, setSavedTemplateId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const routeSelection = useMemo(
     () =>
       loading ? null : validateCustomWorkoutSelection(routeExerciseIds(params.ids), preferences),
@@ -100,6 +110,7 @@ export default function CustomWorkoutScreen() {
         : [...(current ?? selectedExerciseIds), exercise.id],
     );
     setPreviewExercise(null);
+    setSaveStatus(null);
     Haptics.selectionAsync();
   }
 
@@ -107,6 +118,7 @@ export default function CustomWorkoutScreen() {
     setSelectedExerciseIdsOverride((current) =>
       (current ?? selectedExerciseIds).filter((_, candidateIndex) => candidateIndex !== index),
     );
+    setSaveStatus(null);
     Haptics.selectionAsync();
   }
 
@@ -121,6 +133,7 @@ export default function CustomWorkoutScreen() {
       next.splice(nextIndex, 0, moved);
       return next;
     });
+    setSaveStatus(null);
     Haptics.selectionAsync();
   }
 
@@ -137,10 +150,43 @@ export default function CustomWorkoutScreen() {
     });
   }
 
+  async function saveCustomWorkout() {
+    const workoutName = name.trim() || 'Custom Workout';
+    const day = buildCustomWorkoutDay({
+      enabled: true,
+      idsParam: selectedExerciseIds.join(','),
+      nameParam: workoutName,
+      preferences,
+    });
+    if (!day) return;
+
+    setSavingWorkout(true);
+    setSaveStatus(null);
+    try {
+      const template = buildTemplateFromProgramDay(day, workoutName);
+      const saved = await saveTemplate(
+        savedTemplateId ? { ...template, id: savedTemplateId } : template,
+      );
+      setSavedTemplateId(saved.id);
+      setSaveStatus(`“${saved.name}” saved in Plan.`);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      setSaveStatus('Could not save this workout. Try again.');
+    } finally {
+      setSavingWorkout(false);
+    }
+  }
+
   return (
     <Animated.ScrollView
+      ref={scrollRef}
       entering={FadeIn}
       style={{ backgroundColor: colors.background }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      automaticallyAdjustKeyboardInsets
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       contentContainerStyle={{
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.md,
         paddingBottom: insets.bottom + 96,
@@ -178,7 +224,10 @@ export default function CustomWorkoutScreen() {
             dense
             label="Workout name"
             value={name}
-            onChangeText={setName}
+            onChangeText={(value) => {
+              setName(value);
+              setSaveStatus(null);
+            }}
             style={{ backgroundColor: colors.surfaceRaised }}
           />
 
@@ -188,15 +237,41 @@ export default function CustomWorkoutScreen() {
             <MetricBlock label="form AI" value={String(formAiCount)} />
           </View>
 
-          <Button
-            mode="contained"
-            icon="play"
-            disabled={selectedExerciseIds.length === 0}
-            onPress={startCustomWorkout}
-            contentStyle={styles.startButton}
-          >
-            Start custom workout
-          </Button>
+          <View style={styles.primaryActions}>
+            <Button
+              mode="outlined"
+              icon={savedTemplateId ? 'content-save-check-outline' : 'content-save-outline'}
+              loading={savingWorkout}
+              disabled={selectedExerciseIds.length === 0 || savingWorkout}
+              onPress={saveCustomWorkout}
+              contentStyle={styles.startButton}
+              style={styles.primaryAction}
+            >
+              {savedTemplateId ? 'Update saved' : 'Save workout'}
+            </Button>
+            <Button
+              mode="contained"
+              icon="play"
+              disabled={selectedExerciseIds.length === 0 || savingWorkout}
+              onPress={startCustomWorkout}
+              contentStyle={styles.startButton}
+              style={styles.primaryAction}
+            >
+              Start
+            </Button>
+          </View>
+
+          {saveStatus ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[
+                typography.captionBold,
+                { color: saveStatus.startsWith('Could not') ? colors.danger : colors.success },
+              ]}
+            >
+              {saveStatus}
+            </Text>
+          ) : null}
 
           {routeSelectionIssue ? (
             <View
@@ -285,15 +360,18 @@ export default function CustomWorkoutScreen() {
       </BuilderSection>
 
       <BuilderSection eyebrow="Catalog" title="Add exercises">
-        <Searchbar
-          placeholder="Search exercise, muscle, machine"
-          value={query}
-          onChangeText={setQuery}
-          mode="bar"
-          style={[styles.search, { backgroundColor: colors.surfaceRaised }]}
-          inputStyle={{ color: colors.textPrimary }}
-          placeholderTextColor={colors.textMuted}
-        />
+        <View ref={inputAnchorRef} collapsable={false}>
+          <Searchbar
+            placeholder="Search exercise, muscle, machine"
+            value={query}
+            onChangeText={setQuery}
+            onFocus={revealInput}
+            mode="bar"
+            style={[styles.search, { backgroundColor: colors.surfaceRaised }]}
+            inputStyle={{ color: colors.textPrimary }}
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
 
         <ScrollView
           horizontal
@@ -516,6 +594,13 @@ const styles = StyleSheet.create({
   },
   startButton: {
     minHeight: 52,
+  },
+  primaryActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  primaryAction: {
+    flex: 1,
   },
   emptyPanel: {
     borderRadius: 14,

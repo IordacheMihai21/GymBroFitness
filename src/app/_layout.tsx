@@ -29,6 +29,7 @@ export default function RootLayout() {
             <Stack
               screenOptions={{
                 headerShown: false,
+                navigationBarHidden: true,
                 contentStyle: { backgroundColor: darkColors.background },
               }}
             >

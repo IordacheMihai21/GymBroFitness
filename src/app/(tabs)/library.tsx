@@ -113,6 +113,9 @@ export default function LibraryScreen() {
       <FlatList
         data={results}
         keyExtractor={(item) => item.id}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={{
           paddingBottom: insets.bottom + 120,
         }}

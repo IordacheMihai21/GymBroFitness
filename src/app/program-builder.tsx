@@ -30,6 +30,7 @@ import {
   setCustomProgramDayCount,
 } from '@/domain/programs/customProgramBuilder';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
+import { useKeyboardAwareScroll } from '@/hooks/useKeyboardAwareScroll';
 import { useTheme } from '@/theme';
 import { MUSCLE_GROUPS, type Exercise, type MuscleGroup, type TrainingProgram } from '@/types';
 
@@ -38,6 +39,9 @@ export default function ProgramBuilderScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, preferences, saveProgram } = useActiveProgram();
+  const { scrollRef, inputAnchorRef, onScroll, revealInput } = useKeyboardAwareScroll(
+    Math.max(insets.top, spacing.xxl),
+  );
   const [draft, setDraft] = useState(() =>
     createCustomProgramDraft({ userId: user.id, preferences, name: 'My Hypertrophy Program' }),
   );
@@ -110,8 +114,14 @@ export default function ProgramBuilderScreen() {
 
   return (
     <Animated.ScrollView
+      ref={scrollRef}
       entering={FadeIn}
       style={{ backgroundColor: colors.background }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      automaticallyAdjustKeyboardInsets
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       contentContainerStyle={{
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.md,
         paddingBottom: insets.bottom + 120,
@@ -313,15 +323,18 @@ export default function ProgramBuilderScreen() {
             <Text style={[typography.subheading, { color: colors.textPrimary }]}>Add to day</Text>
           </View>
 
-          <Searchbar
-            placeholder="Search exercise, muscle, equipment"
-            value={query}
-            onChangeText={setQuery}
-            mode="bar"
-            style={[styles.search, { backgroundColor: colors.surfaceRaised }]}
-            inputStyle={{ color: colors.textPrimary }}
-            placeholderTextColor={colors.textMuted}
-          />
+          <View ref={inputAnchorRef} collapsable={false}>
+            <Searchbar
+              placeholder="Search exercise, muscle, equipment"
+              value={query}
+              onChangeText={setQuery}
+              onFocus={revealInput}
+              mode="bar"
+              style={[styles.search, { backgroundColor: colors.surfaceRaised }]}
+              inputStyle={{ color: colors.textPrimary }}
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
 
           <ScrollView
             horizontal

@@ -26,6 +26,7 @@ import {
   updateProgramPrescription,
 } from '@/domain/programs/programEditing';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
+import { useKeyboardAwareScroll } from '@/hooks/useKeyboardAwareScroll';
 import { useTheme } from '@/theme';
 import type {
   Exercise,
@@ -60,6 +61,9 @@ export default function ProgramDayEditorScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const { preferences, program, saveProgram } = useActiveProgram();
+  const { scrollRef, inputAnchorRef, onScroll, revealInput } = useKeyboardAwareScroll(
+    Math.max(insets.top, spacing.xxl),
+  );
   const [query, setQuery] = useState('');
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | null>(null);
   const [saving, setSaving] = useState(false);
@@ -158,8 +162,14 @@ export default function ProgramDayEditorScreen() {
 
   return (
     <Animated.ScrollView
+      ref={scrollRef}
       entering={FadeIn}
       style={{ backgroundColor: colors.background }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      automaticallyAdjustKeyboardInsets
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       contentContainerStyle={{
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.md,
         paddingBottom: insets.bottom + 96,
@@ -251,15 +261,18 @@ export default function ProgramDayEditorScreen() {
       </EditorSection>
 
       <EditorSection eyebrow="Add exercise" title="Compatible catalog">
-        <Searchbar
-          placeholder="Search movement, muscle, equipment"
-          value={query}
-          onChangeText={setQuery}
-          mode="bar"
-          style={[styles.search, { backgroundColor: colors.surfaceRaised }]}
-          inputStyle={{ color: colors.textPrimary }}
-          placeholderTextColor={colors.textMuted}
-        />
+        <View ref={inputAnchorRef} collapsable={false}>
+          <Searchbar
+            placeholder="Search movement, muscle, equipment"
+            value={query}
+            onChangeText={setQuery}
+            onFocus={revealInput}
+            mode="bar"
+            style={[styles.search, { backgroundColor: colors.surfaceRaised }]}
+            inputStyle={{ color: colors.textPrimary }}
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
 
         <ScrollView
           horizontal
