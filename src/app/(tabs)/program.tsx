@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Body from 'react-native-body-highlighter';
@@ -11,6 +12,7 @@ import {
   List,
   Menu,
   Portal,
+  TextInput,
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,10 +32,16 @@ import { useTheme } from '@/theme';
 import { formatEquipmentSummary, formatGoal } from '@/features/program/program.helpers';
 import { useProgramScreen } from '@/features/program/useProgramScreen';
 
+type RenameTarget =
+  | { kind: 'program'; name: string }
+  | { kind: 'day'; name: string }
+  | { kind: 'template'; id: string; name: string };
+
 export default function ProgramScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const {
     preferences,
     program,
@@ -58,12 +66,23 @@ export default function ProgramScreen() {
     startDay,
     editDay,
     startTemplate,
+    renameActiveProgram,
+    renameSelectedDay,
+    renameSavedTemplate,
     patchPrescription,
     movePrescription,
     replacePrescription,
     resetGeneratedProgram,
     saveSelectedDayAsTemplate,
   } = useProgramScreen();
+
+  async function saveRename() {
+    if (!renameTarget?.name.trim()) return;
+    if (renameTarget.kind === 'program') await renameActiveProgram(renameTarget.name);
+    else if (renameTarget.kind === 'day') await renameSelectedDay(renameTarget.name);
+    else await renameSavedTemplate(renameTarget.id, renameTarget.name);
+    setRenameTarget(null);
+  }
 
   return (
     <ScrollView
@@ -109,6 +128,14 @@ export default function ProgramScreen() {
                   {program.name}
                 </Text>
               </View>
+              <IconButton
+                icon="pencil-outline"
+                mode="contained-tonal"
+                disabled={saving}
+                accessibilityLabel="Rename active program"
+                onPress={() => setRenameTarget({ kind: 'program', name: program.name })}
+                style={styles.renameButton}
+              />
               <Chip
                 compact
                 mode="flat"
@@ -230,6 +257,39 @@ export default function ProgramScreen() {
             </Button>
           </Dialog.Actions>
         </Dialog>
+        <Dialog visible={renameTarget != null} onDismiss={() => setRenameTarget(null)}>
+          <Dialog.Title>
+            {renameTarget?.kind === 'program'
+              ? 'Rename program'
+              : renameTarget?.kind === 'day'
+                ? 'Rename day'
+                : 'Rename workout'}
+          </Dialog.Title>
+          <Dialog.Content>
+            <TextInput
+              autoFocus
+              mode="outlined"
+              label="Name"
+              value={renameTarget?.name ?? ''}
+              onChangeText={(name) =>
+                setRenameTarget((current) => (current ? { ...current, name } : null))
+              }
+              returnKeyType="done"
+              onSubmitEditing={() => void saveRename()}
+            />
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setRenameTarget(null)}>Cancel</Button>
+            <Button
+              mode="contained"
+              loading={saving}
+              disabled={saving || !renameTarget?.name.trim()}
+              onPress={() => void saveRename()}
+            >
+              Save
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
       </Portal>
 
       <Reveal index={2}>
@@ -260,7 +320,23 @@ export default function ProgramScreen() {
                     <List.Icon {...props} icon="playlist-play" color={colors.accent} />
                   )}
                   right={(props) => (
-                    <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+                    <View style={styles.templateActions}>
+                      <IconButton
+                        icon="pencil-outline"
+                        size={20}
+                        disabled={saving}
+                        accessibilityLabel={`Rename ${template.name}`}
+                        onPress={() =>
+                          setRenameTarget({
+                            kind: 'template',
+                            id: template.id,
+                            name: template.name,
+                          })
+                        }
+                        style={styles.templateActionButton}
+                      />
+                      <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
+                    </View>
                   )}
                   titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
                   descriptionStyle={[typography.caption, { color: colors.textMuted }]}
@@ -269,6 +345,14 @@ export default function ProgramScreen() {
               </View>
             ))
           )}
+          <Button
+            mode="text"
+            icon="playlist-plus"
+            onPress={() => router.push('/custom-workout')}
+            style={styles.newWorkoutButton}
+          >
+            New custom workout
+          </Button>
         </DetailCard>
       </Reveal>
 
@@ -313,38 +397,21 @@ export default function ProgramScreen() {
           ]}
         >
           <Card.Content style={{ gap: spacing.md }}>
-            <View style={styles.headerRow}>
+            <View style={styles.selectedDayHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={[typography.micro, { color: colors.accent }]}>Selected day</Text>
                 <Text style={[typography.heading, { color: colors.textPrimary }]}>
                   {selectedDay.name}
                 </Text>
               </View>
-              <View style={styles.headerActions}>
-                <Button
-                  compact
-                  mode="outlined"
-                  icon="content-save-outline"
-                  disabled={saving}
-                  onPress={saveSelectedDayAsTemplate}
-                >
-                  Template
-                </Button>
-                <Button compact mode="outlined" icon="pencil" onPress={() => editDay()}>
-                  Edit
-                </Button>
-                <Button
-                  compact
-                  mode="outlined"
-                  icon="playlist-plus"
-                  onPress={() => router.push('/custom-workout')}
-                >
-                  Custom
-                </Button>
-                <Button mode="contained" icon="play" onPress={() => startDay()}>
-                  Start
-                </Button>
-              </View>
+              <IconButton
+                icon="pencil-outline"
+                mode="contained-tonal"
+                disabled={saving}
+                accessibilityLabel={`Rename ${selectedDay.name}`}
+                onPress={() => setRenameTarget({ kind: 'day', name: selectedDay.name })}
+                style={styles.renameButton}
+              />
             </View>
 
             <View style={styles.metricGrid}>
@@ -359,6 +426,38 @@ export default function ProgramScreen() {
                   {MUSCLE_LABELS[muscle]}
                 </Chip>
               ))}
+            </View>
+
+            <View style={styles.dayActions}>
+              <Button
+                mode="contained"
+                icon="play"
+                onPress={() => startDay()}
+                contentStyle={styles.primaryActionContent}
+              >
+                Start workout
+              </Button>
+              <View style={styles.secondaryActionRow}>
+                <Button
+                  mode="outlined"
+                  icon="pencil"
+                  onPress={() => editDay()}
+                  contentStyle={styles.secondaryActionContent}
+                  style={styles.secondaryAction}
+                >
+                  Edit exercises
+                </Button>
+                <Button
+                  mode="outlined"
+                  icon="content-save-outline"
+                  disabled={saving}
+                  onPress={saveSelectedDayAsTemplate}
+                  contentStyle={styles.secondaryActionContent}
+                  style={styles.secondaryAction}
+                >
+                  Save template
+                </Button>
+              </View>
             </View>
           </Card.Content>
         </Card>
@@ -451,10 +550,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  headerActions: {
+  selectedDayHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
     gap: 8,
   },
   activePlanHeader: {
@@ -475,12 +573,46 @@ const styles = StyleSheet.create({
   planMenuButton: {
     margin: 0,
   },
+  renameButton: {
+    width: 48,
+    height: 48,
+    margin: 0,
+  },
   planActionRow: {
     flexDirection: 'row',
     gap: 8,
   },
   planAction: {
     flex: 1,
+  },
+  dayActions: {
+    gap: 10,
+    marginTop: 4,
+  },
+  primaryActionContent: {
+    minHeight: 50,
+  },
+  secondaryActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  secondaryAction: {
+    flex: 1,
+  },
+  secondaryActionContent: {
+    minHeight: 48,
+  },
+  templateActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  templateActionButton: {
+    width: 48,
+    height: 48,
+    margin: 0,
+  },
+  newWorkoutButton: {
+    alignSelf: 'flex-start',
   },
   card: {
     borderWidth: StyleSheet.hairlineWidth,

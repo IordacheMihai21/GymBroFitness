@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import {
   Button,
@@ -26,6 +25,7 @@ import {
   type ProgramLibraryTemplate,
 } from '@/domain/programs/programLibrary';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
+import { useBackDestination } from '@/hooks/useBackDestination';
 import { useTheme } from '@/theme';
 import type { ProgramDay, TrainingProgram } from '@/types';
 
@@ -43,7 +43,7 @@ const FILTERS: { id: LibraryFilter; label: string; icon: string }[] = [
 export default function ProgramLibraryScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const backToProgram = useBackDestination('/program');
   const { user, preferences, program, saveProgram } = useActiveProgram();
   const templates = useMemo(() => listProgramLibraryTemplates(preferences), [preferences]);
   const [filter, setFilter] = useState<LibraryFilter>('all');
@@ -84,7 +84,7 @@ export default function ProgramLibraryScreen() {
       });
       await saveProgram(next);
       setConfirming(false);
-      router.replace('/program');
+      backToProgram();
     } catch {
       setStatus('Could not import this program.');
     } finally {
@@ -108,7 +108,7 @@ export default function ProgramLibraryScreen() {
           mode="contained-tonal"
           icon="arrow-left"
           accessibilityLabel="Back to program"
-          onPress={() => router.back()}
+          onPress={backToProgram}
         />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[typography.caption, { color: colors.textMuted }]}>Program systems</Text>

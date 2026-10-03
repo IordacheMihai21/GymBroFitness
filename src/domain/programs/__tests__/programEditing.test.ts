@@ -7,6 +7,8 @@ import {
   exerciseCandidatesForProgramDay,
   moveProgramPrescription,
   removeProgramPrescription,
+  renameProgram,
+  renameProgramDay,
   updateProgramPrescription,
 } from '../programEditing';
 
@@ -98,6 +100,15 @@ describe('programEditing', () => {
       'barbell-bench-press',
     ]);
     expect(next.days[0].prescriptions.map((item) => item.order)).toEqual([0, 1]);
+  });
+
+  it('renames the program and a day without adding an Edited suffix', () => {
+    const renamedProgram = renameProgram(program(), '  Program Sala  ');
+    const renamedDay = renameProgramDay(renamedProgram, 0, '  Piept + Biceps  ');
+
+    expect(renamedDay.name).toBe('Program Sala');
+    expect(renamedDay.days[0].name).toBe('Piept + Biceps');
+    expect(renamedDay.splitType).toBe('custom');
   });
 
   it('adds a manual prescription with programming defaults', () => {

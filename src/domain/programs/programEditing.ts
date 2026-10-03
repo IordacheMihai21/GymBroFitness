@@ -34,6 +34,22 @@ export function updateProgramPrescription(
   });
 }
 
+export function renameProgram(program: TrainingProgram, name: string): TrainingProgram {
+  const trimmedName = name.trim();
+  if (!trimmedName || trimmedName === program.name) return program;
+  return markProgramEdited({ ...program, name: trimmedName }, false);
+}
+
+export function renameProgramDay(
+  program: TrainingProgram,
+  dayIndex: number,
+  name: string,
+): TrainingProgram {
+  const trimmedName = name.trim();
+  if (!trimmedName || trimmedName === program.days[dayIndex]?.name) return program;
+  return editProgramDay(program, dayIndex, (day) => ({ ...day, name: trimmedName }), false);
+}
+
 export function moveProgramPrescription(
   program: TrainingProgram,
   dayIndex: number,
@@ -155,19 +171,23 @@ function editProgramDay(
   program: TrainingProgram,
   dayIndex: number,
   update: (day: ProgramDay) => ProgramDay,
+  appendEditedLabel = true,
 ): TrainingProgram {
   if (!program.days[dayIndex]) return program;
   const days = program.days.map((day, index) =>
     index === dayIndex ? recalculateProgramDay(update(day)) : day,
   );
-  return markProgramEdited({ ...program, days });
+  return markProgramEdited({ ...program, days }, appendEditedLabel);
 }
 
-function markProgramEdited(program: TrainingProgram): TrainingProgram {
+function markProgramEdited(program: TrainingProgram, appendEditedLabel = true): TrainingProgram {
   return {
     ...program,
     splitType: 'custom',
-    name: program.name.includes('Edited') ? program.name : `${program.name} - Edited`,
+    name:
+      !appendEditedLabel || program.name.includes('Edited')
+        ? program.name
+        : `${program.name} - Edited`,
     rationale: program.rationale.includes('Manual edits are preserved locally')
       ? program.rationale
       : `${program.rationale} Manual edits are preserved locally until you reset the plan.`,

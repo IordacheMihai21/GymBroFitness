@@ -28,6 +28,7 @@ export default function TabsLayout() {
   return (
     <View style={styles.container}>
       <Tabs
+        backBehavior="history"
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colors.accent,

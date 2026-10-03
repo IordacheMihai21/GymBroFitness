@@ -1,7 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 
-import { moveProgramPrescription, updateProgramPrescription } from '@/domain/programs/programEditing';
+import {
+  moveProgramPrescription,
+  renameProgram,
+  renameProgramDay,
+  updateProgramPrescription,
+} from '@/domain/programs/programEditing';
 import { buildProgramProgressionSummary } from '@/domain/programs/programProgression';
 import { listTemplates, saveTemplate } from '@/domain/programs/templateStore';
 import {
@@ -117,6 +122,36 @@ export function useProgramScreen() {
     persistProgram(nextProgram, 'Program saved.');
   }
 
+  function renameActiveProgram(name: string) {
+    return persistProgram(renameProgram(program, name), 'Program name saved.');
+  }
+
+  function renameSelectedDay(name: string) {
+    return persistProgram(renameProgramDay(program, selectedDayIndex, name), 'Day name saved.');
+  }
+
+  async function renameSavedTemplate(templateId: string, name: string) {
+    const trimmedName = name.trim();
+    const template = templates.find((item) => item.id === templateId);
+    if (!template || !trimmedName) return;
+
+    setSaving(true);
+    setStatus(null);
+    try {
+      const saved = await saveTemplate({
+        ...template,
+        name: trimmedName,
+        day: { ...template.day, name: trimmedName },
+      });
+      setTemplates((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      setStatus('Workout name saved.');
+    } catch {
+      setStatus('Could not rename this workout.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function movePrescription(prescriptionIndex: number, direction: -1 | 1) {
     const nextProgram = moveProgramPrescription(
       program,
@@ -200,6 +235,9 @@ export function useProgramScreen() {
     startDay,
     editDay,
     startTemplate,
+    renameActiveProgram,
+    renameSelectedDay,
+    renameSavedTemplate,
     patchPrescription,
     movePrescription,
     replacePrescription,

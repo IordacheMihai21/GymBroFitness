@@ -27,6 +27,7 @@ import {
 } from '@/domain/programs/programEditing';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useKeyboardAwareScroll } from '@/hooks/useKeyboardAwareScroll';
+import { useBackDestination } from '@/hooks/useBackDestination';
 import { useTheme } from '@/theme';
 import type {
   Exercise,
@@ -57,6 +58,7 @@ const TECHNIQUE_LABELS: Record<SetTechnique, string> = {
 
 export default function ProgramDayEditorScreen() {
   const router = useRouter();
+  const backToProgram = useBackDestination('/program');
   const params = useLocalSearchParams<{ day?: string | string[] }>();
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
@@ -153,7 +155,7 @@ export default function ProgramDayEditorScreen() {
         <Text style={[typography.caption, { color: colors.textMuted }]}>
           This program day is no longer available.
         </Text>
-        <Button mode="contained" icon="arrow-left" onPress={() => router.back()}>
+        <Button mode="contained" icon="arrow-left" onPress={backToProgram}>
           Back
         </Button>
       </View>
@@ -181,7 +183,7 @@ export default function ProgramDayEditorScreen() {
         <IconButton
           icon="arrow-left"
           mode="contained-tonal"
-          onPress={() => router.back()}
+          onPress={backToProgram}
           style={styles.backButton}
         />
         <View style={{ flex: 1 }}>

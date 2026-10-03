@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import {
   Button,
@@ -31,13 +30,14 @@ import {
 } from '@/domain/programs/customProgramBuilder';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useKeyboardAwareScroll } from '@/hooks/useKeyboardAwareScroll';
+import { useBackDestination } from '@/hooks/useBackDestination';
 import { useTheme } from '@/theme';
 import { MUSCLE_GROUPS, type Exercise, type MuscleGroup, type TrainingProgram } from '@/types';
 
 export default function ProgramBuilderScreen() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const backToProgram = useBackDestination('/program');
   const { user, preferences, saveProgram } = useActiveProgram();
   const { scrollRef, inputAnchorRef, onScroll, revealInput } = useKeyboardAwareScroll(
     Math.max(insets.top, spacing.xxl),
@@ -104,7 +104,7 @@ export default function ProgramBuilderScreen() {
     setStatus(null);
     try {
       await saveProgram(normalizeCustomProgram({ ...draft, name: draft.name.trim() }));
-      router.replace('/program');
+      backToProgram();
     } catch {
       setStatus('Could not save this program.');
     } finally {
@@ -130,7 +130,7 @@ export default function ProgramBuilderScreen() {
       }}
     >
       <View style={styles.headerRow}>
-        <IconButton mode="contained-tonal" icon="arrow-left" onPress={() => router.back()} />
+        <IconButton mode="contained-tonal" icon="arrow-left" onPress={backToProgram} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[typography.caption, { color: colors.textMuted }]}>Manual programming</Text>
           <Text style={[typography.title, { color: colors.textPrimary }]}>Build Program</Text>
