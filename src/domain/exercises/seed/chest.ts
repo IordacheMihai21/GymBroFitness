@@ -2,6 +2,32 @@ import { defineExercise } from '../define';
 
 export const chestExercises = [
   defineExercise({
+    slug: 'incline-smith-machine-bench-press',
+    name: 'Incline Smith Machine Bench Press',
+    aliases: ['Incline Smith Bench Press', 'Smith Incline Press'],
+    description: 'Guided incline press that biases the upper chest while keeping setup stable.',
+    primaryMuscles: ['chest'],
+    secondaryMuscles: ['shoulders', 'triceps'],
+    equipment: ['smith_machine', 'incline_bench'],
+    movementPattern: 'horizontal_push',
+    difficulty: 'beginner',
+    exerciseType: 'compound',
+    instructions: [
+      'Set the bench to roughly 30 degrees and center it under the bar.',
+      'Lower the bar toward the upper chest with shoulder blades retracted.',
+      'Press to lockout without letting the shoulders roll forward.',
+    ],
+    commonMistakes: [
+      'Using an incline so steep it becomes a shoulder press.',
+      'Placing the bench too far forward or back.',
+    ],
+    scienceExplanation:
+      'The incline increases upper-pec contribution while the guided path reduces stabilization demands near failure.',
+    progressionInstructions:
+      'Add reps first, then the smallest plate increment once both sets reach the target.',
+    equivalentAlternatives: ['incline-barbell-press', 'incline-dumbbell-press'],
+  }),
+  defineExercise({
     slug: 'barbell-bench-press',
     name: 'Barbell Bench Press',
     aliases: ['Flat Bench Press', 'Bench'],

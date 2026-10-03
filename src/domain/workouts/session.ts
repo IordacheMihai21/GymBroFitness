@@ -1,27 +1,30 @@
 import type {
   PerformedExercise,
   PerformedSet,
+  ExercisePrescription,
   ProgramDay,
-  SetTechnique,
   WorkoutSession,
 } from '@/types';
 import { uuid } from '@/utils/ids';
 
-function buildEmptySets(count: number, technique: SetTechnique = 'standard'): PerformedSet[] {
-  return Array.from({ length: count }, (_, i) => ({
-    id: uuid(),
-    setNumber: i + 1,
-    kind: 'working',
-    loadKg: null,
-    reps: null,
-    durationSeconds: null,
-    rir: null,
-    completed: false,
-    skipped: false,
-    completedAt: null,
-    technique,
-    subEfforts: [],
-  }));
+function buildEmptySets(prescription: ExercisePrescription): PerformedSet[] {
+  return Array.from({ length: prescription.workingSets }, (_, i) => {
+    const plan = prescription.plannedSets?.[i];
+    return {
+      id: uuid(),
+      setNumber: i + 1,
+      kind: 'working',
+      loadKg: plan?.loadKg ?? null,
+      reps: null,
+      durationSeconds: plan?.durationSeconds ?? null,
+      rir: plan?.rir ?? null,
+      completed: false,
+      skipped: false,
+      completedAt: null,
+      technique: plan?.technique ?? prescription.setTechnique ?? 'standard',
+      subEfforts: plan?.subEfforts?.map((effort) => ({ ...effort })) ?? [],
+    };
+  });
 }
 
 export function startWorkoutSession(day: ProgramDay, userId: string): WorkoutSession {
@@ -30,7 +33,7 @@ export function startWorkoutSession(day: ProgramDay, userId: string): WorkoutSes
     exerciseId: prescription.exerciseId,
     order: i,
     prescription,
-    sets: buildEmptySets(prescription.workingSets, prescription.setTechnique ?? 'standard'),
+    sets: buildEmptySets(prescription),
     markedDiscomfort: false,
     markedUnavailable: false,
   }));

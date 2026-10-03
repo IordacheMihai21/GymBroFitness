@@ -96,4 +96,18 @@ describe('buildSetAutofillSuggestion', () => {
       durationSeconds: 6,
     });
   });
+
+  it('uses the planned load for the requested set before the generic load', () => {
+    const current = makeExercise([makeSet(0), makeSet(1)]);
+    current.prescription.recommendedLoad = 80;
+    current.prescription.plannedSets = [
+      { loadKg: 80, rir: 0 },
+      { loadKg: 75, rir: 0 },
+    ];
+
+    const suggestion = buildSetAutofillSuggestion(current, null, 1);
+
+    expect(suggestion.label).toBe('Planned set 2');
+    expect(setAutofillPatch(suggestion)).toMatchObject({ loadKg: 75, rir: 0 });
+  });
 });

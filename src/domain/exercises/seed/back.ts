@@ -2,6 +2,103 @@ import { defineExercise } from '../define';
 
 export const backExercises = [
   defineExercise({
+    slug: 'close-grip-machine-row',
+    name: 'Close-Grip Machine Row',
+    aliases: ['Close Grip Row', 'Close Grip Rows'],
+    description: 'Chest-supported or seated machine row with a close neutral grip.',
+    primaryMuscles: ['back'],
+    secondaryMuscles: ['biceps', 'forearms'],
+    equipment: ['selectorized_machine', 'plate_loaded_machine'],
+    movementPattern: 'horizontal_pull',
+    difficulty: 'beginner',
+    exerciseType: 'compound',
+    instructions: [
+      'Keep the chest supported and shoulders down.',
+      'Drive the elbows close to the torso.',
+      'Return to a full controlled stretch.',
+    ],
+    commonMistakes: [
+      'Turning the movement into a shrug.',
+      'Losing the stretch to move more weight.',
+    ],
+    scienceExplanation:
+      'The close neutral path supports heavy lat and mid-back work with little setup fatigue.',
+    progressionInstructions: 'Increase one machine step after both sets improve cleanly.',
+    equivalentAlternatives: ['machine-row', 'seated-cable-row'],
+  }),
+  defineExercise({
+    slug: 'independent-arm-lat-pulldown',
+    name: 'Independent-Arm Lat Pulldown Machine',
+    aliases: ['Iso-Lateral Lat Pulldown', 'Dual Handle Lat Pulldown'],
+    description: 'Plate-loaded or selectorized pulldown with a separate handle for each arm.',
+    primaryMuscles: ['back'],
+    secondaryMuscles: ['biceps', 'forearms'],
+    equipment: ['selectorized_machine', 'plate_loaded_machine'],
+    movementPattern: 'vertical_pull',
+    difficulty: 'beginner',
+    exerciseType: 'compound',
+    instructions: [
+      'Secure the thighs and begin with both lats fully stretched.',
+      'Drive each elbow down toward its hip.',
+      'Let both handles return under control.',
+    ],
+    commonMistakes: ['Leaning back into a row.', 'Shortening the top stretch.'],
+    scienceExplanation:
+      'Independent handles allow each shoulder blade to move freely and expose side-to-side differences.',
+    progressionInstructions:
+      'Add the smallest machine increment after both arms complete clean sets.',
+    equivalentAlternatives: ['lat-pulldown', 'pull-up'],
+  }),
+  defineExercise({
+    slug: 'kelso-shrug',
+    name: 'Kelso Shrug',
+    aliases: ['Chest-Supported Shrug', 'Prone Shrug'],
+    description: 'Chest-supported scapular retraction performed without bending the elbows.',
+    primaryMuscles: ['back'],
+    secondaryMuscles: ['shoulders'],
+    equipment: ['barbell', 'dumbbell', 'incline_bench'],
+    movementPattern: 'horizontal_pull',
+    difficulty: 'intermediate',
+    exerciseType: 'isolation',
+    instructions: [
+      'Lie chest-down on an incline bench with arms long.',
+      'Retract the shoulder blades to lift the load.',
+      'Pause, then let the shoulder blades protract fully.',
+    ],
+    commonMistakes: [
+      'Bending the elbows into a row.',
+      'Shrugging toward the ears instead of retracting.',
+    ],
+    scienceExplanation:
+      'It isolates scapular retraction for the mid traps and rhomboids while the bench removes torso momentum.',
+    progressionInstructions:
+      'Keep elbows locked and progress only after the pause stays controlled.',
+    equivalentAlternatives: ['chest-supported-row'],
+  }),
+  defineExercise({
+    slug: 'lower-back-machine',
+    name: 'Lower Back Extension Machine',
+    aliases: ['Lower Back Machine', 'Machine Back Extension'],
+    description: 'Selectorized seated spinal-extension machine for controlled erector loading.',
+    primaryMuscles: ['lower_back'],
+    secondaryMuscles: ['glutes', 'hamstrings'],
+    equipment: ['selectorized_machine'],
+    movementPattern: 'hip_hinge',
+    difficulty: 'beginner',
+    exerciseType: 'isolation',
+    instructions: [
+      'Adjust the pad across the upper back.',
+      'Brace and extend until the torso reaches neutral.',
+      'Return slowly into the available flexion range.',
+    ],
+    commonMistakes: ['Hyperextending past neutral.', 'Using momentum off the stack.'],
+    scienceExplanation:
+      'The machine makes erector loading measurable and stable without grip becoming the limiter.',
+    progressionInstructions:
+      'Add a machine step after both sets are controlled through the same range.',
+    equivalentAlternatives: ['back-extension'],
+  }),
+  defineExercise({
     slug: 'pull-up',
     name: 'Pull-Up',
     description: 'Overhand-grip vertical pull, the benchmark upper-back and lat builder.',
@@ -17,7 +114,11 @@ export const backExercises = [
       'Pull your chest toward the bar, leading with the elbows.',
       'Lower under control to a full hang.',
     ],
-    commonMistakes: ['Kipping or swinging.', 'Half-range reps that skip the dead hang.', 'Shrugging instead of depressing the shoulder blades.'],
+    commonMistakes: [
+      'Kipping or swinging.',
+      'Half-range reps that skip the dead hang.',
+      'Shrugging instead of depressing the shoulder blades.',
+    ],
     scienceExplanation:
       'Vertical pulling trains the lats through a long range under bodyweight-scale load — easily progressed with added weight.',
     progressionInstructions:
@@ -86,7 +187,11 @@ export const backExercises = [
       'Pull the bar to the upper chest, driving elbows down and back.',
       'Let the bar rise until arms are long and lats stretch.',
     ],
-    commonMistakes: ['Leaning way back and rowing the weight.', 'Pulling behind the neck.', 'Half-range reps at the top.'],
+    commonMistakes: [
+      'Leaning way back and rowing the weight.',
+      'Pulling behind the neck.',
+      'Half-range reps at the top.',
+    ],
     scienceExplanation:
       'Delivers the same vertical-pull stimulus as pull-ups with fine-grained load control, ideal for staying in the target rep range.',
     progressionInstructions: 'One stack pin at a time once all sets top the range at target RIR.',
@@ -109,10 +214,15 @@ export const backExercises = [
       'Row the bar to your lower ribs, elbows tracking close.',
       'Lower under control without losing the hinge.',
     ],
-    commonMistakes: ['Standing up as reps get hard.', 'Yanking with momentum.', 'Rounding the lower back.'],
+    commonMistakes: [
+      'Standing up as reps get hard.',
+      'Yanking with momentum.',
+      'Rounding the lower back.',
+    ],
     scienceExplanation:
       'A heavy horizontal pull hitting lats, rhomboids, and traps together; the hinge position also builds isometric lower-back strength.',
-    progressionInstructions: 'Add the smallest plate increment after topping the rep range on all sets.',
+    progressionInstructions:
+      'Add the smallest plate increment after topping the rep range on all sets.',
     easierAlternatives: ['chest-supported-row', 'seated-cable-row'],
     equivalentAlternatives: ['dumbbell-row', 'chest-supported-row'],
   }),
@@ -132,7 +242,10 @@ export const backExercises = [
       'Let the dumbbell hang and stretch the lat.',
       'Row to your hip, then lower with control.',
     ],
-    commonMistakes: ['Rotating the torso to heave the weight.', 'Rowing to the shoulder instead of the hip.'],
+    commonMistakes: [
+      'Rotating the torso to heave the weight.',
+      'Rowing to the shoulder instead of the hip.',
+    ],
     scienceExplanation:
       'The support removes lower-back fatigue as a limiter, and unilateral work lets each side get a full stretch and contraction.',
     progressionInstructions: 'Move up one dumbbell step when both arms top the rep range.',
@@ -261,7 +374,10 @@ export const backExercises = [
       'Sweep your hands down to your thighs in an arc.',
       'Return until your arms are overhead and lats stretch.',
     ],
-    commonMistakes: ['Bending the elbows into a pulldown.', 'Hunching the torso to move more weight.'],
+    commonMistakes: [
+      'Bending the elbows into a pulldown.',
+      'Hunching the torso to move more weight.',
+    ],
     scienceExplanation:
       'Removes the biceps from the pull so the lats do all the shortening work — useful extra lat volume without grip fatigue.',
     progressionInstructions: 'Small stack increments; keep the arc long and strict.',
@@ -282,7 +398,10 @@ export const backExercises = [
       'Lower it behind your head with slightly bent arms until you feel a deep stretch.',
       'Pull back over your chest.',
     ],
-    commonMistakes: ['Bending the elbows more as the weight moves back.', 'Overarching the lower back.'],
+    commonMistakes: [
+      'Bending the elbows more as the weight moves back.',
+      'Overarching the lower back.',
+    ],
     scienceExplanation:
       'Loads the lats at their most lengthened overhead position — a stretch stimulus vertical pulls only partially provide.',
     progressionInstructions: 'Add reps first, then small dumbbell steps.',

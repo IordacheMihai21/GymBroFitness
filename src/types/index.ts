@@ -106,6 +106,7 @@ export type MovementPattern =
   | 'chest_fly'
   | 'pullover'
   | 'calf_raise'
+  | 'cardio'
   | 'ab_flexion'
   | 'anti_extension'
   | 'anti_rotation';
@@ -196,6 +197,9 @@ export type ExercisePrescription = {
   targetRir: number;
   restSeconds: number;
   recommendedLoad?: number;
+  /** Optional set-by-set plan. When present, a new workout opens with these
+   * loads/techniques already filled while reps remain available for logging. */
+  plannedSets?: PlannedSet[];
   selectionReason: string;
   /** Coach/programmer note shown before starting the exercise. */
   note?: string;
@@ -210,6 +214,15 @@ export type ExercisePrescription = {
    * already stores exercises as an ordered list — see docs/PLAN.md.
    */
   supersetWithNext?: boolean;
+};
+
+export type PlannedSet = {
+  loadKg?: number | null;
+  durationSeconds?: number | null;
+  rir?: number | null;
+  technique?: SetTechnique;
+  subEfforts?: SubEffort[];
+  note?: string;
 };
 
 export type ProgramDay = {

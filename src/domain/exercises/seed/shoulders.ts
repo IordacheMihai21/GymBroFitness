@@ -2,6 +2,28 @@ import { defineExercise } from '../define';
 
 export const shoulderExercises = [
   defineExercise({
+    slug: 'cable-rear-delt-fly',
+    name: 'Cable Rear Delt Fly',
+    aliases: ['Rear Delt Cable Fly', 'Cable Rear Delt Flies'],
+    description: 'Cable reverse fly that keeps tension on the rear delts through the full arc.',
+    primaryMuscles: ['shoulders'],
+    secondaryMuscles: ['back'],
+    equipment: ['cable_machine'],
+    movementPattern: 'rear_delt',
+    difficulty: 'beginner',
+    exerciseType: 'isolation',
+    instructions: [
+      'Set the cables around shoulder height and take opposite handles.',
+      'Open the arms wide with a soft elbow.',
+      'Return slowly without letting the stack rest.',
+    ],
+    commonMistakes: ['Turning the movement into a row.', 'Using torso rotation.'],
+    scienceExplanation:
+      'Cable tension remains present at the shortened and lengthened ends, making light strict reps productive.',
+    progressionInstructions: 'Progress reps before selecting the next stack plate.',
+    equivalentAlternatives: ['reverse-fly', 'face-pull'],
+  }),
+  defineExercise({
     slug: 'overhead-press',
     name: 'Barbell Overhead Press',
     aliases: ['Military Press', 'OHP'],
@@ -17,10 +39,15 @@ export const shoulderExercises = [
       'Brace your glutes and abs, press the bar overhead.',
       'Finish with the bar over the back of your head, then lower to the collarbone.',
     ],
-    commonMistakes: ['Leaning back into an incline press.', 'Pressing around the chin instead of moving the head back.', 'No leg/glute brace.'],
+    commonMistakes: [
+      'Leaning back into an incline press.',
+      'Pressing around the chin instead of moving the head back.',
+      'No leg/glute brace.',
+    ],
     scienceExplanation:
       'Loads the front and side delts through a long overhead range with barbell-level progression precision.',
-    progressionInstructions: 'Add the smallest increment when all sets top the rep range at target RIR.',
+    progressionInstructions:
+      'Add the smallest increment when all sets top the rep range at target RIR.',
     easierAlternatives: ['seated-dumbbell-press', 'machine-shoulder-press'],
     equivalentAlternatives: ['seated-dumbbell-press'],
   }),
@@ -85,7 +112,10 @@ export const shoulderExercises = [
       'Lower the top of your head toward the floor between your hands.',
       'Press back to the pike position.',
     ],
-    commonMistakes: ['Turning it into a normal push-up by dropping the hips.', 'Banging the head on the floor.'],
+    commonMistakes: [
+      'Turning it into a normal push-up by dropping the hips.',
+      'Banging the head on the floor.',
+    ],
     scienceExplanation:
       'Shifts bodyweight onto the delts in a vertical pressing line — the bodyweight equivalent of an overhead press.',
     progressionInstructions: 'Add reps, then elevate the feet to increase loading.',
@@ -106,10 +136,15 @@ export const shoulderExercises = [
       'Raise your arms out to shoulder height, leading with the elbows.',
       'Lower slowly — the negative is half the exercise.',
     ],
-    commonMistakes: ['Swinging with the hips.', 'Shrugging traps into the raise.', 'Going above shoulder height with internal rotation.'],
+    commonMistakes: [
+      'Swinging with the hips.',
+      'Shrugging traps into the raise.',
+      'Going above shoulder height with internal rotation.',
+    ],
     scienceExplanation:
       'Directly targets the medial delt, the muscle that most defines shoulder width and gets limited work from presses alone.',
-    progressionInstructions: 'Progress reps well before load; side delts respond to high-quality, higher-rep sets.',
+    progressionInstructions:
+      'Progress reps well before load; side delts respond to high-quality, higher-rep sets.',
     equivalentAlternatives: ['cable-lateral-raise', 'machine-lateral-raise'],
   }),
   defineExercise({

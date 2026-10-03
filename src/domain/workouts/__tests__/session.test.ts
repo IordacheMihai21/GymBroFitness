@@ -1,10 +1,11 @@
-import type { WorkoutSession } from '@/types';
+import type { ProgramDay, WorkoutSession } from '@/types';
 
 import {
   beginWorkoutReview,
   continueWorkoutFromReview,
   pauseWorkoutSession,
   resumeWorkoutSession,
+  startWorkoutSession,
 } from '../session';
 
 function session(): WorkoutSession {
@@ -52,5 +53,51 @@ describe('workout session pause accounting', () => {
     expect(review.reviewStartedAt).toBe('2026-09-20T10:30:00.000Z');
     expect(review.restTimer).toBeNull();
     expect(continueWorkoutFromReview(review).reviewStartedAt).toBeNull();
+  });
+});
+
+describe('planned workout sets', () => {
+  it('prefills set-specific loads and drop efforts without inventing reps', () => {
+    const day: ProgramDay = {
+      id: 'pull-day',
+      name: 'Back + Triceps',
+      order: 0,
+      focus: ['back', 'triceps'],
+      estimatedMinutes: 60,
+      prescriptions: [
+        {
+          exerciseId: 'triceps-pushdown',
+          order: 0,
+          workingSets: 2,
+          minReps: 1,
+          maxReps: 30,
+          targetRir: 0,
+          restSeconds: 120,
+          selectionReason: 'Personal program',
+          plannedSets: [
+            { loadKg: 75, rir: 0 },
+            {
+              loadKg: 70,
+              rir: 0,
+              technique: 'drop_set',
+              subEfforts: [{ loadKg: 55, reps: null, restSeconds: 0 }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const started = startWorkoutSession(day, 'user-1');
+
+    expect(started.exercises[0].sets).toMatchObject([
+      { loadKg: 75, reps: null, rir: 0, technique: 'standard', subEfforts: [] },
+      {
+        loadKg: 70,
+        reps: null,
+        rir: 0,
+        technique: 'drop_set',
+        subEfforts: [{ loadKg: 55, reps: null, restSeconds: 0 }],
+      },
+    ]);
   });
 });

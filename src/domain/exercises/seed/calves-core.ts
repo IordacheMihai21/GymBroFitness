@@ -1,6 +1,93 @@
 import { defineExercise } from '../define';
 
 export const calfCoreExercises = [
+  defineExercise({
+    slug: 'machine-crunch',
+    name: 'Abdominal Crunch Machine',
+    aliases: ['Crunch Machine', 'Machine Crunch'],
+    description: 'Loaded machine crunch for measurable spinal-flexion progression.',
+    primaryMuscles: ['abs'],
+    equipment: ['selectorized_machine'],
+    movementPattern: 'ab_flexion',
+    difficulty: 'beginner',
+    exerciseType: 'isolation',
+    instructions: [
+      'Set the pivot to match the torso.',
+      'Curl the ribs toward the pelvis.',
+      'Return under control without letting the stack slam.',
+    ],
+    commonMistakes: ['Pulling with the arms.', 'Hinging only at the hips.'],
+    scienceExplanation:
+      'Stable machine resistance lets the abs be trained and progressed like any other muscle.',
+    progressionInstructions: 'Add the smallest stack increment after both sets improve.',
+    equivalentAlternatives: ['cable-crunch', 'weighted-crunch'],
+  }),
+  defineExercise({
+    slug: 'machine-oblique-crunch',
+    name: 'Machine Oblique Crunch',
+    aliases: ['Oblique Crunch Machine', 'Side Machine Crunch'],
+    description: 'Side-facing crunch on an abdominal machine to bias the obliques.',
+    primaryMuscles: ['abs'],
+    equipment: ['selectorized_machine'],
+    movementPattern: 'ab_flexion',
+    difficulty: 'intermediate',
+    exerciseType: 'isolation',
+    laterality: 'unilateral',
+    instructions: [
+      'Sit side-on and secure the torso against the pad.',
+      'Crunch the ribs toward the same-side hip.',
+      'Complete equal controlled sets on both sides.',
+    ],
+    commonMistakes: ['Rotating through the hips.', 'Training one side through a shorter range.'],
+    scienceExplanation:
+      'The side-on setup progressively loads lateral trunk flexion while keeping resistance measurable.',
+    progressionInstructions: 'Match repetitions and range on both sides before adding weight.',
+    equivalentAlternatives: ['pallof-press'],
+  }),
+  defineExercise({
+    slug: 'dragon-flag',
+    name: 'Dragon Flag',
+    description: 'Advanced bodyweight anti-extension movement using the shoulders as the anchor.',
+    primaryMuscles: ['abs'],
+    secondaryMuscles: ['back'],
+    equipment: ['bench', 'bodyweight'],
+    movementPattern: 'anti_extension',
+    difficulty: 'advanced',
+    exerciseType: 'compound',
+    trackingType: 'bodyweight_reps',
+    instructions: [
+      'Grip the bench behind the head and raise the body as one rigid line.',
+      'Lower from the shoulders without folding at the hips.',
+      'Stop before the lower back loses control.',
+    ],
+    commonMistakes: ['Bending at the hips.', 'Dropping through the eccentric.'],
+    scienceExplanation:
+      'The long lever creates very high anti-extension demand across the rectus abdominis.',
+    progressionInstructions: 'Build controlled negatives, then increase full-range repetitions.',
+    easierAlternatives: ['reverse-crunch', 'hanging-leg-raise'],
+  }),
+  defineExercise({
+    slug: 'incline-treadmill-walk',
+    name: 'Incline Treadmill Walk',
+    aliases: ['Treadmill Incline Walk', 'Incline Walking'],
+    description: 'Timed treadmill walking at a controlled speed and incline.',
+    primaryMuscles: ['calves'],
+    secondaryMuscles: ['glutes', 'hamstrings', 'quadriceps'],
+    equipment: ['bodyweight'],
+    movementPattern: 'cardio',
+    difficulty: 'beginner',
+    exerciseType: 'compound',
+    trackingType: 'time',
+    instructions: [
+      'Set the programmed incline and speed.',
+      'Walk without hanging from the handrails.',
+      'Keep a steady sustainable stride for the full interval.',
+    ],
+    commonMistakes: ['Supporting bodyweight on the rails.', 'Shortening the stride excessively.'],
+    scienceExplanation:
+      'Incline walking raises cardiovascular demand with low impact while loading the posterior chain more than level walking.',
+    progressionInstructions: 'Increase duration first, then incline or speed in small steps.',
+  }),
   // --- Calves -------------------------------------------------------------
   defineExercise({
     slug: 'standing-calf-raise',
@@ -208,7 +295,8 @@ export const calfCoreExercises = [
     commonMistakes: ['Hips sagging or piking.', 'Holding past the point of good position.'],
     scienceExplanation:
       'Trains the core to resist spinal extension — the bracing skill that protects your squats, rows, and presses.',
-    progressionInstructions: 'Extend hold time to ~60 s, then progress to harder variations rather than longer holds.',
+    progressionInstructions:
+      'Extend hold time to ~60 s, then progress to harder variations rather than longer holds.',
     harderAlternatives: ['ab-wheel-rollout'],
     equivalentAlternatives: ['ab-wheel-rollout'],
   }),

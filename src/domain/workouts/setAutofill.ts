@@ -55,16 +55,17 @@ export function buildSetAutofillSuggestion(
   }
 
   const { prescription } = currentExercise;
+  const plannedSet = prescription.plannedSets?.[setIndex];
   return {
     source: 'prescription',
     loadKg:
       trackingType === 'weight_reps' || trackingType === 'weighted_bodyweight'
-        ? (prescription.recommendedLoad ?? null)
+        ? (plannedSet?.loadKg ?? prescription.recommendedLoad ?? null)
         : null,
     reps: trackingType === 'time' ? null : prescription.minReps,
     durationSeconds: trackingType === 'time' ? prescription.minReps : null,
-    rir: prescription.targetRir,
-    label: 'Prescription floor',
+    rir: plannedSet?.rir ?? prescription.targetRir,
+    label: plannedSet ? `Planned set ${setIndex + 1}` : 'Prescription floor',
     detail:
       trackingType === 'time'
         ? `${prescription.minReps}-${prescription.maxReps}s @ RIR ${prescription.targetRir}`

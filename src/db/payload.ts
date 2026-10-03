@@ -27,6 +27,37 @@ const prescriptionSchema = z
     targetRir: z.number(),
     restSeconds: z.number().nonnegative(),
     selectionReason: z.string(),
+    plannedSets: z
+      .array(
+        z
+          .object({
+            loadKg: z.number().nullable().optional(),
+            durationSeconds: z.number().nullable().optional(),
+            rir: z.number().nullable().optional(),
+            technique: z
+              .enum([
+                'standard',
+                'drop_set',
+                'rest_pause',
+                'myo_reps',
+                'cluster_set',
+                'top_backoff',
+              ])
+              .optional(),
+            subEfforts: z
+              .array(
+                z.object({
+                  loadKg: z.number().nullable(),
+                  reps: z.number().nullable(),
+                  restSeconds: z.number().nonnegative(),
+                }),
+              )
+              .optional(),
+            note: z.string().optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
   })
   .passthrough();
 
