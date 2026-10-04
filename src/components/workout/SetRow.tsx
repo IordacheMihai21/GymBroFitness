@@ -1,10 +1,20 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Divider, IconButton, Menu, TextInput } from 'react-native-paper';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+
+import { durations, easeOutExpo, popSpring } from '@/components/ui/motion';
 
 import { formatPlateBreakdown, plateBreakdown } from '@/domain/workouts/plateMath';
 import { formatRir } from '@/domain/workouts/rir';
-import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
+import { fonts, inputTheme, MIN_TOUCH_TARGET, useTheme } from '@/theme';
 import type {
   EquipmentType,
   PerformedSet,
@@ -117,6 +127,28 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
   const [menuVisible, setMenuVisible] = useState(false);
   const loadInputRef = useRef<FocusableInput | null>(null);
   const resultInputRef = useRef<FocusableInput | null>(null);
+  const reduceMotion = useReducedMotion();
+  // Completion sweep: the row fills with the success tint from left to right
+  // while the check pops, so ticking a set feels like racking the bar.
+  const completion = useSharedValue(set.completed ? 1 : 0);
+  const checkScale = useSharedValue(1);
+  const wasCompleted = useRef(set.completed);
+
+  useEffect(() => {
+    if (wasCompleted.current === set.completed) return;
+    wasCompleted.current = set.completed;
+    if (reduceMotion) {
+      completion.value = set.completed ? 1 : 0;
+      return;
+    }
+    completion.value = withTiming(set.completed ? 1 : 0, {
+      duration: set.completed ? durations.slow : durations.fast,
+      easing: easeOutExpo,
+    });
+    if (set.completed) {
+      checkScale.value = withSequence(withTiming(0.78, { duration: 90 }), withSpring(1, popSpring));
+    }
+  }, [checkScale, completion, reduceMotion, set.completed]);
 
   const technique = set.technique ?? 'standard';
   const subEfforts = set.subEfforts ?? [];
@@ -174,70 +206,61 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
     onCopyPrevious?.();
   }
 
+  const kindLabel = SET_KIND_BADGE[set.kind];
+
+  const sweepStyle = useAnimatedStyle(() => ({
+    width: `${completion.value * 100}%`,
+    opacity: Math.min(1, completion.value * 1.6),
+  }));
+  const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: checkScale.value }] }));
+  const tags = [kindLabel, technique !== 'standard' ? TECHNIQUE_LABELS[technique] : null].filter(
+    (tag): tag is string => tag != null,
+  );
+
   return (
     <View
       style={[
         styles.row,
         {
-          backgroundColor: set.completed
-            ? colors.successSoft
-            : set.skipped
-              ? colors.surfacePressed
-              : colors.surfaceRaised,
-          borderRadius: radius.md,
-          borderColor: colors.border,
-          paddingHorizontal: spacing.md,
+          borderRadius: radius.lg,
+          borderColor: set.completed ? 'transparent' : colors.border,
+          paddingHorizontal: spacing.sm,
+          marginHorizontal: -spacing.sm,
+          opacity: set.skipped ? 0.6 : 1,
         },
       ]}
     >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: colors.successSoft, borderRadius: radius.lg },
+          sweepStyle,
+        ]}
+      />
       <View style={styles.rowHeader}>
-        <View style={[styles.setNumber, { backgroundColor: colors.surfacePressed }]}>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-            {set.setNumber}
-          </Text>
-        </View>
+        <Text
+          style={[
+            typography.numeric,
+            styles.setNumber,
+            { color: set.completed ? colors.success : colors.textMuted },
+          ]}
+        >
+          {set.setNumber}
+        </Text>
         <View style={styles.setMeta}>
-          <View style={styles.setTitleRow}>
+          <Text style={[typography.caption, { color: colors.textSecondary }]} numberOfLines={1}>
+            {previousLabel ?? 'No previous set'}
+          </Text>
+          {tags.length > 0 ? (
             <Text
-              style={[typography.micro, styles.previousLabel, { color: colors.textMuted }]}
+              style={[
+                typography.captionBold,
+                { color: set.kind === 'failure' ? colors.warning : colors.accent },
+              ]}
               numberOfLines={1}
             >
-              {previousLabel ?? 'No previous set'}
-            </Text>
-            {SET_KIND_BADGE[set.kind] ? (
-              <View
-                style={[
-                  styles.techniqueBadge,
-                  {
-                    backgroundColor:
-                      set.kind === 'failure' ? colors.warningSoft : colors.surfacePressed,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    typography.micro,
-                    { color: set.kind === 'failure' ? colors.warning : colors.textSecondary },
-                  ]}
-                >
-                  {SET_KIND_BADGE[set.kind]}
-                </Text>
-              </View>
-            ) : null}
-            {technique !== 'standard' ? (
-              <View style={[styles.techniqueBadge, { backgroundColor: colors.accentSoft }]}>
-                <Text style={[typography.micro, { color: colors.accent }]}>
-                  {TECHNIQUE_LABELS[technique]}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-            {targetLabel}
-          </Text>
-          {set.formAnalysis ? (
-            <Text style={[typography.micro, { color: colors.success }]} numberOfLines={1}>
-              Form AI: {set.formAnalysis.averageScore}/100 · {set.formAnalysis.repCount} reps
+              {tags.join(', ')}
             </Text>
           ) : null}
         </View>
@@ -249,12 +272,8 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
             anchor={
               <IconButton
                 icon="dots-horizontal"
-                mode={
-                  technique !== 'standard' || set.kind !== 'working'
-                    ? 'contained'
-                    : 'contained-tonal'
-                }
-                size={16}
+                size={18}
+                iconColor={colors.textMuted}
                 onPress={() => setMenuVisible(true)}
                 disabled={menuLocked}
                 accessibilityLabel={`Set ${set.setNumber} options`}
@@ -315,21 +334,29 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
               : null}
           </Menu>
 
-          <IconButton
-            icon={set.skipped ? 'skip-next-outline' : 'check'}
-            mode={set.completed ? 'contained' : 'contained-tonal'}
-            size={18}
-            onPress={onToggleComplete}
-            disabled={disabled || set.skipped}
-            accessibilityLabel={set.completed ? 'Mark set incomplete' : 'Mark set complete'}
-            style={styles.compactButton}
-          />
+          <Animated.View style={checkStyle}>
+            <IconButton
+              icon={set.skipped ? 'skip-next-outline' : 'check'}
+              mode={set.completed ? 'contained' : 'contained-tonal'}
+              containerColor={set.completed ? colors.success : colors.surfaceRaised}
+              iconColor={set.completed ? colors.onAccent : colors.textSecondary}
+              size={20}
+              onPress={onToggleComplete}
+              disabled={disabled || set.skipped}
+              accessibilityLabel={
+                set.completed
+                  ? `Mark set ${set.setNumber} incomplete`
+                  : `Mark set ${set.setNumber} complete, target ${targetLabel}`
+              }
+              style={styles.compactButton}
+            />
+          </Animated.View>
         </View>
       </View>
 
       {set.skipped ? (
         <Text style={[typography.caption, { color: colors.textMuted }]}>
-          Skipped — not counted in progression or volume.
+          Skipped. Not counted in progression or volume.
         </Text>
       ) : null}
 
@@ -337,6 +364,7 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
         <View style={styles.inputGroup}>
           {supportsLoad ? (
             <TextInput
+              theme={inputTheme}
               ref={(instance: FocusableInput | null) => {
                 loadInputRef.current = instance;
               }}
@@ -354,11 +382,13 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
               blurOnSubmit={false}
               onSubmitEditing={() => resultInputRef.current?.focus()}
               editable={!isLocked}
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.background }]}
+              contentStyle={styles.inputContent}
             />
           ) : null}
           {supportsReps ? (
             <TextInput
+              theme={inputTheme}
               ref={(instance: FocusableInput | null) => {
                 resultInputRef.current = instance;
               }}
@@ -371,10 +401,12 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
               returnKeyType="done"
               onSubmitEditing={onSubmitEditing}
               editable={!isLocked}
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.background }]}
+              contentStyle={styles.inputContent}
             />
           ) : (
             <TextInput
+              theme={inputTheme}
               ref={(instance: FocusableInput | null) => {
                 resultInputRef.current = instance;
               }}
@@ -387,57 +419,53 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
               returnKeyType="done"
               onSubmitEditing={onSubmitEditing}
               editable={!isLocked}
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.background }]}
+              contentStyle={styles.inputContent}
             />
           )}
           <Pressable
             onPress={onOpenRirPicker}
             disabled={isLocked}
-            style={[styles.rirButton, { borderColor: colors.border, opacity: isLocked ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel={`RIR for set ${set.setNumber}: ${set.rir != null ? formatRir(set.rir) : 'not set'}`}
+            style={[
+              styles.rirButton,
+              {
+                borderColor: colors.borderStrong,
+                borderRadius: radius.md,
+                backgroundColor: colors.background,
+                opacity: isLocked ? 0.6 : 1,
+              },
+            ]}
           >
             <Text style={[typography.micro, { color: colors.textMuted }]}>RIR</Text>
-            <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
-              {set.rir != null ? formatRir(set.rir) : '–'}
+            <Text style={[typography.numeric, { color: colors.textPrimary }]}>
+              {set.rir != null ? formatRir(set.rir) : '-'}
             </Text>
           </Pressable>
         </View>
       ) : null}
 
       {plates ? (
-        <View style={styles.plateRow}>
-          <Text style={[typography.micro, { color: colors.textMuted }]}>
-            Per side · {formatPlateBreakdown(plates)}
-          </Text>
-          {!plates.exact ? (
-            <Text style={[typography.micro, { color: colors.accent }]}>
-              ≈{plates.achievedWeight} {unitLabel(units)} closest
-            </Text>
-          ) : null}
-        </View>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          Per side: {formatPlateBreakdown(plates)}
+          {!plates.exact ? `, closest is ${plates.achievedWeight} ${unitLabel(units)}` : ''}
+        </Text>
       ) : null}
 
       {set.formAnalysis ? (
-        <View
-          style={[
-            styles.formAnalysisPanel,
-            { backgroundColor: colors.successSoft, borderColor: colors.success },
-          ]}
-        >
-          <View style={styles.formAnalysisHeader}>
-            <Text style={[typography.captionBold, { color: colors.success }]}>
-              Form AI {set.formAnalysis.averageScore}/100
-            </Text>
-            <Text style={[typography.micro, { color: colors.textSecondary }]}>
-              ROM {set.formAnalysis.averageRomScore} · Tempo {set.formAnalysis.averageTempoScore}
-              {set.formAnalysis.velocityLossPct != null
-                ? ` · VL ${Math.round(set.formAnalysis.velocityLossPct)}%`
-                : ''}
-            </Text>
-          </View>
-          <Text style={[typography.micro, { color: colors.textSecondary }]} numberOfLines={2}>
+        <View style={{ gap: 2 }}>
+          <Text style={[typography.captionBold, { color: colors.success }]}>
+            Form AI {set.formAnalysis.averageScore}/100, ROM {set.formAnalysis.averageRomScore},
+            tempo {set.formAnalysis.averageTempoScore}
+            {set.formAnalysis.velocityLossPct != null
+              ? `, velocity loss ${Math.round(set.formAnalysis.velocityLossPct)}%`
+              : ''}
+          </Text>
+          <Text style={[typography.caption, { color: colors.textSecondary }]} numberOfLines={2}>
             {set.formAnalysis.mostCommonIssue ??
               set.formAnalysis.recommendations[0] ??
-              'Clean set — keep this as your baseline.'}
+              'Clean set. Keep this as your baseline.'}
           </Text>
         </View>
       ) : null}
@@ -446,10 +474,13 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
         <View style={[styles.subEffortPanel, { borderColor: colors.border }]}>
           {subEfforts.map((effort, index) => (
             <View key={index} style={styles.subEffortRow}>
-              <Text style={[typography.micro, { color: colors.textMuted, width: 14 }]}>
+              <Text
+                style={[typography.numeric, { color: colors.textMuted, width: 18, fontSize: 13 }]}
+              >
                 {index + 1}
               </Text>
               <TextInput
+                theme={inputTheme}
                 mode="outlined"
                 dense
                 label={unitLabel(units)}
@@ -459,9 +490,10 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
                 }
                 keyboardType="decimal-pad"
                 editable={!isLocked}
-                style={styles.subEffortInput}
+                style={[styles.subEffortInput, { backgroundColor: colors.background }]}
               />
               <TextInput
+                theme={inputTheme}
                 mode="outlined"
                 dense
                 label="reps"
@@ -469,22 +501,25 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
                 onChangeText={(text) => updateSubEffort(index, { reps: parseDecimalInput(text) })}
                 keyboardType="number-pad"
                 editable={!isLocked}
-                style={styles.subEffortInput}
+                style={[styles.subEffortInput, { backgroundColor: colors.background }]}
               />
               <IconButton
                 icon="close"
-                size={14}
+                size={16}
+                iconColor={colors.textMuted}
                 disabled={isLocked}
                 onPress={() => removeSubEffort(index)}
+                accessibilityLabel={`Remove effort ${index + 1}`}
                 style={styles.compactButton}
               />
             </View>
           ))}
           <Text
             onPress={isLocked ? undefined : addSubEffort}
+            accessibilityRole="button"
             style={[
               typography.captionBold,
-              { color: isLocked ? colors.textMuted : colors.accent, paddingVertical: 4 },
+              { color: isLocked ? colors.textMuted : colors.accent, paddingVertical: 8 },
             ]}
           >
             + {TECHNIQUE_ADD_LABEL[technique]}
@@ -492,7 +527,7 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
         </View>
       ) : null}
       {validationError ? (
-        <Text style={[typography.micro, { color: colors.danger }]}>{validationError}</Text>
+        <Text style={[typography.caption, { color: colors.danger }]}>{validationError}</Text>
       ) : null}
     </View>
   );
@@ -500,42 +535,23 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
 
 const styles = StyleSheet.create({
   row: {
-    gap: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 96,
-    paddingVertical: 8,
+    gap: 10,
+    overflow: 'hidden',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 12,
   },
   rowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
+    gap: 12,
+  },
+  setNumber: {
+    width: 20,
   },
   setMeta: {
     flex: 1,
-    gap: 2,
-  },
-  setNumber: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  setTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  previousLabel: {
     minWidth: 0,
-    flexShrink: 1,
-  },
-  techniqueBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 1,
+    gap: 2,
   },
   actionGroup: {
     flexDirection: 'row',
@@ -550,19 +566,16 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
   },
+  inputContent: {
+    fontFamily: fonts.mono,
+  },
   rirButton: {
     flex: 1,
     height: 48,
+    marginTop: 6,
     borderWidth: 1,
-    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  plateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
   },
   compactButton: {
     margin: 0,
@@ -573,18 +586,6 @@ const styles = StyleSheet.create({
     gap: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 8,
-  },
-  formAnalysisPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    padding: 10,
-    gap: 4,
-  },
-  formAnalysisHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
   },
   subEffortRow: {
     flexDirection: 'row',

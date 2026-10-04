@@ -1,10 +1,11 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
-import { ActivityIndicator, Button, Card, Chip, IconButton, List } from 'react-native-paper';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Button, IconButton } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
+import { Stat } from '@/components/ui/Stat';
 import { deleteTemplate, listTemplates } from '@/domain/programs/templateStore';
 import type { WorkoutTemplate } from '@/domain/programs/templates';
 import { summarizeWorkoutSession, type WorkoutHistorySummary } from '@/domain/workouts/history';
@@ -15,7 +16,7 @@ import type { Units, WorkoutSession } from '@/types';
 import { formatVolumeLoad } from '@/utils/units';
 
 export default function HistoryScreen() {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
@@ -70,63 +71,50 @@ export default function HistoryScreen() {
         data={summaries}
         keyExtractor={(item) => item.sessionId}
         contentContainerStyle={{
-          paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
+          paddingTop: insets.top + spacing.sm,
           paddingHorizontal: spacing.lg,
           paddingBottom: insets.bottom + 120,
-          gap: spacing.md,
         }}
         ListHeaderComponent={
-          <View style={{ gap: spacing.lg }}>
-            <View style={styles.headerRow}>
-              <IconButton mode="contained-tonal" icon="chevron-left" onPress={leaveHistory} />
-              <View style={{ flex: 1 }}>
-                <Text style={[typography.caption, { color: colors.textMuted }]}>
-                  Saved training log
-                </Text>
-                <Text style={[typography.title, { color: colors.textPrimary }]}>History</Text>
-              </View>
-              <Chip compact mode="flat" icon="history">
-                {sessions.length}
-              </Chip>
+          <View style={{ gap: spacing.xl, paddingBottom: spacing.md }}>
+            <View>
+              <IconButton
+                icon="chevron-left"
+                iconColor={colors.textPrimary}
+                accessibilityLabel="Back"
+                onPress={leaveHistory}
+                style={styles.backButton}
+              />
+              <Text style={[typography.display, { color: colors.textPrimary }]}>History</Text>
             </View>
 
-            <Card
-              mode="contained"
-              style={[
-                styles.card,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  borderRadius: radius.xl,
-                },
-              ]}
-            >
-              <Card.Content style={{ gap: spacing.md }}>
-                <View style={styles.metricRow}>
-                  <HistoryMetric label="sessions" value={String(sessions.length)} />
-                  <HistoryMetric label="sets" value={String(totalSets)} />
-                  <HistoryMetric
-                    label="volume"
-                    value={formatVolumeLoad(totalVolume, preferences.units)}
-                  />
-                </View>
-              </Card.Content>
-            </Card>
+            <View style={styles.metricRow}>
+              <Stat value={String(sessions.length)} label="workouts" />
+              <Stat value={String(totalSets)} label="sets" />
+              <Stat value={formatVolumeLoad(totalVolume, preferences.units)} label="volume" />
+            </View>
 
             {templates.length > 0 ? (
               <View style={{ gap: spacing.sm }}>
-                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  Saved templates
+                <Text style={[typography.heading, { color: colors.textPrimary }]}>
+                  Saved workouts
                 </Text>
-                {templates.map((template) => (
-                  <TemplateRow
-                    key={template.id}
-                    template={template}
-                    onStart={() => startTemplate(template.id)}
-                    onDelete={() => removeTemplate(template.id)}
-                  />
-                ))}
+                <View>
+                  {templates.map((template, index) => (
+                    <TemplateRow
+                      key={template.id}
+                      template={template}
+                      onStart={() => startTemplate(template.id)}
+                      onDelete={() => removeTemplate(template.id)}
+                      last={index === templates.length - 1}
+                    />
+                  ))}
+                </View>
               </View>
+            ) : null}
+
+            {summaries.length > 0 ? (
+              <Text style={[typography.heading, { color: colors.textPrimary }]}>Workouts</Text>
             ) : null}
           </View>
         }
@@ -136,30 +124,17 @@ export default function HistoryScreen() {
               <ActivityIndicator />
             </View>
           ) : (
-            <Card
-              mode="contained"
-              style={[
-                styles.card,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  borderRadius: radius.xl,
-                },
-              ]}
-            >
-              <Card.Content style={{ gap: spacing.md }}>
-                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  No saved sessions yet
-                </Text>
-                <Text style={[typography.body, { color: colors.textMuted }]}>
-                  Finish a workout and it will show here with sets, volume, duration, and lift
-                  breakdown.
-                </Text>
-                <Button mode="contained" icon="dumbbell" onPress={leaveHistory}>
-                  Back to training
-                </Button>
-              </Card.Content>
-            </Card>
+            <View style={{ gap: spacing.sm, paddingTop: spacing.lg }}>
+              <Text style={[typography.heading, { color: colors.textPrimary }]}>
+                No workouts yet
+              </Text>
+              <Text style={[typography.body, { color: colors.textMuted }]}>
+                Finish a workout and it shows up here with sets, volume, time and every lift.
+              </Text>
+              <Button mode="contained" onPress={leaveHistory} style={styles.emptyButton}>
+                Back to training
+              </Button>
+            </View>
           )
         }
         renderItem={({ item }) => (
@@ -187,69 +162,59 @@ function HistorySessionCard({
   selected: boolean;
 }) {
   const { colors, radius, spacing, typography } = useTheme();
-  const topExercises = summary.exerciseSummaries
-    .filter((item) => item.completedSets > 0)
-    .slice(0, 3);
+  const exercises = summary.exerciseSummaries.filter((item) => item.completedSets > 0);
 
   return (
-    <Card
-      mode="contained"
+    <View
       style={[
-        styles.card,
+        styles.session,
         {
+          borderTopColor: colors.border,
+          paddingVertical: spacing.lg,
+          gap: spacing.sm,
+        },
+        selected && {
           backgroundColor: colors.surface,
-          borderColor: selected ? colors.accent : colors.border,
-          borderRadius: radius.xl,
-          borderWidth: selected ? 2 : StyleSheet.hairlineWidth,
+          borderRadius: radius.lg,
+          borderTopColor: 'transparent',
+          paddingHorizontal: spacing.md,
+          marginHorizontal: -spacing.md,
         },
       ]}
     >
-      <Card.Content style={{ gap: spacing.md }}>
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[typography.micro, { color: colors.accent }]}>
-              {formatDate(summary.startedAt)}
-            </Text>
-            <Text style={[typography.heading, { color: colors.textPrimary }]}>
-              {summary.dayName}
-            </Text>
-          </View>
-          <Chip compact mode="flat" icon="timer-outline">
-            {summary.durationMinutes} min
-          </Chip>
-        </View>
+      <View>
+        <Text style={[typography.caption, { color: selected ? colors.accent : colors.textMuted }]}>
+          {formatDate(summary.startedAt)}
+        </Text>
+        <Text style={[typography.heading, { color: colors.textPrimary }]}>{summary.dayName}</Text>
+        <Text style={[typography.caption, { color: colors.textSecondary }]}>
+          {summary.durationMinutes} min, {summary.completedSets} sets,{' '}
+          {formatVolumeLoad(summary.volumeKg, units)}
+        </Text>
+      </View>
 
-        <View style={styles.chipRow}>
-          <Chip compact mode="outlined">
-            {summary.completedSets} sets
-          </Chip>
-          <Chip compact mode="outlined">
-            {summary.exerciseCount} lifts
-          </Chip>
-          <Chip compact mode="outlined">
-            {formatVolumeLoad(summary.volumeKg, units)}
-          </Chip>
-        </View>
-
-        <View style={{ gap: spacing.xs }}>
-          {topExercises.map((exercise) => (
-            <List.Item
-              key={exercise.exerciseId}
-              title={exercise.name}
-              description={`${exercise.completedSets} sets · ${formatVolumeLoad(exercise.volumeKg, units)} · best ${exercise.bestSetLabel}`}
-              onPress={() => onSelectExercise(exercise.exerciseId)}
-              left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
-              right={(props) => (
-                <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
-              )}
-              titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-              descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-              style={styles.compactListItem}
-            />
-          ))}
-        </View>
-      </Card.Content>
-    </Card>
+      <View>
+        {exercises.map((exercise) => (
+          <Pressable
+            key={exercise.exerciseId}
+            onPress={() => onSelectExercise(exercise.exerciseId)}
+            accessibilityRole="button"
+            accessibilityLabel={`${exercise.name}, ${exercise.completedSets} sets, best ${exercise.bestSetLabel}`}
+            style={({ pressed }) => [styles.exerciseRow, pressed && { opacity: 0.6 }]}
+          >
+            <Text
+              style={[typography.body, { color: colors.textPrimary, flex: 1 }]}
+              numberOfLines={1}
+            >
+              {exercise.completedSets} x {exercise.name}
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {exercise.bestSetLabel}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -257,49 +222,43 @@ function TemplateRow({
   template,
   onStart,
   onDelete,
+  last,
 }: {
   template: WorkoutTemplate;
   onStart: () => void;
   onDelete: () => void;
+  last: boolean;
 }) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, typography } = useTheme();
 
   return (
     <View
       style={[
         styles.templateRow,
         {
-          backgroundColor: colors.surfaceRaised,
-          borderRadius: radius.md,
-          paddingHorizontal: spacing.md,
+          borderBottomColor: colors.border,
+          borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
         },
       ]}
     >
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
           {template.name}
         </Text>
         <Text style={[typography.caption, { color: colors.textMuted }]}>
-          {template.day.prescriptions.length} exercises · ~{template.day.estimatedMinutes} min
+          {template.day.prescriptions.length} exercises, about {template.day.estimatedMinutes} min
         </Text>
       </View>
-      <IconButton icon="delete-outline" size={18} onPress={onDelete} />
-      <Button mode="contained-tonal" compact onPress={onStart}>
+      <IconButton
+        icon="delete-outline"
+        size={20}
+        iconColor={colors.textMuted}
+        accessibilityLabel={`Delete ${template.name}`}
+        onPress={onDelete}
+      />
+      <Button mode="outlined" compact onPress={onStart}>
         Start
       </Button>
-    </View>
-  );
-}
-
-function HistoryMetric({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={styles.metric}>
-      <Text style={[typography.display, { color: colors.textPrimary }]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
     </View>
   );
 }
@@ -316,35 +275,32 @@ function formatDate(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
+  backButton: {
+    marginLeft: -12,
   },
   metricRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
   },
-  metric: {
-    flex: 1,
+  session: {
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  chipRow: {
+  exerciseRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  compactListItem: {
-    paddingVertical: 0,
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 36,
   },
   templateRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    minHeight: 64,
     paddingVertical: 6,
+  },
+  emptyButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
   },
   loadingWrap: {
     minHeight: 180,

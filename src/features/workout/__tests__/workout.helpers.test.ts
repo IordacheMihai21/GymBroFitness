@@ -10,7 +10,6 @@ import type {
 
 import {
   attachFormAnalysisResult,
-  autosaveIcon,
   autosaveLabel,
   buildCustomWorkoutDay,
   cameraAngleLabel,
@@ -120,9 +119,7 @@ describe('isExerciseDone', () => {
   it('is true only when every set is completed or skipped', () => {
     expect(isExerciseDone(exercise('a', [set('a1', { completed: true })]))).toBe(true);
     expect(isExerciseDone(exercise('a', [set('a1', { skipped: true })]))).toBe(true);
-    expect(
-      isExerciseDone(exercise('a', [set('a1', { completed: true }), set('a2')])),
-    ).toBe(false);
+    expect(isExerciseDone(exercise('a', [set('a1', { completed: true }), set('a2')]))).toBe(false);
   });
 });
 
@@ -169,14 +166,7 @@ describe('formatRest', () => {
   });
 });
 
-describe('autosaveIcon / autosaveLabel', () => {
-  it('maps every autosave state to a distinct icon', () => {
-    const icons = new Set(
-      (['idle', 'restored', 'saving', 'saved', 'error'] as const).map(autosaveIcon),
-    );
-    expect(icons.size).toBe(5);
-  });
-
+describe('autosaveLabel', () => {
   it('labels a saved state with the formatted time when available', () => {
     expect(autosaveLabel('saved', '2026-09-20T10:30:00.000Z')).toMatch(/^Autosaved /);
     expect(autosaveLabel('saved', null)).toBe('Autosaved');

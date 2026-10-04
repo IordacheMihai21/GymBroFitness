@@ -1,18 +1,16 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import {
-  Button,
-  Card,
-  Dialog,
-  HelperText,
-  Portal,
-  SegmentedButtons,
-  TextInput,
-} from 'react-native-paper';
+import { Text, View } from 'react-native';
+import { Button, Dialog, HelperText, Portal, TextInput } from 'react-native-paper';
 
+import { Segmented } from '@/components/ui/Segmented';
 import { useSupabaseSession } from '@/hooks/useSupabaseSession';
 import { isSupabaseConfigured } from '@/services/supabase/client';
-import { deleteOwnAccount, signInWithEmail, signOut, signUpWithEmail } from '@/services/supabase/auth';
+import {
+  deleteOwnAccount,
+  signInWithEmail,
+  signOut,
+  signUpWithEmail,
+} from '@/services/supabase/auth';
 import {
   clearLocalSyncMarker,
   inspectCloudSync,
@@ -20,48 +18,44 @@ import {
   restoreInspectedCloudBackup,
   type CloudSyncInspection,
 } from '@/services/supabase/sync';
-import { useTheme } from '@/theme';
+import { inputTheme, useTheme } from '@/theme';
+
+const AUTH_MODES = [
+  { label: 'Sign in', value: 'sign_in' },
+  { label: 'Create account', value: 'sign_up' },
+] as const;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Optional account/backup card — GymBroFitness is local-first (see
+ * Optional account/backup section. GymBroFitness is local-first (see
  * PRODUCT.md and the onboarding copy: "No account required"), so this never
  * gates the app. It renders nothing when this build has no Supabase project
  * configured, and even when configured, signing in is something the user
  * opts into from Settings, not something the app demands on launch.
  */
 export function AccountCard() {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const { session, loading: sessionLoading } = useSupabaseSession();
 
   if (!isSupabaseConfigured()) return null;
 
   return (
-    <Card
-      mode="contained"
-      style={[
-        styles.card,
-        { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.xl },
-      ]}
-    >
-      <Card.Content style={{ gap: spacing.md }}>
-        <View style={{ gap: 4 }}>
-          <Text style={[typography.micro, { color: colors.accent }]}>Sync</Text>
-          <Text style={[typography.subheading, { color: colors.textPrimary }]}>Account</Text>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>
-            Optional — your data stays on this device either way. Sign in only if you want a backup
-            you can restore from.
-          </Text>
-        </View>
+    <View style={{ gap: spacing.md }}>
+      <View style={{ gap: 2 }}>
+        <Text style={[typography.heading, { color: colors.textPrimary }]}>Cloud backup</Text>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          Optional. Your data stays on this device either way. Sign in only if you want a backup you
+          can restore from.
+        </Text>
+      </View>
 
-        {sessionLoading ? null : session ? (
-          <SignedInRow userId={session.user.id} email={session.user.email ?? 'this account'} />
-        ) : (
-          <AuthForm />
-        )}
-      </Card.Content>
-    </Card>
+      {sessionLoading ? null : session ? (
+        <SignedInRow userId={session.user.id} email={session.user.email ?? 'this account'} />
+      ) : (
+        <AuthForm />
+      )}
+    </View>
   );
 }
 
@@ -150,8 +144,7 @@ function SignedInRow({ userId, email }: { userId: string; email: string }) {
         </HelperText>
       ) : null}
       <Button
-        mode="contained-tonal"
-        icon="cloud-sync-outline"
+        mode="contained"
         loading={syncing}
         disabled={syncing || signingOut}
         onPress={beginSync}
@@ -160,7 +153,6 @@ function SignedInRow({ userId, email }: { userId: string; email: string }) {
       </Button>
       <Button
         mode="outlined"
-        icon="logout"
         loading={signingOut}
         disabled={signingOut || syncing}
         onPress={() => {
@@ -224,7 +216,7 @@ function SignedInRow({ userId, email }: { userId: string; email: string }) {
             {pendingRestore ? (
               <Text style={[typography.caption, { color: colors.textMuted }]}>
                 Cloud: {pendingRestore.preview.sessionCount} workouts and{' '}
-                {pendingRestore.preview.templateCount} templates · exported{' '}
+                {pendingRestore.preview.templateCount} templates, exported{' '}
                 {new Date(pendingRestore.preview.exportedAt).toLocaleDateString()}
               </Text>
             ) : null}
@@ -283,19 +275,17 @@ function AuthForm() {
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <SegmentedButtons
+      <Segmented
+        options={AUTH_MODES}
         value={mode}
-        onValueChange={(value) => {
-          setMode(value as typeof mode);
+        onChange={(value) => {
+          setMode(value);
           setError(null);
           setConfirmationSent(false);
         }}
-        buttons={[
-          { value: 'sign_in', label: 'Sign in' },
-          { value: 'sign_up', label: 'Create account' },
-        ]}
       />
       <TextInput
+        theme={inputTheme}
         mode="outlined"
         label="Email"
         value={email}
@@ -314,6 +304,7 @@ function AuthForm() {
         {emailIssue}
       </HelperText>
       <TextInput
+        theme={inputTheme}
         mode="outlined"
         label="Password"
         value={password}
@@ -349,9 +340,3 @@ function AuthForm() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-});

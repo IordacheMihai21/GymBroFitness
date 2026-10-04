@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { BodyMeasurementEntry } from '@/domain/body/measurements';
+import type { ProgressPhoto } from '@/domain/body/progressPhotos';
 import type { WorkoutTemplate } from '@/domain/programs/templates';
 import type { WorkoutSession } from '@/types';
 
@@ -145,6 +147,30 @@ export const workoutTemplatePayloadSchema: z.ZodType<WorkoutTemplate> = z
     day: programDaySchema,
   })
   .passthrough() as z.ZodType<WorkoutTemplate>;
+
+export const bodyMeasurementPayloadSchema: z.ZodType<BodyMeasurementEntry> = z
+  .object({
+    id: z.string().min(1),
+    userId: z.string().min(1),
+    date: z.string().min(1),
+    bodyWeightKg: z.number().positive().nullable(),
+    measurementsCm: z.record(z.string(), z.number().positive()),
+    note: z.string().optional(),
+    createdAt: z.string(),
+  })
+  .passthrough() as z.ZodType<BodyMeasurementEntry>;
+
+export const progressPhotoPayloadSchema: z.ZodType<ProgressPhoto> = z
+  .object({
+    id: z.string().min(1),
+    userId: z.string().min(1),
+    takenAt: z.string().min(1),
+    pose: z.enum(['front', 'side', 'back']).nullable(),
+    localUri: z.string().min(1),
+    note: z.string().optional(),
+    createdAt: z.string(),
+  })
+  .passthrough() as z.ZodType<ProgressPhoto>;
 
 export function encodePayload<T>(data: T): VersionedPayload<T> {
   return { schemaVersion: PAYLOAD_SCHEMA_VERSION, data };

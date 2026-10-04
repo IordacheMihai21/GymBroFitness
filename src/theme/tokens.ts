@@ -136,46 +136,48 @@ export const spacing = {
   x5l: 56,
 } as const;
 
+/** Controls are 10, surfaces 16. Pills are only for tiny status tags. */
 export const radius = {
   sm: 6,
   md: 10,
-  lg: 14,
-  xl: 20,
+  lg: 12,
+  xl: 16,
   pill: 999,
 } as const;
 
+/**
+ * Family names registered by `useFonts` in the root layout. Each weight is its
+ * own family on Android, so typography roles set a family and never a
+ * fontWeight (a weight on top of a custom family triggers synthetic bolding).
+ */
+export const fonts = {
+  regular: 'Geist_400Regular',
+  medium: 'Geist_500Medium',
+  semibold: 'Geist_600SemiBold',
+  mono: 'GeistMono_500Medium',
+  monoSemibold: 'GeistMono_600SemiBold',
+} as const;
+
 export const typography = {
-  jumbo: { fontSize: 44, lineHeight: 48, fontWeight: '800' as const },
-  display: { fontSize: 30, lineHeight: 36, fontWeight: '700' as const },
-  title: { fontSize: 24, lineHeight: 30, fontWeight: '700' as const },
-  heading: { fontSize: 19, lineHeight: 25, fontWeight: '600' as const },
-  subheading: { fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
-  body: { fontSize: 16, lineHeight: 23, fontWeight: '400' as const },
-  bodyBold: { fontSize: 16, lineHeight: 23, fontWeight: '600' as const },
-  caption: { fontSize: 13, lineHeight: 18, fontWeight: '400' as const },
-  captionBold: { fontSize: 13, lineHeight: 18, fontWeight: '600' as const },
-  micro: { fontSize: 11, lineHeight: 14, fontWeight: '500' as const },
-  numeric: { fontSize: 17, lineHeight: 22, fontWeight: '600' as const },
+  jumbo: { fontFamily: fonts.monoSemibold, fontSize: 44, lineHeight: 50, letterSpacing: -1.2 },
+  display: { fontFamily: fonts.semibold, fontSize: 30, lineHeight: 36, letterSpacing: -0.8 },
+  title: { fontFamily: fonts.semibold, fontSize: 22, lineHeight: 28, letterSpacing: -0.4 },
+  heading: { fontFamily: fonts.semibold, fontSize: 17, lineHeight: 23, letterSpacing: -0.2 },
+  subheading: { fontFamily: fonts.medium, fontSize: 15, lineHeight: 21 },
+  body: { fontFamily: fonts.regular, fontSize: 15, lineHeight: 22 },
+  bodyBold: { fontFamily: fonts.medium, fontSize: 15, lineHeight: 22 },
+  caption: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 18 },
+  captionBold: { fontFamily: fonts.medium, fontSize: 13, lineHeight: 18 },
+  micro: { fontFamily: fonts.medium, fontSize: 12, lineHeight: 16 },
+  numeric: { fontFamily: fonts.mono, fontSize: 17, lineHeight: 22, letterSpacing: -0.3 },
 } as const;
 
 export type TypographyVariant = keyof typeof typography;
 
 export const elevation = {
   none: {},
-  low: {
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  medium: {
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
-  },
+  low: {},
+  medium: {},
 } as const;
 
 /** Minimum touch target size per accessibility guidance. */

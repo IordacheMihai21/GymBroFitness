@@ -1,20 +1,14 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import {
-  Button,
-  Card,
-  Chip,
-  Divider,
-  IconButton,
-  List,
-  Searchbar,
-  TextInput,
-} from 'react-native-paper';
+import { Button, IconButton, Searchbar, TextInput } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ExerciseDemoModal } from '@/components/exercise/ExerciseDemoModal';
 import { ExerciseThumbnail } from '@/components/exercise/ExerciseThumbnail';
+import { Pill } from '@/components/ui/Pill';
+import { Segmented } from '@/components/ui/Segmented';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { requireExercise } from '@/domain/exercises/catalog';
 import { exerciseCandidatesForProgramDay } from '@/domain/programs/programEditing';
@@ -31,8 +25,18 @@ import {
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useKeyboardAwareScroll } from '@/hooks/useKeyboardAwareScroll';
 import { useBackDestination } from '@/hooks/useBackDestination';
-import { useTheme } from '@/theme';
+import { inputTheme, useTheme } from '@/theme';
 import { MUSCLE_GROUPS, type Exercise, type MuscleGroup, type TrainingProgram } from '@/types';
+
+const DAY_COUNT_OPTIONS = [
+  { label: '2', value: '2' },
+  { label: '3', value: '3' },
+  { label: '4', value: '4' },
+  { label: '5', value: '5' },
+  { label: '6', value: '6' },
+] as const;
+
+type DayCount = (typeof DAY_COUNT_OPTIONS)[number]['value'];
 
 export default function ProgramBuilderScreen() {
   const { colors, radius, spacing, typography } = useTheme();
@@ -123,281 +127,251 @@ export default function ProgramBuilderScreen() {
       onScroll={onScroll}
       scrollEventThrottle={16}
       contentContainerStyle={{
-        paddingTop: Math.max(insets.top, spacing.xxl) + spacing.md,
+        paddingTop: insets.top + spacing.sm,
         paddingBottom: insets.bottom + 120,
         paddingHorizontal: spacing.lg,
-        gap: spacing.lg,
+        gap: spacing.xl,
       }}
     >
-      <View style={styles.headerRow}>
-        <IconButton mode="contained-tonal" icon="arrow-left" onPress={backToProgram} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>Manual programming</Text>
-          <Text style={[typography.title, { color: colors.textPrimary }]}>Build Program</Text>
-        </View>
-        <Chip compact mode="flat" icon="calendar-week">
-          {draft.days.length}d
-        </Chip>
+      <View>
+        <IconButton
+          icon="chevron-left"
+          iconColor={colors.textPrimary}
+          accessibilityLabel="Back to plan"
+          onPress={backToProgram}
+          style={styles.backButton}
+        />
+        <Text style={[typography.display, { color: colors.textPrimary }]}>Build a plan</Text>
+        <Text style={[typography.body, { color: colors.textSecondary }]}>
+          Pick your days, then add exercises to each one.
+        </Text>
       </View>
 
-      <Card
-        mode="contained"
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.borderStrong,
-            borderRadius: radius.xl,
-          },
-        ]}
-      >
-        <Card.Content style={{ gap: spacing.md }}>
-          <TextInput
-            mode="outlined"
-            label="Program name"
-            value={draft.name}
-            onChangeText={(name) => updateDraft({ ...draft, name })}
+      <View style={{ gap: spacing.md }}>
+        <TextInput
+          theme={inputTheme}
+          mode="outlined"
+          label="Plan name"
+          value={draft.name}
+          onChangeText={(name) => updateDraft({ ...draft, name })}
+          style={{ backgroundColor: colors.background }}
+        />
+
+        <View style={{ gap: spacing.sm }}>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>Days a week</Text>
+          <Segmented
+            options={DAY_COUNT_OPTIONS}
+            value={String(draft.days.length) as DayCount}
+            onChange={(value) => updateDayCount(Number(value))}
           />
+        </View>
+      </View>
 
-          <View style={styles.headerRow}>
-            <View>
-              <Text style={[typography.micro, { color: colors.accent }]}>Week structure</Text>
-              <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                Training days
-              </Text>
-            </View>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>2-6 days</Text>
-          </View>
-
-          <View style={styles.chipRow}>
-            {[2, 3, 4, 5, 6].map((days) => (
-              <Chip
-                key={days}
-                selected={draft.days.length === days}
-                mode={draft.days.length === days ? 'flat' : 'outlined'}
-                onPress={() => updateDayCount(days)}
-              >
-                {days} days
-              </Chip>
-            ))}
-          </View>
-
-          {status ? (
-            <Text
-              style={[
-                typography.captionBold,
-                { color: saveIssue ? colors.warning : colors.textMuted },
-              ]}
-            >
-              {status}
-            </Text>
-          ) : saveIssue ? (
-            <Text style={[typography.caption, { color: colors.textMuted }]}>{saveIssue}</Text>
-          ) : (
-            <Text style={[typography.caption, { color: colors.accent }]}>Ready to save.</Text>
-          )}
-        </Card.Content>
-      </Card>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.dayRail}
-      >
-        {draft.days.map((day, index) => (
-          <Chip
-            key={day.id}
-            selected={selectedDayIndex === index}
-            mode={selectedDayIndex === index ? 'flat' : 'outlined'}
-            icon={day.prescriptions.length > 0 ? 'check' : 'circle-outline'}
-            onPress={() => setSelectedDayIndex(index)}
-          >
-            {day.name}
-          </Chip>
-        ))}
-      </ScrollView>
-
-      {selectedDay ? (
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
+      <View style={{ gap: spacing.md }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dayRail}
         >
-          <Card.Content style={{ gap: spacing.md }}>
-            <View style={styles.headerRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[typography.micro, { color: colors.accent }]}>Selected day</Text>
-                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  {selectedDay.name}
-                </Text>
-              </View>
-              <Chip compact mode="flat" icon="dumbbell">
-                {selectedDay.prescriptions.length}
-              </Chip>
-            </View>
+          {draft.days.map((day, index) => (
+            <Pill
+              key={day.id}
+              label={
+                day.prescriptions.length > 0
+                  ? `${day.name} (${day.prescriptions.length})`
+                  : day.name
+              }
+              active={selectedDayIndex === index}
+              onPress={() => setSelectedDayIndex(index)}
+            />
+          ))}
+        </ScrollView>
 
+        {selectedDay ? (
+          <View style={{ gap: spacing.md }}>
             <TextInput
+              theme={inputTheme}
               mode="outlined"
+              dense
               label="Day name"
               value={selectedDay.name}
               onChangeText={(name) =>
                 updateDraft(renameCustomProgramDay(draft, selectedDayIndex, name))
               }
+              style={{ backgroundColor: colors.background }}
             />
-
-            <View style={styles.metricGrid}>
-              <Metric label="exercises" value={String(selectedDay.prescriptions.length)} />
-              <Metric
-                label="sets"
-                value={String(
-                  selectedDay.prescriptions.reduce((sum, item) => sum + item.workingSets, 0),
-                )}
-              />
-              <Metric label="est." value={`${selectedDay.estimatedMinutes}m`} />
-            </View>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {selectedDay.prescriptions.length} exercises,{' '}
+              {selectedDay.prescriptions.reduce((sum, item) => sum + item.workingSets, 0)} sets,
+              about {selectedDay.estimatedMinutes} min
+            </Text>
 
             {selectedDay.prescriptions.length === 0 ? (
-              <EmptyPanel
-                title="No exercises yet"
-                description="Search below and add at least one movement to this day."
-              />
+              <Text style={[typography.body, { color: colors.textMuted }]}>
+                No exercises yet. Add at least one from the list below.
+              </Text>
             ) : (
-              selectedDay.prescriptions.map((prescription, index) => {
-                const exercise = requireExercise(prescription.exerciseId);
-                return (
-                  <View key={`${prescription.exerciseId}-${index}`}>
-                    <List.Item
-                      title={exercise.name}
-                      description={`${prescription.workingSets} x ${prescription.minReps}-${prescription.maxReps} · RIR ${prescription.targetRir} · ${formatMuscles(exercise.primaryMuscles)}`}
-                      left={() => <ExerciseThumbnail exercise={exercise} />}
-                      right={() => (
-                        <View style={styles.rowActions}>
-                          <IconButton
-                            size={18}
-                            icon="chevron-up"
-                            disabled={index === 0}
-                            onPress={() => moveExercise(index, -1)}
-                          />
-                          <IconButton
-                            size={18}
-                            icon="chevron-down"
-                            disabled={index === selectedDay.prescriptions.length - 1}
-                            onPress={() => moveExercise(index, 1)}
-                          />
-                          <IconButton
-                            size={18}
-                            icon="trash-can-outline"
-                            iconColor={colors.danger}
-                            onPress={() => removeExercise(index)}
-                          />
-                        </View>
-                      )}
-                      titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-                      descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-                    />
-                    {index < selectedDay.prescriptions.length - 1 ? <Divider /> : null}
-                  </View>
-                );
-              })
-            )}
-          </Card.Content>
-        </Card>
-      ) : null}
-
-      <Card
-        mode="contained"
-        style={[
-          styles.card,
-          { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.xl },
-        ]}
-      >
-        <Card.Content style={{ gap: spacing.md }}>
-          <View>
-            <Text style={[typography.micro, { color: colors.accent }]}>Exercise catalog</Text>
-            <Text style={[typography.subheading, { color: colors.textPrimary }]}>Add to day</Text>
-          </View>
-
-          <View ref={inputAnchorRef} collapsable={false}>
-            <Searchbar
-              placeholder="Search exercise, muscle, equipment"
-              value={query}
-              onChangeText={setQuery}
-              onFocus={revealInput}
-              mode="bar"
-              style={[styles.search, { backgroundColor: colors.surfaceRaised }]}
-              inputStyle={{ color: colors.textPrimary }}
-              placeholderTextColor={colors.textMuted}
-            />
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipRow}
-          >
-            <Chip
-              compact
-              selected={muscleFilter == null}
-              mode={muscleFilter == null ? 'flat' : 'outlined'}
-              onPress={() => setMuscleFilter(null)}
-            >
-              All
-            </Chip>
-            {MUSCLE_GROUPS.map((muscle) => (
-              <Chip
-                key={muscle}
-                compact
-                selected={muscleFilter === muscle}
-                mode={muscleFilter === muscle ? 'flat' : 'outlined'}
-                onPress={() => setMuscleFilter((current) => (current === muscle ? null : muscle))}
-              >
-                {MUSCLE_LABELS[muscle]}
-              </Chip>
-            ))}
-          </ScrollView>
-
-          {candidates.length === 0 ? (
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              No unused exercise matches this filter with your current equipment.
-            </Text>
-          ) : (
-            candidates.map((exercise, index) => (
-              <View key={exercise.id}>
-                <List.Item
-                  title={exercise.name}
-                  description={`${formatMuscles(exercise.primaryMuscles)} · ${exercise.movementPattern.replace(/_/g, ' ')} · Preview technique`}
-                  descriptionNumberOfLines={2}
-                  onPress={() => setPreviewExercise(exercise)}
-                  left={() => <ExerciseThumbnail exercise={exercise} />}
-                  right={(props) => (
-                    <List.Icon {...props} icon="arrow-expand" color={colors.textMuted} />
-                  )}
-                  titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-                  descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-                  style={[styles.candidateRow, { backgroundColor: colors.surfaceRaised }]}
-                />
-                {index < candidates.length - 1 ? <View style={{ height: spacing.sm }} /> : null}
+              <View>
+                {selectedDay.prescriptions.map((prescription, index) => {
+                  const exercise = requireExercise(prescription.exerciseId);
+                  const last = index === selectedDay.prescriptions.length - 1;
+                  return (
+                    <View
+                      key={`${prescription.exerciseId}-${index}`}
+                      style={[
+                        styles.exerciseRow,
+                        {
+                          borderBottomColor: colors.border,
+                          borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
+                        },
+                      ]}
+                    >
+                      <ExerciseThumbnail exercise={exercise} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text
+                          style={[typography.bodyBold, { color: colors.textPrimary }]}
+                          numberOfLines={1}
+                        >
+                          {exercise.name}
+                        </Text>
+                        <Text
+                          style={[typography.caption, { color: colors.textMuted }]}
+                          numberOfLines={2}
+                        >
+                          {prescription.workingSets} x {prescription.minReps}-{prescription.maxReps}
+                          , RIR {prescription.targetRir}. {formatMuscles(exercise.primaryMuscles)}
+                        </Text>
+                      </View>
+                      <View style={styles.rowActions}>
+                        <IconButton
+                          size={18}
+                          icon="chevron-up"
+                          iconColor={colors.textMuted}
+                          disabled={index === 0}
+                          accessibilityLabel={`Move ${exercise.name} up`}
+                          onPress={() => moveExercise(index, -1)}
+                          style={styles.rowAction}
+                        />
+                        <IconButton
+                          size={18}
+                          icon="chevron-down"
+                          iconColor={colors.textMuted}
+                          disabled={last}
+                          accessibilityLabel={`Move ${exercise.name} down`}
+                          onPress={() => moveExercise(index, 1)}
+                          style={styles.rowAction}
+                        />
+                        <IconButton
+                          size={18}
+                          icon="close"
+                          iconColor={colors.textMuted}
+                          accessibilityLabel={`Remove ${exercise.name}`}
+                          onPress={() => removeExercise(index)}
+                          style={styles.rowAction}
+                        />
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
-            ))
-          )}
-        </Card.Content>
-      </Card>
+            )}
+          </View>
+        ) : null}
+      </View>
 
-      <Button
-        mode="contained"
-        icon="content-save-check-outline"
-        loading={saving}
-        disabled={saving || !!saveIssue}
-        onPress={saveCustomProgram}
-      >
-        Save as active program
-      </Button>
+      <View style={{ gap: spacing.md }}>
+        <Text style={[typography.heading, { color: colors.textPrimary }]}>
+          Add to {selectedDay?.name ?? 'day'}
+        </Text>
+
+        <View ref={inputAnchorRef} collapsable={false}>
+          <Searchbar
+            placeholder="Search exercise, muscle, equipment"
+            value={query}
+            onChangeText={setQuery}
+            onFocus={revealInput}
+            mode="bar"
+            iconColor={colors.textMuted}
+            style={[styles.search, { backgroundColor: colors.surface, borderRadius: radius.lg }]}
+            inputStyle={[typography.body, { color: colors.textPrimary, minHeight: 0 }]}
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dayRail}
+        >
+          <Pill label="All" active={muscleFilter == null} onPress={() => setMuscleFilter(null)} />
+          {MUSCLE_GROUPS.map((muscle) => (
+            <Pill
+              key={muscle}
+              label={MUSCLE_LABELS[muscle]}
+              active={muscleFilter === muscle}
+              onPress={() => setMuscleFilter((current) => (current === muscle ? null : muscle))}
+            />
+          ))}
+        </ScrollView>
+
+        {candidates.length === 0 ? (
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            No unused exercise matches this filter with your equipment.
+          </Text>
+        ) : (
+          <View>
+            {candidates.map((exercise, index) => (
+              <Pressable
+                key={exercise.id}
+                onPress={() => setPreviewExercise(exercise)}
+                accessibilityRole="button"
+                accessibilityLabel={`Preview ${exercise.name}`}
+                style={({ pressed }) => [
+                  styles.exerciseRow,
+                  {
+                    borderBottomColor: colors.border,
+                    borderBottomWidth:
+                      index === candidates.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <ExerciseThumbnail exercise={exercise} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={[typography.bodyBold, { color: colors.textPrimary }]}
+                    numberOfLines={1}
+                  >
+                    {exercise.name}
+                  </Text>
+                  <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
+                    {formatMuscles(exercise.primaryMuscles)},{' '}
+                    {exercise.movementPattern.replace(/_/g, ' ')}
+                  </Text>
+                </View>
+                <MaterialCommunityIcons name="plus" size={22} color={colors.textSecondary} />
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+
+      <View style={{ gap: spacing.sm }}>
+        {status || saveIssue ? (
+          <Text style={[typography.caption, { color: status ? colors.warning : colors.textMuted }]}>
+            {status ?? saveIssue}
+          </Text>
+        ) : null}
+        <Button
+          mode="contained"
+          loading={saving}
+          disabled={saving || !!saveIssue}
+          onPress={saveCustomProgram}
+          contentStyle={styles.primaryContent}
+        >
+          Save and use this plan
+        </Button>
+      </View>
 
       <ExerciseDemoModal
         key={previewExercise?.id ?? 'closed'}
@@ -410,76 +384,38 @@ export default function ProgramBuilderScreen() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={[styles.metric, { backgroundColor: colors.surfaceRaised }]}>
-      <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-    </View>
-  );
-}
-
-function EmptyPanel({ title, description }: { title: string; description: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <List.Item
-      title={title}
-      description={description}
-      left={(props) => <List.Icon {...props} icon="playlist-plus" color={colors.accent} />}
-      titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-      descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-      style={[styles.emptyPanel, { backgroundColor: colors.surfaceRaised }]}
-    />
-  );
-}
-
 function formatMuscles(muscles: MuscleGroup[]): string {
   return muscles.map((muscle) => MUSCLE_LABELS[muscle]).join(', ');
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  backButton: {
+    marginLeft: -12,
   },
   dayRail: {
     gap: 8,
     paddingRight: 16,
   },
-  metricGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  metric: {
-    flex: 1,
-    borderRadius: 14,
-    padding: 12,
-    gap: 2,
-  },
   search: {
-    borderWidth: StyleSheet.hairlineWidth,
+    elevation: 0,
+    height: 48,
   },
-  candidateRow: {
-    borderRadius: 14,
-  },
-  emptyPanel: {
-    borderRadius: 14,
+  exerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 68,
+    paddingVertical: 10,
   },
   rowActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginRight: -8,
+  },
+  rowAction: {
+    margin: 0,
+  },
+  primaryContent: {
+    minHeight: 52,
   },
 });

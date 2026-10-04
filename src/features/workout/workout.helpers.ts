@@ -56,21 +56,6 @@ export function formatRest(seconds: number): string {
   return s === 0 ? `${m}m` : `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export function autosaveIcon(state: AutosaveState): string {
-  switch (state) {
-    case 'restored':
-      return 'backup-restore';
-    case 'saving':
-      return 'cloud-sync-outline';
-    case 'saved':
-      return 'content-save-check-outline';
-    case 'error':
-      return 'alert-circle-outline';
-    case 'idle':
-      return 'content-save-outline';
-  }
-}
-
 export function autosaveLabel(state: AutosaveState, savedAt: string | null): string {
   switch (state) {
     case 'restored':

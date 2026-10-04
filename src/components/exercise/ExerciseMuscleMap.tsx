@@ -18,7 +18,7 @@ export function ExerciseMuscleMap({
   primaryMuscles,
   secondaryMuscles,
 }: ExerciseMuscleMapProps) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const bodyData = exerciseBodyData(primaryMuscles, secondaryMuscles);
   const primaryLabel = muscleLabels(primaryMuscles);
   const secondaryOnly = secondaryMuscles.filter((muscle) => !primaryMuscles.includes(muscle));
@@ -28,16 +28,7 @@ export function ExerciseMuscleMap({
     <View
       accessible
       accessibilityLabel={`${exerciseName}. Primary muscles: ${primaryLabel || 'not specified'}${secondaryLabel ? `. Secondary muscles: ${secondaryLabel}` : ''}`}
-      style={[
-        styles.panel,
-        {
-          backgroundColor: colors.surfaceRaised,
-          borderColor: colors.border,
-          borderRadius: radius.lg,
-          padding: spacing.md,
-          gap: spacing.md,
-        },
-      ]}
+      style={[styles.panel, { gap: spacing.lg }]}
     >
       <View style={styles.bodyPair} importantForAccessibility="no-hide-descendants">
         <Body
@@ -46,7 +37,7 @@ export function ExerciseMuscleMap({
           side="front"
           scale={0.25}
           border="none"
-          defaultFill={colors.surfacePressed}
+          defaultFill={colors.surfaceRaised}
         />
         <Body
           data={bodyData}
@@ -54,17 +45,12 @@ export function ExerciseMuscleMap({
           side="back"
           scale={0.25}
           border="none"
-          defaultFill={colors.surfacePressed}
+          defaultFill={colors.surfaceRaised}
         />
       </View>
 
       <View style={[styles.copy, { gap: spacing.sm }]}>
-        <View>
-          <Text style={[typography.micro, { color: colors.musclePrimary }]}>MUSCLE TARGET</Text>
-          <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-            {primaryLabel || 'Full body'}
-          </Text>
-        </View>
+        <Text style={[typography.heading, { color: colors.textPrimary }]}>Muscles worked</Text>
 
         <LegendRow
           color={colors.musclePrimary}
@@ -100,7 +86,6 @@ const styles = StyleSheet.create({
   panel: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
   },
   bodyPair: {
     minWidth: 132,

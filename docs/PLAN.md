@@ -753,4 +753,209 @@ Also built [`account-deletion.html`](../account-deletion.html) — the web-based
 
 Verified: tsc clean, eslint clean, 451/451 tests (3 new for `deleteOwnAccount`). Confirmed on-device after the package-name rebuild that the app installs and boots under the new id with no crash. **Did not test the delete-account flow against the real backend myself** — same boundary as sign-up: irreversibly deleting a real account isn't something to exercise on the user's behalf. Also did not fill in a real support email in `PRIVACY.md`/`account-deletion.html`, and did not attempt to toggle Supabase's leaked-password-protection setting (no tool access) — both need the user directly.
 
-**Still open before this can actually ship to Play Store** (not code — content/account work only the user can do): host `PRIVACY.md` and `account-deletion.html` somewhere with a real URL, fill in a real support email in both, flip the leaked-password-protection toggle in the Supabase dashboard, create a Play Console developer account if one doesn't exist, and prepare the actual store listing (screenshots, feature graphic, description, Data Safety form declaring email + fitness data collection).
+**Still open before this can actually ship to Play Store** (not code — content/account work only the user can do): host `PRIVACY.md` and `account-deletion.html` somewhere with a real URL, fill in a real support email in both, create a Play Console developer account if one doesn't exist, and prepare the actual store listing (screenshots, feature graphic, description, Data Safety form declaring email + fitness data collection).
+
+## Whole-app device check + two corrections (2026-09-26, same day)
+
+User connected their physical phone and asked for a full pass over the app plus a summary of where to look. Installed the new-package-name build on the phone (had been emulator-only), walked the entire first-run path — onboarding (Profile → Goal → Week → Setup → Plan), the generated program landing on Home with a real photo and calibration card, Settings' Account card, and the Progress tab's new e1RM `InfoHint` (tapped it live — dialog opened correctly, confirming the earlier `Pressable`/`hitSlop` fix actually works on real hardware, not just in theory). Logcat across the whole session: zero app errors, one pre-existing harmless camera-library naming warning.
+
+**Real, non-code finding**: the phone (running a newer Android version than the test emulator) surfaced an "Android App Compatibility" warning the emulator never showed — several native libraries (`libgesturehandler`, `libtensorflowlite_jni`, `libVisionCameraResizePlugin`, `libexpo-modules-core`, `libreanimated`) aren't 16 KB-page-size aligned. Google Play has required 16 KB support for new apps/updates on Android 15+ devices since November 2025. The dialog itself only appears on debuggable builds, but the underlying alignment gap is real and will need checking (mostly a wait-on-upstream-library-versions problem) before a real Play Store submission — flagged, not fixed, since it's not something this session's code changes caused or can quickly resolve.
+
+**Corrected a wrong claim from earlier the same day**: told the user to flip "Leaked Password Protection" under Authentication → Policies. Wrong on two counts — Supabase's own docs place that toggle under **Authentication → Sign In / Providers → Email**, not Policies, and more importantly `get_organization` confirmed this project's org (`iordachemihai434@gmail.com's Org`) is on the **Free plan** — Supabase's docs are explicit that leaked-password protection is Pro-plan-and-above only, so the user likely couldn't find it because it isn't offered at their tier, not because they were looking in the wrong place. Asked the user directly rather than assuming: they chose to stay on Free and leave it off for now (client-side password rules — email format, 6+ characters — still apply regardless), revisit if this ever nears a real public launch.
+
+Verified: tsc clean, eslint clean, 451/451 tests, unchanged (this pass was verification and one dashboard-navigation correction, no code touched).
+
+## Set-kind wiring + a second competitive research pass, ahead of the user's own test workout (2026-09-27)
+
+Asked for "one last deep dive" before training on the app for real, plus a full functional test. Reviewed the live-workout critical path end to end (autosave/persistence controller, wall-clock rest timer + background notification, set validation) and found it solid, with one real gap: `PerformedSet.kind` (warmup/working/failure) already existed in the data model and was already correctly excluded from volume/progression by `completedWorkingSets()` everywhere it's used — but nothing in the UI ever let a user actually set it. Wired it into [`SetRow.tsx`](../src/components/workout/SetRow.tsx)'s existing "⋯" menu: Working set / Warm-up set / To failure, with a badge, and marking a set "To failure" now also sets RIR to 0 automatically.
+
+Full device test on the user's phone: onboarding → generated program → logged a set (60kg × 6, live plate math correct) → RIR picker → "Fill open" set-assistant autofill → the new warm-up/failure menu (confirmed the "Failure" badge and RIR-auto-0 behavior on real hardware, not just in code) → skip/restore → progression card correctly said "no completed working sets, plan unchanged." Zero crashes or errors in logcat across the whole session.
+
+Also did a second competitive pass (same method as before: web search across Hevy/Fitbod/JEFIT reviews). One finding turned out to be a false alarm caught before it caused any concern: Google now requires new Android apps to target API 36 (as of 2026-08-31) — checked the actual built APK directly with `aapt2 dump badging` rather than trust Expo's own docs table or a stale default in `expo-modules-autolinking`'s source, and confirmed this app already targets 36. The one real, repeatedly-cited gap across every source: **body measurements + progress photos**, the one thing every reviewed competitor has that this app didn't.
+
+Verified: tsc clean, eslint clean, 455/455 tests. Confirmed on-device.
+
+## Body tracking: weight, measurements, and progress photos (2026-09-27, same day)
+
+User approved building the body-tracking gap immediately (not deferred), local-only — matching the app's local-first design, with cloud sync as a later, separate decision if ever added.
+
+**Data layer**: two new SQLite tables, `body_measurements` and `progress_photos`, added straight to `CORE_SCHEMA_SQL` (no migration needed — brand-new tables, nothing to migrate) and following the exact id+versioned-JSON-payload shape every other table already uses. New domain modules [`domain/body/measurements.ts`](../src/domain/body/measurements.ts) (8 tracked circumference sites — neck/chest/waist/hips/biceps/thighs — plus body weight; `latestMeasurementDeltas()` compares only the two most recent entries and silently omits any site not present in both, rather than fabricating a zero) and [`domain/body/progressPhotos.ts`](../src/domain/body/progressPhotos.ts), each with a driver-agnostic `*Repository.ts` (unit tested against `createTestDb()`, same pattern as `historyRepository.ts`) and a thin async `bodyTrackingStore.ts` binding to the real `getDb()`.
+
+**Photo storage**: new dependency `expo-image-picker` (native rebuild required). [`services/media/progressPhotoStorage.ts`](../src/services/media/progressPhotoStorage.ts) copies whatever the OS picker/camera returns into this app's own document directory (`expo-file-system`'s current `File`/`Directory`/`Paths` API, confirmed via context7 rather than assumed, since this API changed shape across recent Expo SDKs) — the original picker asset can be cache-scoped or user-revocable, so the app keeps its own durable copy, exactly like `account-deletion.html`'s "nothing leaves the device" claim needs to stay true. Deleting a photo entry also deletes that file.
+
+**UI**: new modal route [`app/body-log.tsx`](../src/app/body-log.tsx) (log-today form: weight + a collapsible measurements grid; "since last entry" deltas; a horizontal photo strip with a pose picker dialog — front/side/back/skip — on add; history list with per-entry delete), reachable from a new icon button in the existing Body tab's header. Deliberately did not repurpose the existing "Body" tab's own content for this — that tab is about muscle-training records, a different meaning of "body" than a literal weight/photo log — kept them as separate, clearly-labeled surfaces instead of overloading one screen with two unrelated meanings of the same word.
+
+Updated `PRIVACY.md` and `PRODUCT.md` to reflect the new local-only photo storage and the now-complete capabilities list.
+
+Verified: tsc clean, eslint clean, 470/470 tests (15 new). Native rebuild in progress for the new `expo-image-picker` dependency; on-device verification to follow.
+
+## Visual overhaul: from card dashboard to training log (2026-10-04)
+
+The user asked for a total overhaul because the UI looked "too complicated and AI slop". An audit counted 142 `Card`s, 102 `Chip`s and 154 micro eyebrow labels across about 20 screens, plus duplicate Resume buttons on Today, a header with four stacked text layers before any content, a placeholder bottom sheet, and a blue/purple/pink heat palette next to the blue accent. Direction chosen: a Strong/Hevy-style training log. True neutrals, one orange accent (`#FF7A3D`), Geist plus Geist Mono, lists with hairlines instead of a card per section. Inspiration came from 21st.dev, cult-ui and anime.js. They are web Tailwind or DOM libraries, so they were used as references only, not as code (anime.js cannot run in React Native).
+
+**Foundation** (cascades everywhere): rewritten `tokens.ts` (palette, radius scale, typography roles in Geist/Geist Mono), `paperTheme.ts` (`configureFonts`, flat elevation), and an `inputTheme` passed to every Paper `TextInput`, because MD3 derives input radius from `roundness`. Muscle heat, rank tiers and the muscle map now use a single orange ramp. New shared primitives in `src/components/ui`: `ListRow`, `Stat`, `Pill`, `Segmented`.
+
+**Screens rebuilt** with logic, data and navigation untouched: Today, the tab bar plus active-workout bar, the live workout and its review and finished views (`SetRow`, `RestTimer`, `ReadinessCheckInCard`, `WorkoutReviewBlocks`), Plan (`ProgramBlocks`: prescription editing now sits behind a per-exercise "Edit" toggle instead of always-visible steppers), Body, Progress, Exercises plus the detail modal, Profile, Settings plus the account section, History, exercise detail, custom workout, program library, program builder, day editor, body log, onboarding, form check and Form AI summary. There are no `Card` or `Chip` usages left. Em dashes and "·" separators are gone from UI copy.
+
+**Removed as dead code**: the 7 old home cards, `LevelCard`, `StreakCard`, `PersonalRecordCard`, `AnimatedNumber`, the `autosaveIcon` helper and the Progress bar chart, which duplicated the per-muscle rows.
+
+`DESIGN.md` was rewritten to document the new rules: no eyebrows, no chip metadata, one raised surface per screen, the radius scale and the primitives.
+
+**Process note**: a repo-wide `prettier --write src` reformatted about 30 domain and seed files that had never been prettier-clean. Those files were restored with `git checkout`, so this change only touches UI files.
+
+Verified: tsc clean, eslint clean, 479/479 tests. Every tab and every secondary screen was checked on the Android emulator. Not yet seen on the physical phone.
+
+## Original colors back, motion system, Today as a session preview (2026-10-04, same day)
+
+The user asked for the original colors back (electric blue on cool near-black). They also said the app still looked a bit AI-generated, and wanted animations inspired by cult-ui, anime.js and 21st.dev without losing the serious gym-log feel. The palette, heat map and rank colors were restored byte-for-byte from git. Geist and the list-first structure stayed.
+
+Research: Hevy's own docs on set rows (clear active and checked states, a vibration on PRs, rest timer in ±15 s steps) and open-source React Native workout trackers built on Reanimated. cult-ui, 21st.dev and anime.js are DOM or Tailwind libraries, so their patterns were rebuilt natively with Reanimated 4 (APIs checked against current docs through context7):
+- the number ticker;
+- animated tabs;
+- tactile press;
+- stagger;
+- shimmer.
+
+New primitives: `motion.ts`, a focus-triggered `Reveal`, `PressableScale`, `AnimatedNumber`, `ProgressLine`, `Skeleton`, and a sliding `Segmented`. Applied in these places:
+- **Set completion:** left-to-right success sweep plus a check pop, the signature moment.
+- **Workout screen:**
+  - the progress line springs forward;
+  - the active exercise slides in when you change it;
+  - the exercise rail uses press-scale;
+  - a skeleton replaces the restore spinner.
+- **Rest timer:** spring entrance, continuous fill, a pulse when rest is over.
+- **Finished screen:** count-ups and staggered sections; muscle-dose bars glide in.
+- **Tabs:** icons kick with a spring and a selection haptic; the active-workout bar springs in with its own progress line.
+- **Plan:** the exercise editor expands with a layout transition.
+- **Bars:** the level and rank bars glide.
+
+On Today, the "Hi, name" greeting and the three-number hero were removed because they read as the generic AI-app template. The day name is now the title. The hero lists the actual session, one line per exercise (for example "3×  Barbell Bench Press  6-10", or done/total sets while a workout is in progress), followed by the first lift's target and the Start button. The daily quote moved to the bottom in muted italics.
+
+Verified: tsc clean, eslint clean, 479/479 tests.
+
+## Bento dashboard pass: Home a lifter checks daily (2026-10-04, same day)
+
+The user said Home did not look good and the other screens felt empty. Research covered:
+- Dribbble and 2026 dark-mode fitness dashboard roundups;
+- JEFIT, Fitbod and Lift X pieces on what lifters track daily (e1RM, weekly volume per muscle, muscle freshness, PRs, bodyweight);
+- the web-only cult-ui, 21st.dev and anime.js patterns, rebuilt in Reanimated and react-native-svg.
+
+New pure, tested domain module `domain/workouts/dashboard.ts`:
+- `muscleFreshness`: worked under 24 h, recovering under 72 h, fresh otherwise;
+- `weeklyVolumeSeries`: Monday-start weeks;
+- `bodyweightSnapshot`.
+
+Six new tests, 485 in total. New visuals: `Tile` (bento unit with an optional accent glow), `Sparkline` (draws itself in), `BarSeries` (staggered spring bars, tap to inspect), `ProgressRing`, `RecoveryMap` (front and back silhouettes coloured by freshness), `ExerciseStrip` (demo-image cards), `DayCard` (per-day muscle silhouette), and a live `ElapsedClock`.
+
+Screen changes:
+- **Home** became a bento dashboard:
+  - today's session hero with exercise images, big stats and the first-lift target;
+  - a week ring with day dots, volume and RIR;
+  - a recovery map;
+  - Strength (e1RM sparkline and delta) and Bodyweight (sparkline and delta) side by side;
+  - an 8-week volume chart with the week-over-week change;
+  - last session with best sets, recent records, and the quote last.
+  Every tile opens its detail screen.
+- **Progress:**
+  - an all-time hero with workouts, total lifted, records and level;
+  - a **lift picker**, so the e1RM chart works for any logged lift, not only the primary one;
+  - every section is a tile.
+- **Plan:**
+  - the day pills became `DayCard`s with silhouettes;
+  - the selected day is a hero with big stats and the exercise image strip;
+  - `DetailCard` now renders as a `Tile`, so all Plan sections went bento in one change.
+- **Body:** the weight entry tile shows the latest weigh-in with a sparkline; the map, the selected muscle and the lists are tiles.
+- **Profile:** tiles.
+- **Workout:**
+  - a live elapsed clock in the header (minus paused time);
+  - a 72 pt exercise image next to the exercise name that opens the exercise detail.
+
+Long durations now render as "16h 55m" via `formatMinutes`.
+
+Verified: tsc clean, eslint clean, 485/485 tests. Checked live on the user's phone through the dev client, then reinstalled the release build.
+
+## Exercise library audit and image pass (2026-10-04, same day)
+
+Added a new repeatable audit, `npx tsx --tsconfig tsconfig.json scripts/audit-exercise-media.ts <repdb exercises.json>`. It reports:
+- where each catalog image comes from;
+- reference-library gaps;
+- RepDB upgrade candidates;
+- every image URL in use.
+
+Findings before this pass:
+- **Loggable catalog** (98 exercises): 77 RepDB, 9 free-exercise-db photos, 12 with no image at all.
+- **Reference library** (847 entries):
+  - 3 entries without images (the kettlebell halo variants);
+  - 5 without instructions;
+  - 1 duplicate name ("Squat with band").
+- **RepDB:** the free tier now has 609 exercises (601 at our pinned commit) and we used 77 of them.
+- **URL health:** all 1,727 image URLs returned 200.
+
+Changes:
+- **Reviewed RepDB mappings** in `scripts/import-repdb-media.mjs` for 8 catalog exercises:
+  - Incline Smith Machine Bench Press, Lower Back Extension Machine, Abdominal Crunch Machine, Close-Grip Machine Row (seated cable row) and Independent-Arm Lat Pulldown, which previously had no image;
+  - Weighted Push-Up, Band Triceps Pushdown and Slider Leg Curl, which move from photos to the consistent illustration style.
+  Dragon Flag and Incline Treadmill Walk now match automatically. Result: 87 RepDB, 5 photos, 5 without an image.
+- **Deliberately left unmapped:** Kelso Shrug, Bayesian Cable Curl, Machine Oblique Crunch, Resistance Band Row and Resistance Band Curl. RepDB has no correct version of these, and a look-alike image would teach the wrong movement.
+- **Reference twins:** the importer now also writes a `references` map. These are free-exercise-db entries whose RepDB exercise has the exact same normalized name (122 of them), and `library.ts` shows the RepDB illustration for them. The library browser no longer mixes photo styles for those exercises. All 183 new URLs return 200.
+- **Attribution restored** to RepDB's required wording, "Exercise data by RepDB (repdb.co)", in Settings > Credits. The visual redesign had shortened it to "RepDB".
+
+Verified: tsc clean, eslint clean, 485/485 tests.
+
+## 300 more loggable exercises from the RepDB free tier (2026-10-04, same day)
+
+The user asked for the best free source of exercise imagery. Options checked:
+- ExerciseDB's free API: 1,500 GIFs, non-commercial only.
+- ExerciseDB.io: 1,394 exercises, $199-599.
+- RepDB Standard: animated, $499.
+- MuscleWiki: video, $10-200 per month.
+- wger: 917 exercises but only 378 images, CC-BY-SA.
+- free-exercise-db: already in the app.
+
+The best free option is the **RepDB free tier**: one consistent illustration style, commercial in-app use allowed with attribution, and 601 exercises at our pinned commit, of which the curated catalog used 87.
+
+New `scripts/import-repdb-catalog.mjs` turns RepDB's strength exercises into loggable `Exercise` entries using reviewed mapping tables:
+- **muscles:** anatomical names mapped to our 12 groups;
+- **equipment:** RepDB equipment mapped to our `EquipmentType`, skipping rings, sleds, suspension trainers and stability balls rather than mislabelling them;
+- **movement pattern:** ordered name rules, with glute kickbacks classed as hip extension, not triceps;
+- **supports:** a bench or rack is added when the name implies one;
+- **tracking:** holds become time-tracked, and bodyweight, band and bar work becomes reps-only.
+
+Result: **300 exercises**, all 584 image URLs return 200. Skipped:
+- 85 duplicates of curated exercises;
+- 68 with no clear pattern or that are drills;
+- 33 with unmappable equipment;
+- 5 with no mappable muscle;
+- 110 non-strength (stretching, cardio, olympic).
+
+**Licensing:** this GitHub repo is **public**, and RepDB forbids republishing its data as a dataset. The generated `src/domain/exercises/seed/repdb-catalog.generated.json` is therefore **git-ignored** and built on `npm install` (postinstall) and before builds, so the data ships inside the app, never in the repo. An offline install writes an empty catalog and the app still builds with the curated 98. `repdb-media.json` (committed) only holds image paths for the curated set.
+
+**Integration (`catalog.ts`):**
+- `EXTENDED_EXERCISES` and `ALL_EXERCISES` were added;
+- `getExercise` and `requireExercise` resolve every exercise, with curated names keeping priority in the name index;
+- `availableExercises(…, { includeExtended: true })` is used only where the user picks exercises by hand: custom workouts, day editor, plan builder, Hevy/Strong import and its mapping dialog;
+- the program generator, plan library and swap suggestions stay on the curated catalog, so generated plans are unchanged;
+- curated exercises rank first on ties.
+
+**Integration (`library.ts`):** extended exercises appear in the library with their images, and free-exercise-db twins link to them, so they become loggable instead of duplicated.
+
+Numbers:
+- **Loggable exercises:** 98 → **398**.
+- **Library:** 1,134 entries, **1,123 with images**.
+- **Exercises available to pick:** 383 with full-gym equipment, 188 with a home gym.
+
+New scripts: `npm run exercises:repdb` (regenerate both RepDB files) and `npm run exercises:audit`.
+
+Verified: tsc clean, eslint clean, 489/489 tests (4 new).
+
+### Follow-up: keeping the extended catalog honest to the hypertrophy logic (same day)
+
+The user pointed out that the whole app exists to maximize muscle growth. The first import admitted movements that would have quietly corrupted that logic if logged. Three fixes:
+
+1. **Low-hypertrophy movements are excluded** in `import-repdb-catalog.mjs` (46 removed: carries, farmer's walks, kettlebell swings, cleans, jerks, thrusters, planks, holds, wall sits, twists, windmills, crawls). Logged sets of these would have counted as direct sets against MEV/MAV/MRV.
+2. **One directly trained muscle per exercise,** matching the curated catalog's convention. The main muscle comes from the movement pattern (hinge → hamstrings, squat and lunge → quadriceps, horizontal push → chest, and so on); RepDB's other "primary" muscles become secondary, i.e. indirect exposure only. This is applied to the data, so every consumer (weekly volume, plan volume, readiness, recovery, ranks, muscle intelligence) follows the rule without code changes. The curated 98 are untouched.
+3. **Visible marker:** the shared `isAutoProgrammed()` helper. The library detail says "You can log this, but automatic plans do not use it", the exercise detail explains the same, and manual pickers rank curated exercises first on ties.
+
+Result: **265** extended exercises (363 loggable in total), none time-tracked, all single-primary.
+
+Tests lock the rules in: single primary, no low-hypertrophy names, and `setsByMuscle` counts an extended exercise only for its main muscle. 491/491 passing.

@@ -1,7 +1,8 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { StyleSheet } from 'react-native';
-import { List } from 'react-native-paper';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { preferredLibraryImages, type LibraryExercise } from '@/domain/exercises/library';
 import { useTheme } from '@/theme';
 
@@ -12,52 +13,77 @@ type ExerciseListItemProps = {
 };
 
 export function ExerciseListItem({ exercise, onPress, selected = false }: ExerciseListItemProps) {
-  const { colors, radius, typography } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   const thumbnail = preferredLibraryImages(exercise)[0];
-  const muscleLabel = exercise.primaryMuscles.join(', ') || 'Other';
+  const muscleLabel =
+    exercise.primaryMuscles.map((muscle) => MUSCLE_LABELS[muscle]).join(', ') || 'Other';
 
   return (
-    <List.Item
+    <Pressable
       onPress={onPress}
-      title={exercise.name}
-      description={`${exercise.equipmentLabel} · ${muscleLabel}`}
-      titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-      descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-      titleNumberOfLines={1}
-      descriptionNumberOfLines={1}
-      style={[
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`${exercise.name}, ${muscleLabel}, ${exercise.equipmentLabel}`}
+      style={({ pressed }) => [
         styles.row,
         {
-          backgroundColor: selected ? colors.accentSoft : colors.surfaceRaised,
-          borderRadius: radius.lg,
-          borderColor: selected ? colors.accent : colors.border,
+          gap: spacing.md,
+          paddingHorizontal: spacing.lg,
+          backgroundColor: selected ? colors.accentSoft : pressed ? colors.surface : 'transparent',
         },
       ]}
-      left={() =>
-        thumbnail ? (
-          <Image
-            source={{ uri: thumbnail }}
-            style={[
-              styles.thumbnail,
-              { borderRadius: radius.md, backgroundColor: colors.surfacePressed },
-            ]}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-          />
-        ) : (
-          <List.Icon icon="dumbbell" color={colors.textMuted} />
-        )
-      }
-    />
+    >
+      {thumbnail ? (
+        <Image
+          source={{ uri: thumbnail }}
+          style={[styles.thumbnail, { borderRadius: radius.md, backgroundColor: colors.surface }]}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
+      ) : (
+        <View
+          style={[
+            styles.thumbnail,
+            styles.placeholder,
+            { borderRadius: radius.md, backgroundColor: colors.surface },
+          ]}
+        >
+          <MaterialCommunityIcons name="dumbbell" size={20} color={colors.textMuted} />
+        </View>
+      )}
+      <View style={[styles.text, { borderBottomColor: colors.border }]}>
+        <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
+          {exercise.name}
+        </Text>
+        <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
+          {muscleLabel}, {exercise.equipmentLabel}
+        </Text>
+      </View>
+      {selected ? <MaterialCommunityIcons name="check" size={20} color={colors.accent} /> : null}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 72,
   },
   thumbnail: {
-    width: 56,
-    height: 56,
+    width: 48,
+    height: 48,
+  },
+  placeholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  text: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 });

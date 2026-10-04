@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Chip, IconButton } from 'react-native-paper';
+import { Button, IconButton } from 'react-native-paper';
 import { useReducedMotion } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -33,7 +33,7 @@ export function ExerciseDemoModal({
   onAction,
   onDismiss,
 }: ExerciseDemoModalProps) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const reduceMotion = useReducedMotion();
   const reference = useMemo(
     () => (exercise ? referenceExerciseForCatalog(exercise) : null),
@@ -88,32 +88,21 @@ export function ExerciseDemoModal({
             secondaryMuscles={exercise.secondaryMuscles}
           />
 
-          <View style={styles.chipRow}>
-            <Chip compact icon="target">
-              {exercise.primaryMuscles.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}
-            </Chip>
-            <Chip compact icon="dumbbell">
-              {formatEquipment(exercise.equipment)}
-            </Chip>
-            <Chip compact icon={reference ? 'motion-play-outline' : 'text-box-outline'}>
-              {reference ? 'Live demo' : 'Cue guide'}
-            </Chip>
-          </View>
+          <Text style={[typography.body, { color: colors.textSecondary }]}>
+            {exercise.primaryMuscles.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')},{' '}
+            {formatEquipment(exercise.equipment).toLowerCase()}
+          </Text>
 
           <View style={styles.copySection}>
-            <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-              How to perform it
-            </Text>
+            <Text style={[typography.heading, { color: colors.textPrimary }]}>How to do it</Text>
             <Text style={[typography.caption, { color: colors.textSecondary }]}>
               {exercise.description}
             </Text>
             {instructions.map((instruction, index) => (
               <View key={instruction} style={styles.cueRow}>
-                <View style={[styles.cueNumber, { backgroundColor: colors.accentSoft }]}>
-                  <Text style={[typography.captionBold, { color: colors.accent }]}>
-                    {index + 1}
-                  </Text>
-                </View>
+                <Text style={[typography.numeric, { color: colors.textMuted, width: 20 }]}>
+                  {index + 1}
+                </Text>
                 <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>
                   {instruction}
                 </Text>
@@ -122,20 +111,12 @@ export function ExerciseDemoModal({
           </View>
 
           {commonMistakes.length > 0 ? (
-            <View
-              style={[
-                styles.mistakePanel,
-                { backgroundColor: colors.warningSoft, borderRadius: radius.lg },
-              ]}
-            >
-              <Text style={[typography.captionBold, { color: colors.warning }]}>Watch for</Text>
+            <View style={[styles.mistakePanel, { borderLeftColor: colors.warning }]}>
+              <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>Watch for</Text>
               {commonMistakes.map((mistake) => (
-                <View key={mistake} style={styles.mistakeRow}>
-                  <Text style={[typography.captionBold, { color: colors.warning }]}>•</Text>
-                  <Text style={[typography.caption, { color: colors.textPrimary, flex: 1 }]}>
-                    {mistake}
-                  </Text>
-                </View>
+                <Text key={mistake} style={[typography.body, { color: colors.textSecondary }]}>
+                  {mistake}
+                </Text>
               ))}
             </View>
           ) : null}
@@ -193,18 +174,9 @@ const styles = StyleSheet.create({
   },
   headerCopy: { flex: 1, minWidth: 0, paddingRight: 16 },
   scroll: { flex: 1 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   copySection: { gap: 12 },
   cueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  cueNumber: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mistakePanel: { padding: 16, gap: 8 },
-  mistakeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  mistakePanel: { borderLeftWidth: 2, paddingLeft: 12, gap: 4 },
   footer: {
     flexDirection: 'row',
     gap: 8,

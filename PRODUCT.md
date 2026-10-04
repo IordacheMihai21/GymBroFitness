@@ -24,7 +24,7 @@ The app is used on a phone in the gym, often between sets, with one hand, low pa
 
 ## Capabilities and Constraints
 
-Confirmed capabilities include generated hypertrophy programs, active workout logging, RIR input, rest timer, local SQLite workout history, personal records, analytics, exercise atlas, interactive body map, local settings, saved workout templates, onboarding, program editing (swap/reorder/edit prescriptions), manual backup/restore and CSV import/export, optional email/password authentication, and optional cloud sync/backup via Supabase (opt-in, never required — see PRIVACY.md). Not yet built: in-app/web self-serve account deletion (required by Google Play policy before this ships with real accounts), freemium entitlements, and Play Store submission assets (privacy policy hosting, store listing, signing/build profiles).
+Confirmed capabilities include generated hypertrophy programs, active workout logging (including warm-up/working/failure set tagging and drop-set/rest-pause/myo-reps/cluster-set techniques), RIR input, rest timer, local SQLite workout history, personal records, analytics, exercise atlas, interactive body map, body weight/measurement tracking with progress photos (local-only), local settings, saved workout templates, onboarding, program editing (swap/reorder/edit prescriptions), manual backup/restore and CSV import/export, optional email/password authentication, self-serve account deletion (in-app and via a standalone web page, per Google Play policy), and optional cloud sync/backup via Supabase (opt-in, never required — see PRIVACY.md). Not yet built: freemium entitlements and Play Store submission assets (feature graphic, store listing copy, screenshots).
 
 ## Brand Commitments
 

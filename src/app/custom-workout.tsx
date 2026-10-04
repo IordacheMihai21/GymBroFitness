@@ -1,24 +1,17 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  Button,
-  Card,
-  Chip,
-  Divider,
-  IconButton,
-  List,
-  Searchbar,
-  TextInput,
-} from 'react-native-paper';
+import { Button, IconButton, Searchbar, TextInput } from 'react-native-paper';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ExerciseDemoModal } from '@/components/exercise/ExerciseDemoModal';
 import { ExerciseThumbnail } from '@/components/exercise/ExerciseThumbnail';
+import { Pill } from '@/components/ui/Pill';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
-import { availableExercises, requireExercise } from '@/domain/exercises/catalog';
+import { availableExercises, isAutoProgrammed, requireExercise } from '@/domain/exercises/catalog';
 import { saveTemplate } from '@/domain/programs/templateStore';
 import { buildTemplateFromProgramDay } from '@/domain/programs/templates';
 import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
@@ -26,7 +19,7 @@ import { validateCustomWorkoutSelection } from '@/domain/workouts/customWorkoutS
 import { buildCustomWorkoutDay } from '@/features/workout/workout.helpers';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useKeyboardAwareScroll } from '@/hooks/useKeyboardAwareScroll';
-import { useTheme } from '@/theme';
+import { inputTheme, useTheme } from '@/theme';
 import type { EquipmentType, Exercise, MuscleGroup } from '@/types';
 import { MUSCLE_GROUPS } from '@/types';
 
@@ -73,7 +66,7 @@ export default function CustomWorkoutScreen() {
     ];
     const normalizedQuery = query.trim().toLowerCase();
 
-    return availableExercises(preferences.equipment, excludedSlugs)
+    return availableExercises(preferences.equipment, excludedSlugs, { includeExtended: true })
       .filter((exercise) => !selectedSet.has(exercise.id))
       .filter((exercise) => matchesQuery(exercise, normalizedQuery))
       .filter((exercise) =>
@@ -188,119 +181,94 @@ export default function CustomWorkoutScreen() {
       onScroll={onScroll}
       scrollEventThrottle={16}
       contentContainerStyle={{
-        paddingTop: Math.max(insets.top, spacing.xxl) + spacing.md,
+        paddingTop: insets.top + spacing.sm,
         paddingBottom: insets.bottom + 96,
         paddingHorizontal: spacing.lg,
-        gap: spacing.lg,
+        gap: spacing.xl,
       }}
     >
-      <View style={styles.topBar}>
+      <View>
         <IconButton
-          icon="arrow-left"
-          mode="contained-tonal"
+          icon="chevron-left"
+          iconColor={colors.textPrimary}
+          accessibilityLabel="Back"
           onPress={() => router.back()}
           style={styles.backButton}
         />
-        <View style={{ flex: 1 }}>
-          <Text style={[typography.micro, { color: colors.accent }]}>Workout builder</Text>
-          <Text style={[typography.title, { color: colors.textPrimary }]}>Custom session</Text>
-        </View>
+        <Text style={[typography.display, { color: colors.textPrimary }]}>New workout</Text>
+        <Text style={[typography.body, { color: colors.textSecondary }]}>
+          {selectedExercises.length === 0
+            ? 'Pick exercises below.'
+            : `${selectedExercises.length} ${selectedExercises.length === 1 ? 'exercise' : 'exercises'}, about ${totalSets} sets${formAiCount > 0 ? `, ${formAiCount} with Form AI` : ''}`}
+        </Text>
       </View>
 
-      <Card
-        mode="contained"
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: radius.xl,
-          },
-        ]}
-      >
-        <Card.Content style={{ gap: spacing.md }}>
-          <TextInput
+      <View style={{ gap: spacing.md }}>
+        <TextInput
+          theme={inputTheme}
+          mode="outlined"
+          dense
+          label="Workout name"
+          value={name}
+          onChangeText={(value) => {
+            setName(value);
+            setSaveStatus(null);
+          }}
+          style={{ backgroundColor: colors.background }}
+        />
+
+        <View style={styles.primaryActions}>
+          <Button
             mode="outlined"
-            dense
-            label="Workout name"
-            value={name}
-            onChangeText={(value) => {
-              setName(value);
-              setSaveStatus(null);
-            }}
-            style={{ backgroundColor: colors.surfaceRaised }}
-          />
+            loading={savingWorkout}
+            disabled={selectedExerciseIds.length === 0 || savingWorkout}
+            onPress={saveCustomWorkout}
+            contentStyle={styles.startButton}
+            style={styles.primaryAction}
+          >
+            {savedTemplateId ? 'Update saved' : 'Save'}
+          </Button>
+          <Button
+            mode="contained"
+            disabled={selectedExerciseIds.length === 0 || savingWorkout}
+            onPress={startCustomWorkout}
+            contentStyle={styles.startButton}
+            style={styles.primaryActionWide}
+          >
+            Start workout
+          </Button>
+        </View>
 
-          <View style={styles.metricGrid}>
-            <MetricBlock label="lifts" value={String(selectedExercises.length)} />
-            <MetricBlock label="est. sets" value={String(totalSets)} />
-            <MetricBlock label="form AI" value={String(formAiCount)} />
-          </View>
+        {saveStatus ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[
+              typography.caption,
+              { color: saveStatus.startsWith('Could not') ? colors.danger : colors.success },
+            ]}
+          >
+            {saveStatus}
+          </Text>
+        ) : null}
 
-          <View style={styles.primaryActions}>
-            <Button
-              mode="outlined"
-              icon={savedTemplateId ? 'content-save-check-outline' : 'content-save-outline'}
-              loading={savingWorkout}
-              disabled={selectedExerciseIds.length === 0 || savingWorkout}
-              onPress={saveCustomWorkout}
-              contentStyle={styles.startButton}
-              style={styles.primaryAction}
-            >
-              {savedTemplateId ? 'Update saved' : 'Save workout'}
-            </Button>
-            <Button
-              mode="contained"
-              icon="play"
-              disabled={selectedExerciseIds.length === 0 || savingWorkout}
-              onPress={startCustomWorkout}
-              contentStyle={styles.startButton}
-              style={styles.primaryAction}
-            >
-              Start
-            </Button>
-          </View>
-
-          {saveStatus ? (
-            <Text
-              accessibilityLiveRegion="polite"
-              style={[
-                typography.captionBold,
-                { color: saveStatus.startsWith('Could not') ? colors.danger : colors.success },
-              ]}
-            >
-              {saveStatus}
+        {routeSelectionIssue ? (
+          <View
+            style={[styles.routeIssue, { borderLeftColor: colors.warning }]}
+            accessibilityRole="alert"
+          >
+            <Text style={[typography.captionBold, { color: colors.warning }]}>Not added</Text>
+            <Text style={[typography.caption, { color: colors.textPrimary }]}>
+              {routeSelectionIssue}
             </Text>
-          ) : null}
+          </View>
+        ) : null}
+      </View>
 
-          {routeSelectionIssue ? (
-            <View
-              style={[
-                styles.routeIssue,
-                { backgroundColor: colors.warningSoft, borderRadius: radius.lg },
-              ]}
-              accessibilityRole="alert"
-            >
-              <Text style={[typography.captionBold, { color: colors.warning }]}>Not added</Text>
-              <Text style={[typography.caption, { color: colors.textPrimary }]}>
-                {routeSelectionIssue}
-              </Text>
-            </View>
-          ) : null}
-        </Card.Content>
-      </Card>
-
-      <BuilderSection eyebrow="Selected" title="Workout order">
+      <BuilderSection title="Order">
         {selectedExercises.length === 0 ? (
-          <View style={[styles.emptyPanel, { backgroundColor: colors.surfaceRaised }]}>
-            <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-              Choose exercises from the catalog below.
-            </Text>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              The workout starts as a one-off session. Save it as a template after finishing if it
-              becomes a routine.
-            </Text>
-          </View>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            Nothing picked yet. This runs as a one-off workout unless you save it.
+          </Text>
         ) : (
           selectedExercises.map((exercise, index) => (
             <View key={`${exercise.id}-${index}`}>
@@ -308,58 +276,61 @@ export default function CustomWorkoutScreen() {
                 <View style={styles.orderColumn}>
                   <IconButton
                     icon="chevron-up"
-                    size={15}
-                    mode="contained-tonal"
+                    size={16}
+                    iconColor={colors.textMuted}
                     disabled={index === 0}
+                    accessibilityLabel={`Move ${exercise.name} up`}
                     onPress={() => moveExercise(index, -1)}
                     style={styles.orderButton}
                   />
-                  <Text style={[typography.micro, { color: colors.textMuted }]}>{index + 1}</Text>
                   <IconButton
                     icon="chevron-down"
-                    size={15}
-                    mode="contained-tonal"
+                    size={16}
+                    iconColor={colors.textMuted}
                     disabled={index === selectedExercises.length - 1}
+                    accessibilityLabel={`Move ${exercise.name} down`}
                     onPress={() => moveExercise(index, 1)}
                     style={styles.orderButton}
                   />
                 </View>
-                <View style={{ flex: 1 }}>
+                <Text style={[typography.numeric, { color: colors.textMuted, width: 20 }]}>
+                  {index + 1}
+                </Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
                     {exercise.name}
                   </Text>
                   <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
-                    {muscleLabels(exercise.primaryMuscles)} - {equipmentLabels(exercise.equipment)}
+                    {muscleLabels(exercise.primaryMuscles)}, {equipmentLabels(exercise.equipment)}
+                    {getVisionConfigForMovementPattern(exercise.movementPattern) ? ', Form AI' : ''}
                   </Text>
-                  {getVisionConfigForMovementPattern(exercise.movementPattern) ? (
-                    <Chip compact mode="flat" icon="camera-outline" style={styles.formChip}>
-                      Form AI
-                    </Chip>
-                  ) : null}
                 </View>
                 <IconButton
-                  icon="motion-play-outline"
-                  size={17}
-                  mode="contained-tonal"
+                  icon="play-circle-outline"
+                  size={20}
+                  iconColor={colors.textSecondary}
                   accessibilityLabel={`Preview ${exercise.name} technique`}
                   onPress={() => setPreviewExercise(exercise)}
                   style={styles.removeButton}
                 />
                 <IconButton
-                  icon="trash-can-outline"
-                  size={17}
-                  mode="contained-tonal"
+                  icon="close"
+                  size={20}
+                  iconColor={colors.textMuted}
+                  accessibilityLabel={`Remove ${exercise.name}`}
                   onPress={() => removeExercise(index)}
                   style={styles.removeButton}
                 />
               </View>
-              {index < selectedExercises.length - 1 ? <Divider /> : null}
+              {index < selectedExercises.length - 1 ? (
+                <View style={[styles.hairline, { backgroundColor: colors.border }]} />
+              ) : null}
             </View>
           ))
         )}
       </BuilderSection>
 
-      <BuilderSection eyebrow="Catalog" title="Add exercises">
+      <BuilderSection title="Add exercises">
         <View ref={inputAnchorRef} collapsable={false}>
           <Searchbar
             placeholder="Search exercise, muscle, machine"
@@ -367,8 +338,9 @@ export default function CustomWorkoutScreen() {
             onChangeText={setQuery}
             onFocus={revealInput}
             mode="bar"
-            style={[styles.search, { backgroundColor: colors.surfaceRaised }]}
-            inputStyle={{ color: colors.textPrimary }}
+            style={[styles.search, { backgroundColor: colors.surface, borderRadius: radius.lg }]}
+            inputStyle={[typography.body, { color: colors.textPrimary, minHeight: 0 }]}
+            iconColor={colors.textMuted}
             placeholderTextColor={colors.textMuted}
           />
         </View>
@@ -378,24 +350,18 @@ export default function CustomWorkoutScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRail}
         >
-          <Chip
-            compact
-            selected={muscleFilter == null}
-            mode={muscleFilter == null ? 'flat' : 'outlined'}
+          <Pill
+            label="All muscles"
+            active={muscleFilter == null}
             onPress={() => setMuscleFilter(null)}
-          >
-            All muscles
-          </Chip>
+          />
           {MUSCLE_GROUPS.map((muscle) => (
-            <Chip
+            <Pill
               key={muscle}
-              compact
-              selected={muscleFilter === muscle}
-              mode={muscleFilter === muscle ? 'flat' : 'outlined'}
+              label={MUSCLE_LABELS[muscle]}
+              active={muscleFilter === muscle}
               onPress={() => setMuscleFilter((current) => (current === muscle ? null : muscle))}
-            >
-              {MUSCLE_LABELS[muscle]}
-            </Chip>
+            />
           ))}
         </ScrollView>
 
@@ -404,27 +370,20 @@ export default function CustomWorkoutScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRail}
         >
-          <Chip
-            compact
-            selected={equipmentFilter == null}
-            mode={equipmentFilter == null ? 'flat' : 'outlined'}
+          <Pill
+            label="All equipment"
+            active={equipmentFilter == null}
             onPress={() => setEquipmentFilter(null)}
-          >
-            All equipment
-          </Chip>
+          />
           {preferences.equipment.map((equipment) => (
-            <Chip
+            <Pill
               key={equipment}
-              compact
-              selected={equipmentFilter === equipment}
-              mode={equipmentFilter === equipment ? 'flat' : 'outlined'}
-              icon="dumbbell"
+              label={formatEquipment(equipment)}
+              active={equipmentFilter === equipment}
               onPress={() =>
                 setEquipmentFilter((current) => (current === equipment ? null : equipment))
               }
-            >
-              {formatEquipment(equipment)}
-            </Chip>
+            />
           ))}
         </ScrollView>
 
@@ -433,31 +392,40 @@ export default function CustomWorkoutScreen() {
             No exercise matches the current filters.
           </Text>
         ) : (
-          candidates.map((exercise, index) => (
-            <View key={exercise.id}>
-              <List.Item
-                title={exercise.name}
-                description={`${muscleLabels(exercise.primaryMuscles)} - ${equipmentLabels(exercise.equipment)} · Preview technique`}
-                descriptionNumberOfLines={2}
+          <View>
+            {candidates.map((exercise, index) => (
+              <Pressable
+                key={exercise.id}
                 onPress={() => setPreviewExercise(exercise)}
-                left={() => <ExerciseThumbnail exercise={exercise} />}
-                right={(props) => (
-                  <List.Icon {...props} icon="arrow-expand" color={colors.textMuted} />
-                )}
-                titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-                descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-                style={[styles.catalogRow, { backgroundColor: colors.surfaceRaised }]}
-              />
-              {getVisionConfigForMovementPattern(exercise.movementPattern) ? (
-                <View style={styles.catalogBadgeRow}>
-                  <Chip compact mode="flat" icon="camera-outline">
-                    Form AI ready
-                  </Chip>
+                accessibilityRole="button"
+                accessibilityLabel={`Preview ${exercise.name}`}
+                style={({ pressed }) => [
+                  styles.catalogRow,
+                  {
+                    borderBottomColor: colors.border,
+                    borderBottomWidth:
+                      index === candidates.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                    opacity: pressed ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <ExerciseThumbnail exercise={exercise} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={[typography.bodyBold, { color: colors.textPrimary }]}
+                    numberOfLines={1}
+                  >
+                    {exercise.name}
+                  </Text>
+                  <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
+                    {muscleLabels(exercise.primaryMuscles)}, {equipmentLabels(exercise.equipment)}
+                    {getVisionConfigForMovementPattern(exercise.movementPattern) ? ', Form AI' : ''}
+                  </Text>
                 </View>
-              ) : null}
-              {index < candidates.length - 1 ? <View style={{ height: spacing.sm }} /> : null}
-            </View>
-          ))
+                <MaterialCommunityIcons name="plus" size={22} color={colors.textSecondary} />
+              </Pressable>
+            ))}
+          </View>
         )}
       </BuilderSection>
 
@@ -473,47 +441,13 @@ export default function CustomWorkoutScreen() {
   );
 }
 
-function BuilderSection({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  children: ReactNode;
-}) {
-  const { colors, radius, spacing, typography } = useTheme();
+function BuilderSection({ title, children }: { title: string; children: ReactNode }) {
+  const { colors, spacing, typography } = useTheme();
 
   return (
-    <Card
-      mode="contained"
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: radius.xl,
-        },
-      ]}
-    >
-      <Card.Content style={{ gap: spacing.md }}>
-        <View>
-          <Text style={[typography.micro, { color: colors.accent }]}>{eyebrow}</Text>
-          <Text style={[typography.subheading, { color: colors.textPrimary }]}>{title}</Text>
-        </View>
-        {children}
-      </Card.Content>
-    </Card>
-  );
-}
-
-function MetricBlock({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={[styles.metricBlock, { backgroundColor: colors.surfaceRaised }]}>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
+    <View style={{ gap: spacing.md }}>
+      <Text style={[typography.heading, { color: colors.textPrimary }]}>{title}</Text>
+      {children}
     </View>
   );
 }
@@ -535,7 +469,8 @@ function matchesQuery(exercise: Exercise, query: string): boolean {
 }
 
 function scoreExercise(exercise: Exercise, priorities: MuscleGroup[]): number {
-  let score = exercise.exerciseType === 'compound' ? 8 : 0;
+  // Curated exercises carry full coaching data, so they lead ties.
+  let score = (exercise.exerciseType === 'compound' ? 8 : 0) + (isAutoProgrammed(exercise) ? 4 : 0);
   for (const muscle of exercise.primaryMuscles) {
     if (priorities.includes(muscle)) score += 20;
   }
@@ -569,28 +504,8 @@ function routeExerciseIds(value: string | string[] | undefined): string[] {
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
   backButton: {
-    margin: 0,
-  },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  metricGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  metricBlock: {
-    flex: 1,
-    minHeight: 58,
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    justifyContent: 'space-between',
+    marginLeft: -12,
   },
   startButton: {
     minHeight: 52,
@@ -602,52 +517,50 @@ const styles = StyleSheet.create({
   primaryAction: {
     flex: 1,
   },
-  emptyPanel: {
-    borderRadius: 14,
-    padding: 12,
-    gap: 4,
+  primaryActionWide: {
+    flex: 2,
   },
   routeIssue: {
-    padding: 12,
-    gap: 4,
+    borderLeftWidth: 2,
+    paddingLeft: 12,
+    gap: 2,
   },
   selectedRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
+    gap: 8,
+    paddingVertical: 8,
   },
   orderColumn: {
     alignItems: 'center',
-    gap: 2,
+    marginLeft: -8,
   },
   orderButton: {
-    width: 28,
+    width: 32,
     height: 28,
     margin: 0,
   },
   removeButton: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     margin: 0,
   },
+  hairline: {
+    height: StyleSheet.hairlineWidth,
+  },
   search: {
-    borderRadius: 16,
+    elevation: 0,
+    height: 48,
   },
   filterRail: {
     gap: 8,
     paddingRight: 16,
   },
   catalogRow: {
-    borderRadius: 14,
-  },
-  catalogBadgeRow: {
     flexDirection: 'row',
-    marginTop: -4,
-    marginLeft: 56,
-  },
-  formChip: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 68,
+    paddingVertical: 10,
   },
 });

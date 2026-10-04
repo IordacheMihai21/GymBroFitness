@@ -45,3 +45,6 @@ example
 # generated native folders
 /ios
 /android
+
+# RepDB-derived catalog: generated on install, never committed (RepDB license forbids republishing the data).
+src/domain/exercises/seed/repdb-catalog.generated.json

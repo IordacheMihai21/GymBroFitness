@@ -1,54 +1,84 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { type ElementRef, useCallback, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Avatar, Button, Card, Chip, IconButton, TouchableRipple } from 'react-native-paper';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Button } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarSeries, type BarDatum } from '@/components/charts/BarSeries';
+import { ProgressRing } from '@/components/charts/ProgressRing';
+import { Sparkline } from '@/components/charts/Sparkline';
+import { ExerciseStrip, type StripItem } from '@/components/home/ExerciseStrip';
 import { HomeActionSheet, type HomeSheet } from '@/components/home/HomeActionSheet';
-import { HomePreflightRail } from '@/components/home/HomePreflightRail';
-import { MuscleFocusMap } from '@/components/home/MuscleFocusMap';
-import { OverloadRunwayCard } from '@/components/home/OverloadRunwayCard';
-import { PrWatchCard } from '@/components/home/PrWatchCard';
-import { TodayWorkoutHero } from '@/components/home/TodayWorkoutHero';
-import { WeekLogCard } from '@/components/home/WeekLogCard';
+import { RecoveryMap } from '@/components/home/RecoveryMap';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { ListRow } from '@/components/ui/ListRow';
+import { ProgressLine } from '@/components/ui/ProgressLine';
 import { Reveal } from '@/components/ui/Reveal';
-import { SectionHeader } from '@/components/ui/SectionHeader';
-import { BRAND } from '@/constants/branding';
+import { Tile } from '@/components/ui/Tile';
+import { MUSCLE_LABELS } from '@/constants/muscleLabels';
+import { listBodyMeasurements } from '@/domain/body/bodyTrackingStore';
+import type { BodyMeasurementEntry } from '@/domain/body/measurements';
+import { requireExercise } from '@/domain/exercises/catalog';
 import { dailyQuote } from '@/domain/motivation/dailyQuote';
+import {
+  bodyweightSnapshot,
+  muscleFreshness,
+  weeklyVolumeSeries,
+} from '@/domain/workouts/dashboard';
+import type { WeekLogEntry } from '@/domain/workouts/demoHistory';
+import { summarizeWorkoutSession } from '@/domain/workouts/history';
 import { buildPlannedWeek, buildWorkoutHistoryInsights } from '@/domain/workouts/historyInsights';
 import { getInProgressWorkoutSession, listWorkoutHistory } from '@/domain/workouts/historyStore';
-import { buildProgressionTarget } from '@/domain/workouts/targetToBeat';
+import { buildProgressionTarget, formatDecisionTarget } from '@/domain/workouts/targetToBeat';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type { WorkoutSession } from '@/types';
+import { formatDate, formatMinutes } from '@/utils/dates';
+import { displayLoad, formatLoad, formatVolumeLoad, unitLabel } from '@/utils/units';
+
+const GAP = 12;
 
 export default function HomeScreen() {
   const { colors, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const actionSheetRef = useRef<ElementRef<typeof BottomSheetModal>>(null);
-  const safeTop = Math.max(insets.top, spacing.xxl);
   const { user, preferences, program } = useActiveProgram();
   const [history, setHistory] = useState<WorkoutSession[]>([]);
   const [activeDraft, setActiveDraft] = useState<WorkoutSession | null>(null);
+  const [measurements, setMeasurements] = useState<BodyMeasurementEntry[]>([]);
   const [dayIndex, setDayIndex] = useState(0);
   const [activeSheet, setActiveSheet] = useState<HomeSheet | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState<BarDatum | null>(null);
   const day = program.days[dayIndex];
   const swapIndex = (dayIndex + 1) % program.days.length;
   const quote = useMemo(() => dailyQuote(), []);
+  const units = preferences.units;
+  const contentWidth = width - spacing.lg * 2;
+  const halfWidth = (contentWidth - GAP) / 2;
+  const today = useMemo(
+    () =>
+      new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }),
+    [],
+  );
 
   useFocusEffect(
     useCallback(() => {
       let mounted = true;
-      Promise.all([listWorkoutHistory(), getInProgressWorkoutSession()]).then(
-        ([nextHistory, draft]) => {
-          if (!mounted) return;
-          setHistory(nextHistory);
-          setActiveDraft(draft);
-        },
-      );
+      Promise.all([
+        listWorkoutHistory(),
+        getInProgressWorkoutSession(),
+        listBodyMeasurements().catch(() => []),
+      ]).then(([nextHistory, draft, nextMeasurements]) => {
+        if (!mounted) return;
+        setHistory(nextHistory);
+        setActiveDraft(draft);
+        setMeasurements(nextMeasurements);
+      });
       return () => {
         mounted = false;
       };
@@ -62,6 +92,16 @@ export default function HomeScreen() {
   const insights = useMemo(
     () => buildWorkoutHistoryInsights(history, plannedWeek),
     [history, plannedWeek],
+  );
+  const freshness = useMemo(() => muscleFreshness(history), [history]);
+  const weekly = useMemo(() => weeklyVolumeSeries(history, 8), [history]);
+  const bodyweight = useMemo(() => bodyweightSnapshot(measurements), [measurements]);
+  const lastSession = useMemo(
+    () =>
+      insights.completedSessions[0]
+        ? summarizeWorkoutSession(insights.completedSessions[0], units)
+        : null,
+    [insights.completedSessions, units],
   );
   const target = useMemo(
     () =>
@@ -80,161 +120,444 @@ export default function HomeScreen() {
       preferences.nutritionContext,
     ],
   );
+  const records = useMemo(
+    () =>
+      [...insights.personalRecords]
+        .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+        .slice(0, 3),
+    [insights.personalRecords],
+  );
+
+  const totalSets = day.prescriptions.reduce((sum, p) => sum + p.workingSets, 0);
+  const sessionsDone = insights.weekLog.filter((entry) => entry.status === 'done').length;
+  const draftProgress = activeDraft ? sessionProgress(activeDraft) : null;
+  const stripItems: StripItem[] = activeDraft
+    ? activeDraft.exercises.map((performed) => {
+        const done = performed.sets.filter((set) => set.completed && !set.skipped).length;
+        return {
+          key: performed.id,
+          exercise: requireExercise(performed.exerciseId),
+          detail: `${done}/${performed.sets.length} sets`,
+          done: performed.sets.length > 0 && done >= performed.sets.length,
+        };
+      })
+    : day.prescriptions.map((prescription, index) => ({
+        key: `${prescription.exerciseId}-${index}`,
+        exercise: requireExercise(prescription.exerciseId),
+        detail: `${prescription.workingSets} × ${
+          prescription.minReps === prescription.maxReps
+            ? prescription.minReps
+            : `${prescription.minReps}-${prescription.maxReps}`
+        }`,
+      }));
+
+  const weekBars: BarDatum[] = weekly.map((point, index) => {
+    const start = new Date(`${point.weekStart}T00:00:00`);
+    return {
+      key: point.weekStart,
+      value: point.volumeKg,
+      label: index === weekly.length - 1 ? 'Now' : `${start.getDate()}/${start.getMonth() + 1}`,
+      detail: formatVolumeLoad(point.volumeKg, units),
+      sessions: point.sessions,
+    };
+  });
+  const thisWeek = weekly.at(-1);
+  const lastWeek = weekly.at(-2);
+  const volumeDelta =
+    thisWeek && lastWeek && lastWeek.volumeKg > 0
+      ? Math.round(((thisWeek.volumeKg - lastWeek.volumeKg) / lastWeek.volumeKg) * 100)
+      : null;
+  const shownWeek = selectedWeek ?? weekBars.at(-1) ?? null;
+  const trend = insights.strengthTrend;
+  const trendValues = trend?.points.map((point) => displayLoad(point.e1rmKg, units) ?? 0) ?? [];
+  const tileInner = halfWidth - spacing.lg * 2;
 
   function startDay(index: number) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push({ pathname: '/workout', params: { day: String(index) } });
   }
 
   function openSheet(sheet: HomeSheet) {
-    Haptics.selectionAsync();
+    void Haptics.selectionAsync();
     setActiveSheet(sheet);
     requestAnimationFrame(() => actionSheetRef.current?.present());
   }
 
   function confirmSwap() {
     setDayIndex(swapIndex);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     actionSheetRef.current?.dismiss();
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
-        style={{ backgroundColor: colors.background }}
         contentContainerStyle={{
-          paddingTop: safeTop + spacing.lg,
-          paddingBottom: insets.bottom + 120,
+          paddingTop: insets.top + spacing.sm,
+          paddingBottom: spacing.x5l,
           paddingHorizontal: spacing.lg,
-          gap: spacing.lg,
+          gap: GAP,
         }}
       >
-        <Reveal>
-          <View style={styles.topBar}>
-            <IconButton
-              icon="cog-outline"
-              size={24}
-              onPress={() => router.push('/settings')}
-              accessibilityLabel="Open settings"
-              style={styles.iconButton}
+        <View style={styles.topRow}>
+          <Text style={[typography.caption, { color: colors.textMuted, flex: 1 }]}>{today}</Text>
+          <Pressable
+            onPress={() => openSheet('streak')}
+            accessibilityRole="button"
+            accessibilityLabel={`${insights.streakDays} day streak`}
+            hitSlop={8}
+            style={[styles.streak, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <MaterialCommunityIcons
+              name="fire"
+              size={16}
+              color={insights.streakDays > 0 ? colors.warning : colors.textMuted}
             />
-            <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-              {BRAND.appName}
+            <Text style={[typography.numeric, { color: colors.textPrimary, fontSize: 14 }]}>
+              {insights.streakDays}
             </Text>
-            <View style={styles.topBarRight}>
-              <Button
-                compact
-                mode="contained-tonal"
-                icon="fire"
-                onPress={() => openSheet('streak')}
-                buttonColor={colors.surfacePressed}
-                textColor={colors.textPrimary}
-                style={styles.streakButton}
-                contentStyle={styles.streakButtonContent}
-                labelStyle={typography.captionBold}
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/profile')}
+            accessibilityRole="button"
+            accessibilityLabel="Open profile"
+            style={[
+              styles.avatar,
+              { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+              {user.displayName.slice(0, 1).toUpperCase()}
+            </Text>
+          </Pressable>
+        </View>
+
+        <Reveal index={0}>
+          <Tile glow style={{ gap: spacing.lg }}>
+            <View style={{ gap: spacing.xs }}>
+              <Text
+                style={[
+                  typography.captionBold,
+                  { color: activeDraft ? colors.accent : colors.textSecondary },
+                ]}
               >
-                {insights.streakDays}d
-              </Button>
-              <TouchableRipple
-                onPress={() => router.push('/profile')}
-                accessibilityLabel="Open profile"
-                accessibilityRole="button"
-                style={styles.avatarTouchable}
-                borderless
-              >
-                <Avatar.Text size={32} label={user.displayName.slice(0, 1)} />
-              </TouchableRipple>
+                {activeDraft ? 'In progress' : `Today, ${user.displayName}`}
+              </Text>
+              <Text style={[typography.display, { color: colors.textPrimary }]} numberOfLines={2}>
+                {activeDraft?.dayName ?? day.name}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                {draftProgress
+                  ? `${draftProgress.done} of ${draftProgress.planned} sets done`
+                  : day.focus.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}
+              </Text>
             </View>
-          </View>
+
+            {draftProgress ? (
+              <ProgressLine
+                progress={draftProgress.done / Math.max(1, draftProgress.planned)}
+                spring
+                height={4}
+              />
+            ) : (
+              <View style={styles.heroStats}>
+                <HeroStat value={String(day.prescriptions.length)} label="exercises" />
+                <HeroStat value={String(totalSets)} label="sets" />
+                <HeroStat value={`~${day.estimatedMinutes}`} label="min" />
+              </View>
+            )}
+
+            <ExerciseStrip
+              items={stripItems}
+              onPressItem={(exercise) =>
+                router.push({ pathname: '/exercise/[id]', params: { id: exercise.id } })
+              }
+            />
+
+            {activeDraft ? null : (
+              <View style={[styles.targetRow, { backgroundColor: colors.surfaceRaised }]}>
+                <MaterialCommunityIcons name="target" size={18} color={colors.accent} />
+                <Text
+                  style={[typography.caption, { color: colors.textSecondary, flex: 1 }]}
+                  numberOfLines={1}
+                >
+                  {target.exerciseName}
+                </Text>
+                <Text style={[typography.numeric, { color: colors.textPrimary, fontSize: 15 }]}>
+                  {target.lastSignal ? formatDecisionTarget(target.decision, units) : 'Calibrate'}
+                </Text>
+              </View>
+            )}
+
+            <View style={{ gap: spacing.xs }}>
+              <Button
+                mode="contained"
+                onPress={() => (activeDraft ? router.push('/workout') : startDay(dayIndex))}
+                contentStyle={styles.primaryButton}
+                labelStyle={typography.bodyBold}
+              >
+                {activeDraft
+                  ? activeDraft.reviewStartedAt
+                    ? 'Review workout'
+                    : 'Resume workout'
+                  : 'Start workout'}
+              </Button>
+              {activeDraft ? null : (
+                <View style={styles.secondaryRow}>
+                  <Button
+                    mode="text"
+                    compact
+                    textColor={colors.textSecondary}
+                    onPress={() => openSheet('swap')}
+                  >
+                    Switch to {program.days[swapIndex].name}
+                  </Button>
+                  <Button
+                    mode="text"
+                    compact
+                    textColor={colors.textSecondary}
+                    onPress={() => router.push('/custom-workout')}
+                  >
+                    Custom
+                  </Button>
+                </View>
+              )}
+            </View>
+          </Tile>
         </Reveal>
 
         <Reveal index={1}>
-          <View style={{ gap: spacing.xs }}>
-            <Text style={[typography.subheading, { color: colors.textSecondary }]}>
-              Hello, {user.displayName}
-            </Text>
-            <Text
-              style={[typography.caption, { color: colors.textMuted, fontStyle: 'italic' }]}
-              numberOfLines={2}
-            >
-              “{quote.text}” — {quote.author}
-            </Text>
-            <Text
-              style={[typography.display, { color: colors.textPrimary, marginTop: spacing.sm }]}
-            >
-              Today
-            </Text>
-            <Text style={[typography.body, { color: colors.textSecondary }]}>
-              {activeDraft
-                ? 'Your workout is saved and ready to continue.'
-                : `${day.name} is ready when you are.`}
-            </Text>
-          </View>
+          <Tile title="This week" onPress={() => router.push('/analytics')}>
+            <View style={styles.weekRow}>
+              <ProgressRing progress={sessionsDone / Math.max(1, plannedWeek.length)} size={78}>
+                <AnimatedNumber
+                  value={`${sessionsDone}/${plannedWeek.length}`}
+                  style={[typography.numeric, { color: colors.textPrimary, fontSize: 18 }]}
+                />
+                <Text style={[typography.micro, { color: colors.textMuted }]}>sessions</Text>
+              </ProgressRing>
+              <View style={{ flex: 1, gap: spacing.md }}>
+                <WeekStrip entries={insights.weekLog} />
+                <View style={styles.statsRow}>
+                  <MiniStat value={formatVolumeLoad(insights.weekVolumeKg, units)} label="volume" />
+                  <MiniStat
+                    value={
+                      insights.rirSetCount > 0
+                        ? `${Math.round(insights.intensityMatchPct * 100)}%`
+                        : '-'
+                    }
+                    label="RIR on target"
+                  />
+                </View>
+              </View>
+            </View>
+          </Tile>
         </Reveal>
 
         <Reveal index={2}>
-          {activeDraft ? (
-            <ActiveWorkoutCard session={activeDraft} onResume={() => router.push('/workout')} />
-          ) : null}
+          <Tile
+            title="Recovery"
+            onPress={() => router.push('/body')}
+            accessibilityLabel="Muscle recovery, open Body"
+          >
+            <RecoveryMap freshness={freshness} />
+          </Tile>
         </Reveal>
 
-        <Reveal index={3}>
-          {activeDraft ? null : (
-            <TodayWorkoutHero
-              day={day}
-              targetRir={day.prescriptions[0].targetRir}
-              target={target}
-              units={preferences.units}
-              hasPreviousTopSet={target.lastSignal != null}
-              swapLabel={program.days[swapIndex].name}
-              onStart={() => startDay(dayIndex)}
-              onSwap={() => openSheet('swap')}
-              onWeakPoint={() => openSheet('weakPoint')}
-              onCustomWorkout={() => router.push('/custom-workout')}
-            />
-          )}
+        <Reveal index={3} style={styles.pair}>
+          <Tile
+            title="Strength"
+            containerStyle={{ width: halfWidth }}
+            onPress={
+              trend
+                ? () =>
+                    router.push({ pathname: '/exercise/[id]', params: { id: trend.exerciseId } })
+                : () => router.push('/analytics')
+            }
+            accessibilityLabel={trend ? `${trend.exerciseName} estimated 1RM` : 'Strength trend'}
+          >
+            {trend ? (
+              <View style={{ gap: spacing.sm }}>
+                <View>
+                  <AnimatedNumber
+                    value={`${displayLoad(trend.latestKg, units) ?? 0}`}
+                    style={[typography.jumbo, styles.tileNumber, { color: colors.textPrimary }]}
+                  />
+                  <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
+                    {unitLabel(units)} e1RM, {trend.exerciseName}
+                  </Text>
+                </View>
+                <Sparkline values={trendValues} width={tileInner} height={40} />
+                {trendValues.length < 2 ? (
+                  <Text style={[typography.micro, { color: colors.textMuted }]}>
+                    One session so far
+                  </Text>
+                ) : (
+                  <Delta
+                    value={displayLoad(trend.deltaKg, units) ?? 0}
+                    suffix={` ${unitLabel(units)}`}
+                  />
+                )}
+              </View>
+            ) : (
+              <EmptyTile icon="chart-line" text="Log a loaded lift twice to see your e1RM trend." />
+            )}
+          </Tile>
+          <Tile
+            title="Bodyweight"
+            containerStyle={{ width: halfWidth }}
+            onPress={() => router.push('/body-log')}
+            accessibilityLabel="Bodyweight, open body log"
+          >
+            {bodyweight ? (
+              <View style={{ gap: spacing.sm }}>
+                <View>
+                  <AnimatedNumber
+                    value={`${displayLoad(bodyweight.latestKg, units) ?? 0}`}
+                    style={[typography.jumbo, styles.tileNumber, { color: colors.textPrimary }]}
+                  />
+                  <Text style={[typography.micro, { color: colors.textMuted }]}>
+                    {unitLabel(units)}, {formatDate(bodyweight.date)}
+                  </Text>
+                </View>
+                <Sparkline
+                  values={bodyweight.series}
+                  width={tileInner}
+                  height={40}
+                  color={colors.textSecondary}
+                />
+                {bodyweight.deltaKg != null ? (
+                  <Delta
+                    value={displayLoad(bodyweight.deltaKg, units) ?? 0}
+                    suffix={` ${unitLabel(units)}`}
+                    neutral
+                  />
+                ) : null}
+              </View>
+            ) : (
+              <EmptyTile icon="scale-bathroom" text="Weigh in to start your trend." />
+            )}
+          </Tile>
         </Reveal>
 
         <Reveal index={4}>
-          <SectionHeader
-            title="This week"
-            description="Completed work and how closely you trained to the plan."
-          />
+          <Tile
+            title="Volume, last 8 weeks"
+            aside={
+              volumeDelta != null ? (
+                <Text
+                  style={[
+                    typography.captionBold,
+                    { color: volumeDelta >= 0 ? colors.success : colors.textMuted },
+                  ]}
+                >
+                  {volumeDelta >= 0 ? '+' : ''}
+                  {volumeDelta}% vs last week
+                </Text>
+              ) : null
+            }
+          >
+            <View style={{ gap: 2 }}>
+              <AnimatedNumber
+                value={shownWeek?.detail ?? formatVolumeLoad(0, units)}
+                style={[typography.jumbo, styles.tileNumber, { color: colors.textPrimary }]}
+              />
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {shownWeek
+                  ? `${shownWeek.label === 'Now' ? 'This week' : `Week of ${shownWeek.label}`}, ${shownWeek.sessions} ${shownWeek.sessions === 1 ? 'session' : 'sessions'}`
+                  : 'No sessions yet'}
+              </Text>
+            </View>
+            <BarSeries data={weekBars} height={72} onSelect={setSelectedWeek} />
+          </Tile>
         </Reveal>
 
-        <Reveal index={5}>
-          <HomePreflightRail
-            intensityMatchPct={insights.intensityMatchPct}
-            sessionsThisWeek={insights.weekLog.filter((entry) => entry.status === 'done').length}
-          />
-        </Reveal>
+        {lastSession ? (
+          <Reveal index={5}>
+            <Tile
+              title="Last session"
+              aside={
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  {formatDate(lastSession.startedAt)}
+                </Text>
+              }
+              onPress={() =>
+                router.push({ pathname: '/history', params: { sessionId: lastSession.sessionId } })
+              }
+            >
+              <Text style={[typography.heading, { color: colors.textPrimary }]}>
+                {lastSession.dayName}
+              </Text>
+              <View style={styles.statsRow}>
+                <MiniStat value={formatMinutes(lastSession.durationMinutes)} label="duration" />
+                <MiniStat value={String(lastSession.completedSets)} label="sets" />
+                <MiniStat value={formatVolumeLoad(lastSession.volumeKg, units)} label="volume" />
+              </View>
+              {lastSession.exerciseSummaries
+                .filter((item) => item.completedSets > 0)
+                .slice(0, 3)
+                .map((item) => (
+                  <View key={item.exerciseId} style={styles.bestRow}>
+                    <Text
+                      style={[typography.caption, { color: colors.textSecondary, flex: 1 }]}
+                      numberOfLines={1}
+                    >
+                      {item.name}
+                    </Text>
+                    <Text style={[typography.numeric, { color: colors.textPrimary, fontSize: 13 }]}>
+                      {item.bestSetLabel}
+                    </Text>
+                  </View>
+                ))}
+            </Tile>
+          </Reveal>
+        ) : null}
 
         <Reveal index={6}>
-          <WeekLogCard
-            entries={insights.weekLog}
-            weekVolumeKg={insights.weekVolumeKg}
-            intensityMatchPct={insights.intensityMatchPct}
-            units={preferences.units}
-          />
+          <Tile
+            title="Recent records"
+            aside={
+              <MaterialCommunityIcons name="trophy-outline" size={18} color={colors.warning} />
+            }
+          >
+            {records.length === 0 ? (
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                Finish a loaded workout and your best lifts land here.
+              </Text>
+            ) : (
+              <View>
+                {records.map((record, index) => (
+                  <ListRow
+                    key={record.id}
+                    title={requireExercise(record.exerciseId).name}
+                    subtitle={formatDate(record.date)}
+                    value={
+                      record.loadKg != null && record.reps != null
+                        ? `${formatLoad(record.loadKg, units)} × ${record.reps}`
+                        : formatLoad(record.value, units)
+                    }
+                    onPress={() =>
+                      router.push({
+                        pathname: '/exercise/[id]',
+                        params: { id: record.exerciseId },
+                      })
+                    }
+                    last={index === records.length - 1}
+                  />
+                ))}
+              </View>
+            )}
+          </Tile>
         </Reveal>
 
-        <Reveal index={7}>
-          <SectionHeader
-            title="Training insights"
-            description="Targets and muscle coverage from your saved sessions."
-          />
-        </Reveal>
-
-        <Reveal index={8}>
-          <OverloadRunwayCard target={target} units={preferences.units} />
-        </Reveal>
-
-        <Reveal index={9}>
-          <MuscleFocusMap day={day} />
-        </Reveal>
-
-        <Reveal index={10}>
-          <PrWatchCard records={insights.personalRecords} units={preferences.units} />
+        <Reveal
+          index={7}
+          style={{ gap: spacing.xs, paddingTop: spacing.md, paddingHorizontal: spacing.xs }}
+        >
+          <Text style={[typography.body, { color: colors.textMuted, fontStyle: 'italic' }]}>
+            “{quote.text}”
+          </Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>{quote.author}</Text>
         </Reveal>
       </ScrollView>
 
@@ -251,92 +574,224 @@ export default function HomeScreen() {
   );
 }
 
-function ActiveWorkoutCard({
-  session,
-  onResume,
+function sessionProgress(session: WorkoutSession) {
+  return {
+    done: session.exercises.reduce(
+      (total, exercise) =>
+        total + exercise.sets.filter((set) => set.completed && !set.skipped).length,
+      0,
+    ),
+    planned: session.exercises.reduce((total, exercise) => total + exercise.sets.length, 0),
+  };
+}
+
+function HeroStat({ value, label }: { value: string; label: string }) {
+  const { colors, typography } = useTheme();
+  return (
+    <View style={styles.heroStat}>
+      <AnimatedNumber
+        value={value}
+        style={[typography.jumbo, { color: colors.textPrimary, fontSize: 26, lineHeight: 30 }]}
+      />
+      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+    </View>
+  );
+}
+
+function MiniStat({ value, label }: { value: string; label: string }) {
+  const { colors, typography } = useTheme();
+  return (
+    <View style={{ flex: 1 }}>
+      <AnimatedNumber
+        value={value}
+        style={[typography.numeric, { color: colors.textPrimary, fontSize: 15 }]}
+      />
+      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+    </View>
+  );
+}
+
+function Delta({
+  value,
+  suffix,
+  neutral = false,
 }: {
-  session: WorkoutSession;
-  onResume: () => void;
+  value: number;
+  suffix: string;
+  neutral?: boolean;
 }) {
-  const { colors, radius, spacing, typography } = useTheme();
-  const completedSets = session.exercises.reduce(
-    (total, exercise) =>
-      total + exercise.sets.filter((set) => set.completed && !set.skipped).length,
-    0,
+  const { colors, typography } = useTheme();
+  const up = value > 0;
+  const color = neutral || value === 0 ? colors.textSecondary : up ? colors.success : colors.danger;
+  return (
+    <View style={styles.delta}>
+      <MaterialCommunityIcons
+        name={value === 0 ? 'minus' : up ? 'arrow-top-right' : 'arrow-bottom-right'}
+        size={14}
+        color={color}
+      />
+      <Text style={[typography.captionBold, { color }]}>
+        {up ? '+' : ''}
+        {Number(value.toFixed(1))}
+        {suffix}
+      </Text>
+    </View>
   );
-  const plannedSets = session.exercises.reduce(
-    (total, exercise) => total + exercise.sets.length,
-    0,
+}
+
+function EmptyTile({
+  icon,
+  text,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  text: string;
+}) {
+  const { colors, typography } = useTheme();
+  return (
+    <View style={styles.emptyTile}>
+      <MaterialCommunityIcons name={icon} size={26} color={colors.textMuted} />
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{text}</Text>
+    </View>
   );
+}
+
+const WEEKDAY_INDEX = (new Date().getDay() + 6) % 7; // Monday = 0, matching the week log
+
+function WeekStrip({ entries }: { entries: WeekLogEntry[] }) {
+  const { colors, typography } = useTheme();
 
   return (
-    <Card
-      mode="contained"
-      style={{
-        backgroundColor: colors.accentSoft,
-        borderColor: colors.accent,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderRadius: radius.xl,
-      }}
-    >
-      <Card.Content style={{ gap: spacing.md }}>
-        <View style={styles.topBar}>
-          <View style={{ flex: 1 }}>
-            <Text style={[typography.micro, { color: colors.accent }]}>
-              {session.reviewStartedAt ? 'WORKOUT REVIEW' : 'ACTIVE WORKOUT'}
-            </Text>
-            <Text style={[typography.heading, { color: colors.textPrimary }]}>
-              {session.dayName}
-            </Text>
-          </View>
-          <Chip
-            compact
-            icon={
-              session.reviewStartedAt
-                ? 'clipboard-edit-outline'
-                : session.status === 'paused'
-                  ? 'pause'
-                  : 'progress-clock'
-            }
+    <View style={styles.weekStrip}>
+      {entries.map((entry, index) => {
+        const done = entry.status === 'done';
+        const isToday = entry.status === 'today' || index === WEEKDAY_INDEX;
+        const planned = entry.status === 'upcoming' || entry.status === 'today';
+        return (
+          <View
+            key={entry.label}
+            style={styles.weekDay}
+            accessible
+            accessibilityLabel={`${entry.label}${isToday ? ', today' : ''}: ${done ? `done, ${entry.splitName}` : planned ? `planned, ${entry.splitName}` : 'rest'}`}
           >
-            {completedSets}/{plannedSets} sets
-          </Chip>
-        </View>
-        <Button
-          mode="contained"
-          icon={session.reviewStartedAt ? 'clipboard-edit-outline' : 'play'}
-          onPress={onResume}
-        >
-          {session.reviewStartedAt ? 'Review workout' : 'Resume workout'}
-        </Button>
-      </Card.Content>
-    </Card>
+            <Text
+              style={[typography.micro, { color: isToday ? colors.textPrimary : colors.textMuted }]}
+            >
+              {entry.label.slice(0, 1)}
+            </Text>
+            <View
+              style={[
+                styles.weekDot,
+                done
+                  ? { backgroundColor: colors.accent, borderColor: colors.accent }
+                  : planned
+                    ? { borderColor: isToday ? colors.textPrimary : colors.borderStrong }
+                    : { borderColor: 'transparent', backgroundColor: colors.surfaceRaised },
+              ]}
+            >
+              {done ? (
+                <MaterialCommunityIcons name="check" size={12} color={colors.onAccent} />
+              ) : null}
+            </View>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 48,
-  },
-  topBarRight: {
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    minHeight: 48,
+    marginBottom: 4,
   },
-  iconButton: {
-    margin: 0,
+  streak: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  streakButton: {
-    borderRadius: 12,
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  streakButtonContent: {
-    height: 40,
-    paddingHorizontal: 8,
+  heroStats: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  avatarTouchable: {
-    borderRadius: 999,
+  heroStat: {
+    flex: 1,
+  },
+  targetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  primaryButton: {
+    minHeight: 52,
+  },
+  secondaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  weekRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  pair: {
+    flexDirection: 'row',
+    gap: GAP,
+  },
+  tileNumber: {
+    fontSize: 28,
+    lineHeight: 32,
+  },
+  bestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  delta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  emptyTile: {
+    gap: 8,
+    minHeight: 104,
+    justifyContent: 'center',
+  },
+  weekStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  weekDay: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  weekDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

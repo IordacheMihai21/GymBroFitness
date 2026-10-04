@@ -6,6 +6,7 @@ import { calfCoreExercises } from './seed/calves-core';
 import { chestExercises } from './seed/chest';
 import { legExercises } from './seed/legs';
 import { shoulderExercises } from './seed/shoulders';
+import extendedData from './seed/repdb-catalog.generated.json';
 
 export const EXERCISE_CATALOG: Exercise[] = [
   ...chestExercises,
@@ -16,8 +17,45 @@ export const EXERCISE_CATALOG: Exercise[] = [
   ...calfCoreExercises,
 ];
 
-const byId = new Map<string, Exercise>(EXERCISE_CATALOG.map((e) => [e.id, e]));
-const byStableName = buildStableNameIndex(EXERCISE_CATALOG);
+type ExtendedEntry = Exercise & { images: string[] };
+const extendedEntries = (extendedData as { exercises?: ExtendedEntry[] }).exercises ?? [];
+
+/**
+ * Loggable exercises generated from the RepDB free tier at install time (see
+ * scripts/import-repdb-catalog.mjs). They can be logged, browsed and added to
+ * custom workouts and plans by hand, but the program generator, plan library
+ * and swap suggestions stay on the curated EXERCISE_CATALOG above.
+ */
+export const EXTENDED_EXERCISES: Exercise[] = extendedEntries.map(
+  ({ images: _images, ...exercise }) => exercise,
+);
+
+/** RepDB illustration paths for each extended exercise, relative to EXTENDED_IMAGE_BASE. */
+export const EXTENDED_IMAGES: Readonly<Record<string, string[]>> = Object.fromEntries(
+  extendedEntries.map((entry) => [entry.id, entry.images]),
+);
+export const EXTENDED_IMAGE_BASE = (extendedData as { base?: string }).base ?? '';
+
+/**
+ * True for the curated catalog the program generator, plan library and swap
+ * suggestions draw from; false for extended RepDB exercises, which are only
+ * ever added by hand.
+ */
+export function isAutoProgrammed(exercise: Pick<Exercise, 'id'>): boolean {
+  return !exercise.id.startsWith('repdb-');
+}
+
+/** Curated plus extended: everything that can appear in a logged workout. */
+export const ALL_EXERCISES: Exercise[] = [...EXERCISE_CATALOG, ...EXTENDED_EXERCISES];
+
+const byId = new Map<string, Exercise>(ALL_EXERCISES.map((e) => [e.id, e]));
+// Curated names win; extended names only fill identifiers nobody else claims,
+// so existing history and imports resolve exactly as before.
+const curatedNames = buildStableNameIndex(EXERCISE_CATALOG);
+const byStableName = new Map(curatedNames);
+for (const [identifier, exercise] of buildStableNameIndex(EXTENDED_EXERCISES)) {
+  if (!byStableName.has(identifier)) byStableName.set(identifier, exercise);
+}
 
 export function getExercise(id: string): Exercise | undefined {
   return byId.get(id) ?? byStableName.get(normalizeExerciseIdentifier(id));
@@ -71,9 +109,11 @@ export function isExerciseAvailable(exercise: Exercise, owned: EquipmentType[]):
 export function availableExercises(
   owned: EquipmentType[],
   excludedSlugs: string[] = [],
+  options: { includeExtended?: boolean } = {},
 ): Exercise[] {
   const excluded = new Set(excludedSlugs);
-  return EXERCISE_CATALOG.filter((e) => !excluded.has(e.slug) && isExerciseAvailable(e, owned));
+  const pool = options.includeExtended ? ALL_EXERCISES : EXERCISE_CATALOG;
+  return pool.filter((e) => !excluded.has(e.slug) && isExerciseAvailable(e, owned));
 }
 
 export function exercisesForMuscle(

@@ -61,7 +61,14 @@
           }
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GymBroFitness uses your photo library so you can attach a progress photo to a body-tracking entry. Photos stay on this device.",
+          "cameraPermission": "GymBroFitness uses your camera so you can take a progress photo directly. Photos stay on this device."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

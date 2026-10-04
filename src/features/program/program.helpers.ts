@@ -33,9 +33,9 @@ export type ProgramMuscleLoad = {
 };
 
 export function formatGoal(goal: TrainingPreferences['goal']): string {
-  if (goal === 'hypertrophy') return 'muscle';
-  if (goal === 'strength') return 'strength';
-  return 'mixed';
+  if (goal === 'hypertrophy') return 'Muscle growth';
+  if (goal === 'strength') return 'Strength';
+  return 'Mixed';
 }
 
 export function formatEquipmentSummary(equipment: TrainingPreferences['equipment']): string {
@@ -133,7 +133,9 @@ export function formatShortRest(seconds: number): string {
   return `${minutes}:${String(remainder).padStart(2, '0')}`;
 }
 
-export function formatTechnique(technique: NonNullable<ExercisePrescription['setTechnique']>): string {
+export function formatTechnique(
+  technique: NonNullable<ExercisePrescription['setTechnique']>,
+): string {
   switch (technique) {
     case 'drop_set':
       return 'Drop set';

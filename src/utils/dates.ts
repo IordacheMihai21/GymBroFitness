@@ -64,3 +64,12 @@ export function greetingForHour(hour: number): string {
   if (hour < 18) return 'Good afternoon';
   return 'Good evening';
 }
+
+/** Compact duration from minutes: "48 min" under an hour, "1h 15m" above. */
+export function formatMinutes(minutes: number): string {
+  const rounded = Math.max(0, Math.round(minutes));
+  if (rounded < 60) return `${rounded} min`;
+  const hours = Math.floor(rounded / 60);
+  const rest = rounded % 60;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}

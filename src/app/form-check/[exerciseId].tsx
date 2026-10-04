@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Card, Chip, IconButton } from 'react-native-paper';
+import { Button, IconButton } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getExercise } from '@/domain/exercises/catalog';
@@ -98,28 +98,15 @@ export default function FormCheckScreen() {
         </ScrollView>
       ) : (
         <View style={{ flex: 1, padding: spacing.lg, paddingBottom: insets.bottom + spacing.lg }}>
-          <Card
-            mode="contained"
-            style={[
-              styles.preflightCard,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <Card.Content style={{ gap: spacing.sm }}>
-              <View style={styles.chipRow}>
-                <Chip compact mode="flat" icon="shield-check-outline">
-                  On-device only
-                </Chip>
-                <Chip compact mode="flat" icon="camera-outline">
-                  {cameraAngleLabel(config.recommendedCameraAngle)}
-                </Chip>
-              </View>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                Place the phone {cameraPlacementCopy(config.recommendedCameraAngle)} and keep the
-                working joints visible for the full set.
-              </Text>
-            </Card.Content>
-          </Card>
+          <View style={{ gap: 2, marginBottom: spacing.md }}>
+            <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
+              {cameraAngleLabel(config.recommendedCameraAngle)}, analyzed on this phone
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              Place the phone {cameraPlacementCopy(config.recommendedCameraAngle)} and keep the
+              working joints visible for the full set.
+            </Text>
+          </View>
           <FormCameraView config={config} onFinishSet={setCompletedReps} />
         </View>
       )}
@@ -134,16 +121,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  preflightCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 18,
-    marginBottom: 12,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
   },
   centered: {
     flex: 1,

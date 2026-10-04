@@ -64,10 +64,10 @@ export const BODY_HEAT_COLORS: Record<MuscleHeatKey, string> = {
 
 export const BODY_HEAT_LEGEND: { key: MuscleHeatKey; color: string; label: string }[] = [
   { key: 'dormant', color: BODY_HEAT_COLORS.dormant, label: 'Very low' },
-  { key: 'ready', color: BODY_HEAT_COLORS.ready, label: 'Maintenance ref.' },
-  { key: 'growth', color: BODY_HEAT_COLORS.growth, label: 'Moderate ref.' },
-  { key: 'loaded', color: BODY_HEAT_COLORS.loaded, label: 'High ref.' },
-  { key: 'excessive', color: BODY_HEAT_COLORS.excessive, label: 'Above ref.' },
+  { key: 'ready', color: BODY_HEAT_COLORS.ready, label: 'Maintenance' },
+  { key: 'growth', color: BODY_HEAT_COLORS.growth, label: 'Moderate' },
+  { key: 'loaded', color: BODY_HEAT_COLORS.loaded, label: 'High' },
+  { key: 'excessive', color: BODY_HEAT_COLORS.excessive, label: 'Above range' },
 ];
 
 export const RANK_TIER_COLORS: Record<RankTier, string> = {
@@ -196,14 +196,14 @@ export function bodyIntensityForFatigue({
 export function shortVolumeZoneLabel(zone: VolumeZone): string {
   switch (zone) {
     case 'below_mv':
-      return 'Very low ref.';
+      return 'Very low';
     case 'maintenance':
-      return 'Maintenance ref.';
+      return 'Maintenance';
     case 'growth':
-      return 'Moderate ref.';
+      return 'Moderate';
     case 'frontier':
-      return 'High ref.';
+      return 'High';
     case 'excessive':
-      return 'Above ref.';
+      return 'Above range';
   }
 }

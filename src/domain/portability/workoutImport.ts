@@ -1,4 +1,9 @@
-import { canonicalExerciseId, EXERCISE_CATALOG, getExercise } from '@/domain/exercises/catalog';
+import {
+  canonicalExerciseId,
+  EXERCISE_CATALOG,
+  EXTENDED_EXERCISES,
+  getExercise,
+} from '@/domain/exercises/catalog';
 import type { PerformedSet, SetKind, Units, WorkoutSession } from '@/types';
 import { inputToKg } from '@/utils/units';
 
@@ -259,6 +264,11 @@ function buildSignatureIndex(): Map<string, string> {
       const existing = candidates.get(key);
       candidates.set(key, existing && existing !== exercise.id ? null : exercise.id);
     }
+  }
+  // Extended RepDB exercises only claim names the curated catalog left open.
+  for (const exercise of EXTENDED_EXERCISES) {
+    const key = signature(normalizeName(exercise.name));
+    if (!candidates.has(key)) candidates.set(key, exercise.id);
   }
   return new Map([...candidates].flatMap(([key, id]) => (id ? [[key, id]] : [])));
 }

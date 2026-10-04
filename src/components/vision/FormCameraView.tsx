@@ -132,7 +132,7 @@ export function FormCameraView({ config, onFinishSet }: FormCameraViewProps) {
             { color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm },
           ]}
         >
-          GymBroFitness analyzes your form on-device — video never leaves your phone.
+          Form is analyzed on this phone. Video never leaves it.
         </Text>
         {permissionError ? (
           <Text
@@ -230,7 +230,7 @@ export function FormCameraView({ config, onFinishSet }: FormCameraViewProps) {
 
       {__DEV__ && state.performance ? (
         <Text style={[typography.caption, styles.performanceText, { color: colors.textMuted }]}>
-          Form AI · {state.performance.processedFps.toFixed(1)} fps ·{' '}
+          Form AI, {state.performance.processedFps.toFixed(1)} fps,{' '}
           {Math.round(state.performance.averageInferenceMs)} ms/frame
         </Text>
       ) : null}

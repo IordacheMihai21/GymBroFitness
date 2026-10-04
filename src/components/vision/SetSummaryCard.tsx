@@ -1,5 +1,4 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Card, Chip } from 'react-native-paper';
 
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { GlossaryTermKey } from '@/domain/glossary/terms';
@@ -12,70 +11,76 @@ type SetSummaryCardProps = {
 };
 
 export function SetSummaryCard({ reps }: SetSummaryCardProps) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const summary = buildSetSummary(reps);
 
   return (
-    <Card
-      mode="contained"
-      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.xl }]}
-    >
-      <Card.Content style={{ gap: spacing.md }}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={[typography.micro, { color: colors.accent }]}>Set complete</Text>
-            <Text style={[typography.heading, { color: colors.textPrimary }]}>
-              {summary.reps} rep{summary.reps === 1 ? '' : 's'}
-            </Text>
-          </View>
-          <Chip compact mode="flat" icon="star-four-points-outline">
-            {summary.averageScore}/100 avg
-          </Chip>
+    <View style={{ gap: spacing.lg }}>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>Set complete</Text>
+          <Text style={[typography.display, { color: colors.textPrimary }]}>
+            {summary.reps} rep{summary.reps === 1 ? '' : 's'}
+          </Text>
         </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={[typography.jumbo, { color: colors.accent, fontSize: 34, lineHeight: 40 }]}>
+            {summary.averageScore}
+          </Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>avg form score</Text>
+        </View>
+      </View>
 
-        <View style={styles.statRow}>
-          <Stat label="Best rep" value={summary.bestRep ? `#${summary.bestRep.repNumber} · ${summary.bestRep.overallScore}` : '—'} />
-          <Stat label="Worst rep" value={summary.worstRep ? `#${summary.worstRep.repNumber} · ${summary.worstRep.overallScore}` : '—'} />
-        </View>
-        <View style={styles.statRow}>
-          <Stat label="Avg ROM" value={`${summary.averageRomScore}/100`} hint="rom" />
-          <Stat label="Avg tempo" value={`${summary.averageTempoScore}/100`} hint="tempo" />
-        </View>
+      <View style={styles.statRow}>
+        <Stat
+          label="Best rep"
+          value={
+            summary.bestRep
+              ? `Rep ${summary.bestRep.repNumber}, ${summary.bestRep.overallScore}`
+              : '-'
+          }
+        />
+        <Stat
+          label="Worst rep"
+          value={
+            summary.worstRep
+              ? `Rep ${summary.worstRep.repNumber}, ${summary.worstRep.overallScore}`
+              : '-'
+          }
+        />
+      </View>
+      <View style={styles.statRow}>
+        <Stat label="Avg ROM" value={`${summary.averageRomScore}/100`} hint="rom" />
+        <Stat label="Avg tempo" value={`${summary.averageTempoScore}/100`} hint="tempo" />
+      </View>
 
-        {summary.mostCommonIssue ? (
-          <View style={[styles.panel, { backgroundColor: colors.surfaceRaised }]}>
-            <Text style={[typography.micro, { color: colors.warning }]}>Most common issue</Text>
-            <Text style={[typography.caption, { color: colors.textSecondary }]}>{summary.mostCommonIssue}</Text>
-          </View>
-        ) : null}
-
-        <View style={{ gap: 4 }}>
-          {summary.recommendations.map((rec) => (
-            <Text key={rec} style={[typography.caption, { color: colors.textMuted }]}>
-              • {rec}
-            </Text>
-          ))}
+      {summary.mostCommonIssue ? (
+        <View style={[styles.panel, { borderLeftColor: colors.warning }]}>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>Most common issue</Text>
+          <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
+            {summary.mostCommonIssue}
+          </Text>
         </View>
-      </Card.Content>
-    </Card>
+      ) : null}
+
+      <View style={{ gap: 4 }}>
+        {summary.recommendations.map((rec) => (
+          <Text key={rec} style={[typography.body, { color: colors.textSecondary }]}>
+            {rec}
+          </Text>
+        ))}
+      </View>
+    </View>
   );
 }
 
-function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: GlossaryTermKey;
-}) {
+function Stat({ label, value, hint }: { label: string; value: string; hint?: GlossaryTermKey }) {
   const { colors, typography } = useTheme();
   return (
     <View style={{ flex: 1 }}>
-      <Text style={[typography.subheading, { color: colors.textPrimary }]}>{value}</Text>
+      <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
       <View style={styles.statLabelRow}>
-        <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
         {hint ? <InfoHint term={hint} /> : null}
       </View>
     </View>
@@ -83,9 +88,6 @@ function Stat({
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -101,7 +103,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   panel: {
-    borderRadius: 14,
-    padding: 12,
+    borderLeftWidth: 2,
+    paddingLeft: 12,
+    gap: 2,
   },
 });

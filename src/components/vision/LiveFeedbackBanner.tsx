@@ -1,5 +1,4 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Chip } from 'react-native-paper';
 
 import type { TrackingQuality } from '@/domain/vision/confidence';
 import type { FormViolation } from '@/domain/vision/feedbackPriority';
@@ -40,7 +39,9 @@ export function LiveFeedbackBanner({
         ]}
       >
         <Text style={[typography.bodyBold, { color: colors.warning, textAlign: 'center' }]}>
-          {trackingQuality === 'lost' ? 'Step into frame — full body not visible' : 'Move back a little'}
+          {trackingQuality === 'lost'
+            ? 'Step into frame, your full body is not visible'
+            : 'Move back a little'}
         </Text>
       </View>
     );
@@ -51,9 +52,9 @@ export function LiveFeedbackBanner({
       <View style={styles.row}>
         <Text style={[typography.display, { color: colors.textPrimary }]}>{repCount}</Text>
         <View style={{ flex: 1, alignItems: 'flex-end' }}>
-          <Chip compact mode="flat">
+          <Text style={[typography.captionBold, { color: colors.textSecondary }]}>
             {PHASE_LABELS[phase]}
-          </Chip>
+          </Text>
         </View>
       </View>
 
@@ -62,7 +63,8 @@ export function LiveFeedbackBanner({
           style={[
             styles.banner,
             {
-              backgroundColor: topViolation.severity === 'error' ? colors.dangerSoft : colors.warningSoft,
+              backgroundColor:
+                topViolation.severity === 'error' ? colors.dangerSoft : colors.warningSoft,
               borderRadius: radius.lg,
             },
           ]}
@@ -70,16 +72,21 @@ export function LiveFeedbackBanner({
           <Text
             style={[
               typography.bodyBold,
-              { color: topViolation.severity === 'error' ? colors.danger : colors.warning, textAlign: 'center' },
+              {
+                color: topViolation.severity === 'error' ? colors.danger : colors.warning,
+                textAlign: 'center',
+              },
             ]}
           >
             {topViolation.message}
           </Text>
         </View>
       ) : lastCompletedRep ? (
-        <View style={[styles.banner, { backgroundColor: colors.successSoft, borderRadius: radius.lg }]}>
+        <View
+          style={[styles.banner, { backgroundColor: colors.successSoft, borderRadius: radius.lg }]}
+        >
           <Text style={[typography.bodyBold, { color: colors.success, textAlign: 'center' }]}>
-            Rep {lastCompletedRep.repNumber} · {lastCompletedRep.overallScore}/100
+            Rep {lastCompletedRep.repNumber}, {lastCompletedRep.overallScore}/100
           </Text>
         </View>
       ) : null}

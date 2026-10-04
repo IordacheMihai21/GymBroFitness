@@ -1,13 +1,16 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Chip, IconButton, List, Searchbar } from 'react-native-paper';
+import { Button, IconButton, Menu, Searchbar } from 'react-native-paper';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReducedMotion } from 'react-native-reanimated';
 
 import { ExerciseDemoStage } from '@/components/exercise/ExerciseDemoStage';
 import { ExerciseListItem } from '@/components/exercise/ExerciseListItem';
 import { ExerciseMuscleMap } from '@/components/exercise/ExerciseMuscleMap';
+import { ListRow } from '@/components/ui/ListRow';
+import { Pill } from '@/components/ui/Pill';
+import { Segmented } from '@/components/ui/Segmented';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import {
   BROWSABLE_EXERCISE_LIBRARY,
@@ -23,6 +26,7 @@ import {
   recordRecentExercise,
   toggleExerciseFavorite,
 } from '@/domain/exercises/libraryStateStore';
+import { isAutoProgrammed } from '@/domain/exercises/catalog';
 import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
 import { MUSCLE_GROUPS, type Exercise, type MuscleGroup } from '@/types';
 import { useTheme } from '@/theme';
@@ -30,15 +34,21 @@ import { useTheme } from '@/theme';
 type LevelFilter = 'all' | LibraryExercise['level'];
 type ScopeFilter = 'all' | 'workout-ready' | 'favorites' | 'recent';
 
-const SCOPE_FILTERS: { label: string; value: ScopeFilter; icon: string }[] = [
-  { label: 'All', value: 'all', icon: 'format-list-bulleted' },
-  { label: 'Workout ready', value: 'workout-ready', icon: 'playlist-plus' },
-  { label: 'Favorites', value: 'favorites', icon: 'star-outline' },
-  { label: 'Recent', value: 'recent', icon: 'history' },
-];
+const SCOPE_FILTERS = [
+  { label: 'All', value: 'all' },
+  { label: 'Loggable', value: 'workout-ready' },
+  { label: 'Starred', value: 'favorites' },
+  { label: 'Recent', value: 'recent' },
+] as const satisfies readonly { label: string; value: ScopeFilter }[];
+
+const LEVEL_LABELS: Record<LibraryExercise['level'], string> = {
+  beginner: 'Beginner',
+  intermediate: 'Intermediate',
+  expert: 'Expert',
+};
 
 const LEVEL_FILTERS: { label: string; value: LevelFilter }[] = [
-  { label: 'All', value: 'all' },
+  { label: 'Any level', value: 'all' },
   { label: 'Beginner', value: 'beginner' },
   { label: 'Intermediate', value: 'intermediate' },
   { label: 'Expert', value: 'expert' },
@@ -52,6 +62,7 @@ export default function LibraryScreen() {
   const [muscle, setMuscle] = useState<MuscleGroup | null>(null);
   const [level, setLevel] = useState<LevelFilter>('all');
   const [scope, setScope] = useState<ScopeFilter>('all');
+  const [levelMenuOpen, setLevelMenuOpen] = useState(false);
   const [detailExercise, setDetailExercise] = useState<LibraryExercise | null>(null);
   const [libraryState, setLibraryState] = useState(EMPTY_EXERCISE_LIBRARY_STATE);
   const [libraryStateError, setLibraryStateError] = useState<string | null>(null);
@@ -124,115 +135,85 @@ export default function LibraryScreen() {
           paddingBottom: insets.bottom + 120,
         }}
         ListHeaderComponent={
-          <View style={{ padding: spacing.lg, paddingBottom: spacing.md, gap: spacing.md }}>
-            <View style={styles.headerRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[typography.caption, { color: colors.textSecondary }]}>
-                  Find, compare, and add movements
-                </Text>
-                <Text style={[typography.title, { color: colors.textPrimary }]}>Exercises</Text>
-              </View>
-              <Chip compact mode="flat" icon="database-search">
-                {BROWSABLE_EXERCISE_LIBRARY.length}
-              </Chip>
+          <View style={{ paddingTop: spacing.xl, paddingBottom: spacing.sm, gap: spacing.md }}>
+            <View style={{ paddingHorizontal: spacing.lg }}>
+              <Text style={[typography.display, { color: colors.textPrimary }]}>Exercises</Text>
+              <Text style={[typography.body, { color: colors.textSecondary }]}>
+                {results.length} of {BROWSABLE_EXERCISE_LIBRARY.length}
+              </Text>
             </View>
 
-            <Searchbar
-              mode="bar"
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search exercises"
-              iconColor={colors.accent}
-              inputStyle={[typography.body, { color: colors.textPrimary }]}
-              placeholderTextColor={colors.textMuted}
-              style={[
-                styles.search,
-                {
-                  backgroundColor: colors.surfaceRaised,
-                  borderColor: colors.border,
-                  borderRadius: radius.lg,
-                },
-              ]}
-            />
+            <View style={{ paddingHorizontal: spacing.lg, gap: spacing.md }}>
+              <Searchbar
+                mode="bar"
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search exercises"
+                iconColor={colors.textMuted}
+                inputStyle={[typography.body, { color: colors.textPrimary, minHeight: 0 }]}
+                placeholderTextColor={colors.textMuted}
+                style={[
+                  styles.search,
+                  { backgroundColor: colors.surface, borderRadius: radius.lg },
+                ]}
+              />
+              <Segmented options={SCOPE_FILTERS} value={scope} onChange={setScope} />
+            </View>
 
             {libraryStateError ? (
               <Text
-                style={[typography.caption, { color: colors.danger }]}
+                style={[
+                  typography.caption,
+                  { color: colors.danger, paddingHorizontal: spacing.lg },
+                ]}
                 accessibilityRole="alert"
               >
                 {libraryStateError}
               </Text>
             ) : null}
 
-            <View style={{ gap: spacing.sm }}>
-              <FlatList
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                data={SCOPE_FILTERS}
-                keyExtractor={(item) => item.value}
-                contentContainerStyle={{ gap: spacing.sm }}
-                renderItem={({ item }) => (
-                  <Chip
-                    compact
-                    icon={item.icon}
-                    selected={scope === item.value}
-                    mode={scope === item.value ? 'flat' : 'outlined'}
-                    onPress={() => setScope(item.value)}
-                  >
-                    {item.label}
-                  </Chip>
-                )}
-              />
-              <FlatList
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                data={LEVEL_FILTERS}
-                keyExtractor={(item) => item.value}
-                contentContainerStyle={{ gap: spacing.sm }}
-                renderItem={({ item }) => (
-                  <Chip
-                    compact
-                    selected={level === item.value}
-                    mode={level === item.value ? 'flat' : 'outlined'}
-                    onPress={() => setLevel(item.value)}
-                  >
-                    {item.label}
-                  </Chip>
-                )}
-              />
-              <FlatList
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                data={MUSCLE_GROUPS}
-                keyExtractor={(item) => item}
-                contentContainerStyle={{ gap: spacing.sm, paddingTop: spacing.xs }}
-                ListHeaderComponent={
-                  <Chip
-                    compact
-                    selected={muscle === null}
-                    mode={muscle === null ? 'flat' : 'outlined'}
-                    onPress={() => setMuscle(null)}
-                  >
-                    All muscles
-                  </Chip>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}
+            >
+              <Menu
+                visible={levelMenuOpen}
+                onDismiss={() => setLevelMenuOpen(false)}
+                anchor={
+                  <Pill
+                    label={level === 'all' ? 'Any level' : LEVEL_LABELS[level]}
+                    active={level !== 'all'}
+                    trailingIcon="chevron-down"
+                    onPress={() => setLevelMenuOpen(true)}
+                    accessibilityLabel="Filter by level"
+                  />
                 }
-                ListHeaderComponentStyle={{ marginRight: spacing.sm }}
-                renderItem={({ item }) => (
-                  <Chip
-                    compact
-                    selected={muscle === item}
-                    mode={muscle === item ? 'flat' : 'outlined'}
-                    onPress={() => setMuscle((current) => (current === item ? null : item))}
-                  >
-                    {MUSCLE_LABELS[item]}
-                  </Chip>
-                )}
-              />
-            </View>
-
-            <Text style={[typography.captionBold, { color: colors.textSecondary }]}>
-              {results.length} {results.length === 1 ? 'exercise' : 'exercises'}
-            </Text>
+              >
+                {LEVEL_FILTERS.map((item) => (
+                  <Menu.Item
+                    key={item.value}
+                    title={item.label}
+                    leadingIcon={level === item.value ? 'check' : undefined}
+                    onPress={() => {
+                      setLevel(item.value);
+                      setLevelMenuOpen(false);
+                    }}
+                  />
+                ))}
+              </Menu>
+              <View style={[styles.railDivider, { backgroundColor: colors.border }]} />
+              <Pill label="All muscles" active={muscle === null} onPress={() => setMuscle(null)} />
+              {MUSCLE_GROUPS.map((item) => (
+                <Pill
+                  key={item}
+                  label={MUSCLE_LABELS[item]}
+                  active={muscle === item}
+                  onPress={() => setMuscle((current) => (current === item ? null : item))}
+                />
+              ))}
+            </ScrollView>
           </View>
         }
         ListEmptyComponent={
@@ -253,11 +234,8 @@ export default function LibraryScreen() {
             </Button>
           </View>
         }
-        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         renderItem={({ item }) => (
-          <View style={{ paddingHorizontal: spacing.lg }}>
-            <ExerciseListItem exercise={item} onPress={() => openDetail(item)} />
-          </View>
+          <ExerciseListItem exercise={item} onPress={() => openDetail(item)} />
         )}
       />
 
@@ -332,19 +310,14 @@ function LibraryExerciseDetailModal({
         <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
           <IconButton
             icon="close"
-            mode="contained-tonal"
+            iconColor={colors.textSecondary}
             accessibilityLabel="Close exercise details"
             onPress={onDismiss}
           />
-          <View style={styles.modalHeaderCopy}>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>Exercise details</Text>
-            <Text style={[typography.heading, { color: colors.textPrimary }]} numberOfLines={2}>
-              {exercise.name}
-            </Text>
-          </View>
+          <View style={styles.modalHeaderCopy} />
           <IconButton
             icon={favorite ? 'star' : 'star-outline'}
-            mode="contained-tonal"
+            iconColor={favorite ? colors.accent : colors.textSecondary}
             accessibilityLabel={favorite ? 'Remove from favorites' : 'Add to favorites'}
             onPress={onToggleFavorite}
           />
@@ -361,31 +334,26 @@ function LibraryExerciseDetailModal({
         >
           <ExerciseDemoStage images={images} exerciseName={exercise.name} />
 
-          <View style={styles.chipRow}>
-            <Chip compact icon="target">
-              {primaryLabel || 'Other'}
-            </Chip>
-            <Chip compact icon="dumbbell">
-              {exercise.equipmentLabel}
-            </Chip>
-            <Chip compact mode="flat">
-              {exercise.level}
-            </Chip>
-            <Chip compact mode="flat">
-              {exercise.mechanic ?? 'mixed'}
-            </Chip>
-            <Chip
-              compact
-              mode={loggableExercise ? 'flat' : 'outlined'}
-              icon={loggableExercise ? 'check-circle-outline' : 'book-open-variant'}
-            >
-              {loggableExercise ? 'Loggable' : 'Reference only'}
-            </Chip>
-            {formAiReady ? (
-              <Chip compact mode="flat" icon="camera-outline">
-                Form AI
-              </Chip>
-            ) : null}
+          <View style={{ gap: spacing.xs }}>
+            <Text style={[typography.title, { color: colors.textPrimary }]}>{exercise.name}</Text>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>
+              {[
+                primaryLabel || 'Other',
+                exercise.equipmentLabel,
+                capitalize(exercise.level),
+                exercise.mechanic ? capitalize(exercise.mechanic) : null,
+              ]
+                .filter(Boolean)
+                .join(', ')}
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {!loggableExercise
+                ? 'Reference only, not loggable yet'
+                : isAutoProgrammed(loggableExercise)
+                  ? 'You can log this in workouts'
+                  : 'You can log this, but automatic plans do not use it'}
+              {formAiReady ? '. Form AI supported.' : '.'}
+            </Text>
           </View>
 
           <ExerciseMuscleMap
@@ -395,16 +363,12 @@ function LibraryExerciseDetailModal({
           />
 
           <View style={styles.copySection}>
-            <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-              How to perform it
-            </Text>
+            <Text style={[typography.heading, { color: colors.textPrimary }]}>How to do it</Text>
             {exercise.instructions.slice(0, 4).map((instruction, index) => (
               <View key={instruction} style={styles.cueRow}>
-                <View style={[styles.cueNumber, { backgroundColor: colors.accentSoft }]}>
-                  <Text style={[typography.captionBold, { color: colors.accent }]}>
-                    {index + 1}
-                  </Text>
-                </View>
+                <Text style={[typography.numeric, { color: colors.textMuted, width: 20 }]}>
+                  {index + 1}
+                </Text>
                 <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>
                   {instruction}
                 </Text>
@@ -412,24 +376,18 @@ function LibraryExerciseDetailModal({
             ))}
           </View>
 
-          <List.Item
-            title={loggableExercise ? 'View training history' : 'No linked training history'}
-            description={
-              loggableExercise
-                ? `Linked to ${loggableExercise.name}. Open comparable logged sessions.`
-                : 'This reference entry has not been reviewed and mapped to a loggable exercise.'
-            }
-            onPress={loggableExercise ? () => onViewHistory(loggableExercise) : undefined}
-            left={(props) => <List.Icon {...props} icon="chart-line" color={colors.accent} />}
-            right={(props) =>
-              loggableExercise ? (
-                <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
-              ) : null
-            }
-            titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-            descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-            style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-          />
+          {loggableExercise ? (
+            <View
+              style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}
+            >
+              <ListRow
+                title="Your history with this lift"
+                subtitle={`Logged as ${loggableExercise.name}`}
+                onPress={() => onViewHistory(loggableExercise)}
+                last
+              />
+            </View>
+          ) : null}
         </ScrollView>
 
         <View
@@ -438,13 +396,9 @@ function LibraryExerciseDetailModal({
             { backgroundColor: colors.background, borderTopColor: colors.border },
           ]}
         >
-          <Button mode="text" onPress={onDismiss} style={styles.footerSecondary}>
-            Close
-          </Button>
           {formAiReady && loggableExercise ? (
             <Button
               mode="outlined"
-              icon="camera-outline"
               onPress={() => onFormCheck(loggableExercise)}
               style={styles.footerSecondary}
             >
@@ -454,12 +408,11 @@ function LibraryExerciseDetailModal({
           {loggableExercise ? (
             <Button
               mode="contained"
-              icon="playlist-plus"
               onPress={() => onAdd(loggableExercise)}
               style={styles.footerPrimary}
               contentStyle={styles.footerButtonContent}
             >
-              Add to workout
+              Start with this
             </Button>
           ) : null}
         </View>
@@ -476,31 +429,24 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   search: {
-    borderWidth: StyleSheet.hairlineWidth,
+    elevation: 0,
+    height: 48,
+  },
+  railDivider: {
+    width: StyleSheet.hairlineWidth,
+    marginVertical: 8,
   },
   modalSafeArea: { flex: 1 },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 72,
-    paddingHorizontal: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    minHeight: 56,
+    paddingHorizontal: 4,
   },
   modalHeaderCopy: { flex: 1, minWidth: 0, paddingHorizontal: 4 },
   modalScroll: { flex: 1 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   copySection: { gap: 12 },
   cueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  cueNumber: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  listPanel: {
-    borderRadius: 14,
-  },
   modalFooter: {
     flexDirection: 'row',
     gap: 8,
@@ -509,7 +455,11 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  footerSecondary: { flex: 0.8 },
-  footerPrimary: { flex: 1.2 },
+  footerSecondary: { flex: 1 },
+  footerPrimary: { flex: 1.4 },
   footerButtonContent: { minHeight: 48 },
 });
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}

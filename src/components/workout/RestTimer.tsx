@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Button, Portal, ProgressBar } from 'react-native-paper';
+import { Portal } from 'react-native-paper';
+import Animated, {
+  Easing,
+  FadeOutDown,
+  SlideInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+
+import { popSpring } from '@/components/ui/motion';
+import { PressableScale } from '@/components/ui/PressableScale';
 
 import { remainingRestSeconds } from '@/domain/workouts/restTimer';
 import type { RestTimerNotificationStatus } from '@/services/restTimerNotifications';
@@ -50,15 +63,29 @@ export function RestTimer({
     notifiedRef.current = false;
   }, [timer.endsAt]);
 
+  // The fill runs on the UI thread as one linear glide to the end time, so it
+  // moves continuously instead of stepping with the 250 ms text tick.
+  const fill = useSharedValue(progress);
+  const timeScale = useSharedValue(1);
+  useEffect(() => {
+    const remainingMs = Math.max(0, new Date(timer.endsAt).getTime() - Date.now());
+    const total = Math.max(1, timer.durationSeconds * 1000);
+    fill.value = 1 - Math.min(1, remainingMs / total);
+    fill.value = withTiming(1, { duration: remainingMs, easing: Easing.linear });
+  }, [fill, timer.durationSeconds, timer.endsAt]);
+  const fillStyle = useAnimatedStyle(() => ({ width: `${fill.value * 100}%` }));
+  const timeStyle = useAnimatedStyle(() => ({ transform: [{ scale: timeScale.value }] }));
+
   useEffect(() => {
     if (!isDone) return;
     if (!notifiedRef.current) {
       notifiedRef.current = true;
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      timeScale.value = withSequence(withTiming(1.12, { duration: 120 }), withSpring(1, popSpring));
     }
     const timeout = setTimeout(onDismiss, 5000);
     return () => clearTimeout(timeout);
-  }, [isDone, onDismiss]);
+  }, [isDone, onDismiss, timeScale]);
 
   function addThirtySeconds() {
     notifiedRef.current = false;
@@ -66,116 +93,123 @@ export function RestTimer({
     void Haptics.selectionAsync();
   }
 
+  const notificationNote =
+    notificationStatus === 'permission_denied'
+      ? 'Background alert is off. The timer still runs while the app is open.'
+      : notificationStatus === 'error'
+        ? 'Background alert is unavailable. The timer is still running.'
+        : null;
+
   return (
     <Portal>
       <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-        <View
+        <Animated.View
+          entering={SlideInDown.springify().damping(18).stiffness(180)}
+          exiting={FadeOutDown.duration(180)}
+          accessibilityLiveRegion="polite"
           style={[
             styles.panel,
             {
               bottom: bottomOffset,
               backgroundColor: colors.surfaceRaised,
               borderColor: isDone ? colors.accent : colors.borderStrong,
-              borderRadius: radius.lg,
-              padding: spacing.md,
+              borderRadius: radius.xl,
             },
           ]}
         >
-          <View style={styles.headerRow}>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text
-                style={[typography.micro, { color: isDone ? colors.accent : colors.textMuted }]}
-              >
-                {isDone ? 'Rest complete' : 'Rest timer'}
-              </Text>
-              <Text style={[typography.display, { color: colors.textPrimary }]}>
-                {formatTime(Math.max(0, secondsRemaining))}
-              </Text>
-            </View>
-            <View
+          <View style={[styles.track, { backgroundColor: colors.surfacePressed }]}>
+            <Animated.View
               style={[
-                styles.statusPill,
-                { backgroundColor: isDone ? colors.accentSoft : colors.surfacePressed },
+                styles.fill,
+                { backgroundColor: isDone ? colors.success : colors.accent },
+                fillStyle,
               ]}
-            >
+            />
+          </View>
+          <View style={[styles.row, { padding: spacing.md }]}>
+            <View style={{ flex: 1 }}>
               <Text
+                style={[typography.caption, { color: isDone ? colors.accent : colors.textMuted }]}
+              >
+                {isDone ? 'Rest done, next set' : 'Rest'}
+              </Text>
+              <Animated.Text
                 style={[
-                  typography.captionBold,
-                  { color: isDone ? colors.accent : colors.textSecondary },
+                  typography.jumbo,
+                  {
+                    color: colors.textPrimary,
+                    fontSize: 34,
+                    lineHeight: 40,
+                    alignSelf: 'flex-start',
+                  },
+                  timeStyle,
                 ]}
               >
-                {isDone ? 'Ready' : 'Recover'}
-              </Text>
+                {formatTime(Math.max(0, secondsRemaining))}
+              </Animated.Text>
             </View>
+            <TimerButton label="+30s" onPress={addThirtySeconds} />
+            <TimerButton label="Skip" onPress={onDismiss} />
           </View>
-
-          <ProgressBar
-            progress={progress}
-            color={isDone ? colors.accent : colors.info}
-            style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
-          />
-
-          {notificationStatus === 'permission_denied' || notificationStatus === 'error' ? (
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              {notificationStatus === 'permission_denied'
-                ? 'Background alert is off. The timer still works while the app is open.'
-                : 'Background alert is unavailable. The in-app timer is still running.'}
+          {notificationNote ? (
+            <Text
+              style={[
+                typography.caption,
+                {
+                  color: colors.textMuted,
+                  paddingHorizontal: spacing.md,
+                  paddingBottom: spacing.md,
+                },
+              ]}
+            >
+              {notificationNote}
             </Text>
           ) : null}
-
-          <View style={styles.actionRow}>
-            <Button
-              compact
-              mode="contained-tonal"
-              icon="plus"
-              onPress={addThirtySeconds}
-              style={styles.actionButton}
-            >
-              30s
-            </Button>
-            <Button
-              compact
-              mode="outlined"
-              icon="skip-next-outline"
-              onPress={onDismiss}
-              style={styles.actionButton}
-            >
-              Skip
-            </Button>
-          </View>
-        </View>
+        </Animated.View>
       </View>
     </Portal>
+  );
+}
+
+function TimerButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const { colors, radius, typography } = useTheme();
+  return (
+    <PressableScale
+      onPress={onPress}
+      pressedScale={0.92}
+      accessibilityRole="button"
+      accessibilityLabel={label === '+30s' ? 'Add 30 seconds' : 'Skip rest'}
+      style={[styles.button, { backgroundColor: colors.surfacePressed, borderRadius: radius.md }]}
+    >
+      <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{label}</Text>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   panel: {
     position: 'absolute',
-    left: 18,
-    right: 18,
+    left: 16,
+    right: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    gap: 10,
+    overflow: 'hidden',
   },
-  headerRow: {
+  track: {
+    height: 3,
+  },
+  fill: {
+    height: 3,
+  },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  statusPill: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  progress: {
-    height: 6,
-    borderRadius: 999,
-  },
-  actionRow: {
-    flexDirection: 'row',
     gap: 8,
   },
-  actionButton: {
-    flex: 1,
+  button: {
+    minWidth: 64,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

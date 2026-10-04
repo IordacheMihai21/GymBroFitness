@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
+import type { BodyMeasurementEntry } from '@/domain/body/measurements';
+import type { ProgressPhoto } from '@/domain/body/progressPhotos';
 import type { WorkoutTemplate } from '@/domain/programs/templates';
 import type { WorkoutSession } from '@/types';
 
@@ -45,6 +47,28 @@ export const workoutTemplatesTable = sqliteTable('workout_templates', {
   payload: text('payload', { mode: 'json' }).$type<PersistedPayload<WorkoutTemplate>>().notNull(),
 });
 
+export const bodyMeasurementsTable = sqliteTable(
+  'body_measurements',
+  {
+    id: text('id').primaryKey(),
+    date: text('date').notNull(),
+    payload: text('payload', { mode: 'json' })
+      .$type<PersistedPayload<BodyMeasurementEntry>>()
+      .notNull(),
+  },
+  (table) => [index('body_measurements_date_idx').on(table.date, table.id)],
+);
+
+export const progressPhotosTable = sqliteTable(
+  'progress_photos',
+  {
+    id: text('id').primaryKey(),
+    takenAt: text('taken_at').notNull(),
+    payload: text('payload', { mode: 'json' }).$type<PersistedPayload<ProgressPhoto>>().notNull(),
+  },
+  (table) => [index('progress_photos_taken_at_idx').on(table.takenAt, table.id)],
+);
+
 export const dataRecoveryTable = sqliteTable('data_recovery', {
   id: text('id').primaryKey(),
   entityType: text('entity_type').notNull(),
@@ -55,7 +79,13 @@ export const dataRecoveryTable = sqliteTable('data_recovery', {
   migrationVersion: integer('migration_version').notNull(),
 });
 
-export const schema = { workoutSessionsTable, workoutTemplatesTable, dataRecoveryTable };
+export const schema = {
+  workoutSessionsTable,
+  workoutTemplatesTable,
+  dataRecoveryTable,
+  bodyMeasurementsTable,
+  progressPhotosTable,
+};
 export type GymBroSchema = typeof schema;
 
 /**
@@ -86,6 +116,20 @@ CREATE TABLE IF NOT EXISTS data_recovery (
   created_at TEXT NOT NULL,
   migration_version INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS body_measurements (
+  id TEXT PRIMARY KEY NOT NULL,
+  date TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS body_measurements_date_idx ON body_measurements (date, id);
+
+CREATE TABLE IF NOT EXISTS progress_photos (
+  id TEXT PRIMARY KEY NOT NULL,
+  taken_at TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS progress_photos_taken_at_idx ON progress_photos (taken_at, id);
 `;
 
 export const DATABASE_VERSION = 1;

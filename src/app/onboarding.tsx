@@ -9,9 +9,12 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Button, Card, Chip, HelperText, ProgressBar, TextInput } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Button, HelperText, TextInput } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ListRow } from '@/components/ui/ListRow';
+import { Pill } from '@/components/ui/Pill';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import { generateProgram } from '@/domain/programs/generator';
 import {
@@ -25,7 +28,7 @@ import {
 } from '@/domain/programs/onboarding';
 import { saveTrainingProfile } from '@/domain/programs/profileStore';
 import { saveActiveProgram } from '@/domain/programs/programStore';
-import { useTheme } from '@/theme';
+import { inputTheme, useTheme } from '@/theme';
 import {
   EQUIPMENT_TYPES,
   PRIORITY_MUSCLES,
@@ -118,7 +121,7 @@ const EQUIPMENT_LABELS: Record<EquipmentType, string> = {
 };
 
 export default function OnboardingScreen() {
-  const { colors, radius, spacing, typography, elevation } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
@@ -184,7 +187,6 @@ export default function OnboardingScreen() {
       };
     }
   }, [previewPreferences]);
-  const progress = (step + 1) / STEPS.length;
 
   function issuesForCurrentStep(nextIssues: OnboardingValidationIssue[]) {
     const fields: (keyof OnboardingInput)[][] = [
@@ -307,108 +309,68 @@ export default function OnboardingScreen() {
           gap: spacing.lg,
         }}
       >
-        <View style={styles.topRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>GymBroFitness</Text>
-            <Text style={[typography.title, { color: colors.textPrimary }]}>
-              Build your training block
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.stepBadge,
-              { backgroundColor: colors.accentSoft, borderColor: colors.borderStrong },
-            ]}
-          >
-            <Text style={[typography.captionBold, { color: colors.accent }]}>
-              {step + 1}/{STEPS.length}
-            </Text>
-          </View>
-        </View>
-
         <View style={{ gap: spacing.sm }}>
-          <View style={styles.stepLabels}>
+          <View style={styles.stepBars}>
             {STEPS.map((label, index) => (
-              <Text
+              <View
                 key={label}
                 style={[
-                  typography.micro,
-                  { color: index === step ? colors.textPrimary : colors.textMuted },
+                  styles.stepBar,
+                  { backgroundColor: index <= step ? colors.accent : colors.surfaceRaised },
                 ]}
-              >
-                {label}
-              </Text>
+              />
             ))}
           </View>
-          <ProgressBar
-            progress={progress}
-            color={colors.accent}
-            style={[styles.progress, { backgroundColor: colors.surfaceRaised }]}
-          />
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            Step {step + 1} of {STEPS.length}
+          </Text>
         </View>
 
-        <Card
-          mode="contained"
-          style={[
-            styles.heroCard,
-            elevation.low,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <Card.Content style={{ gap: spacing.lg }}>
-            {step === 0 ? (
-              <ProfileStep
-                displayName={displayName}
-                units={units}
-                setDisplayName={setDisplayName}
-                setUnits={setUnits}
-                nameIssue={issueFor('displayName')}
-              />
-            ) : null}
-            {step === 1 ? (
-              <GoalStep
-                goal={goal}
-                experience={experience}
-                setGoal={setGoal}
-                setExperience={setExperience}
-              />
-            ) : null}
-            {step === 2 ? (
-              <ScheduleStep
-                daysPerWeek={daysPerWeek}
-                preferredDays={preferredDays}
-                sessionMinutes={sessionMinutes}
-                setDaysPerWeek={changeDaysPerWeek}
-                toggleTrainingDay={toggleTrainingDay}
-                setSessionMinutes={setSessionMinutes}
-                dayIssue={issueFor('preferredDays')}
-              />
-            ) : null}
-            {step === 3 ? (
-              <SetupStep
-                environment={environment}
-                equipment={equipment}
-                musclePriorities={musclePriorities}
-                selectEnvironment={selectEnvironment}
-                toggleEquipment={toggleEquipment}
-                togglePriority={togglePriority}
-                equipmentIssue={issueFor('equipment')}
-                priorityIssue={issueFor('musclePriorities')}
-              />
-            ) : null}
-            {step === 4 && preview.program ? (
-              <ReviewStep
-                displayName={displayName}
-                preferences={previewPreferences}
-                program={preview.program}
-              />
-            ) : null}
-          </Card.Content>
-        </Card>
+        <View style={{ gap: spacing.lg }}>
+          {step === 0 ? (
+            <ProfileStep
+              displayName={displayName}
+              units={units}
+              setDisplayName={setDisplayName}
+              setUnits={setUnits}
+              nameIssue={issueFor('displayName')}
+            />
+          ) : null}
+          {step === 1 ? (
+            <GoalStep
+              goal={goal}
+              experience={experience}
+              setGoal={setGoal}
+              setExperience={setExperience}
+            />
+          ) : null}
+          {step === 2 ? (
+            <ScheduleStep
+              daysPerWeek={daysPerWeek}
+              preferredDays={preferredDays}
+              sessionMinutes={sessionMinutes}
+              setDaysPerWeek={changeDaysPerWeek}
+              toggleTrainingDay={toggleTrainingDay}
+              setSessionMinutes={setSessionMinutes}
+              dayIssue={issueFor('preferredDays')}
+            />
+          ) : null}
+          {step === 3 ? (
+            <SetupStep
+              environment={environment}
+              equipment={equipment}
+              musclePriorities={musclePriorities}
+              selectEnvironment={selectEnvironment}
+              toggleEquipment={toggleEquipment}
+              togglePriority={togglePriority}
+              equipmentIssue={issueFor('equipment')}
+              priorityIssue={issueFor('musclePriorities')}
+            />
+          ) : null}
+          {step === 4 && preview.program ? (
+            <ReviewStep preferences={previewPreferences} program={preview.program} />
+          ) : null}
+        </View>
 
         {status ? (
           <Text
@@ -417,11 +379,9 @@ export default function OnboardingScreen() {
               typography.caption,
               {
                 color: status.startsWith('The plan') ? colors.danger : colors.warning,
-                backgroundColor: status.startsWith('The plan')
-                  ? colors.dangerSoft
-                  : colors.warningSoft,
-                borderRadius: radius.md,
-                padding: spacing.md,
+                borderLeftWidth: 2,
+                borderLeftColor: status.startsWith('The plan') ? colors.danger : colors.warning,
+                paddingLeft: spacing.md,
               },
             ]}
           >
@@ -434,18 +394,24 @@ export default function OnboardingScreen() {
             Back
           </Button>
           {step < STEPS.length - 1 ? (
-            <Button mode="contained" onPress={advance} icon="arrow-right">
+            <Button
+              mode="contained"
+              onPress={advance}
+              style={styles.primaryAction}
+              contentStyle={styles.primaryContent}
+            >
               Continue
             </Button>
           ) : (
             <Button
               mode="contained"
-              icon="check"
               onPress={createProfile}
               loading={saving}
               disabled={saving}
+              style={styles.primaryAction}
+              contentStyle={styles.primaryContent}
             >
-              Activate plan
+              Start training
             </Button>
           )}
         </View>
@@ -472,11 +438,11 @@ function ProfileStep({
   return (
     <View style={{ gap: spacing.md }}>
       <SectionHeader
-        eyebrow="Local setup"
-        title="Set your training profile."
-        body="No account is required. Your block and workout history are created on this device first."
+        title="Let's set you up."
+        body="No account needed. Everything stays on this phone unless you turn on cloud backup later."
       />
       <TextInput
+        theme={inputTheme}
         mode="outlined"
         label="Display name"
         value={displayName}
@@ -492,14 +458,14 @@ function ProfileStep({
         {nameIssue}
       </HelperText>
       <InlineChips
-        label="Load units"
+        label="Weight unit"
         options={UNIT_OPTIONS}
         selected={units}
         onSelect={setUnits}
         format={(value) => value.toUpperCase()}
       />
       <Text style={[typography.caption, { color: colors.textMuted }]}>
-        Advanced preferences remain editable without resetting completed workouts.
+        You can change any of this later in Settings.
       </Text>
     </View>
   );
@@ -520,18 +486,12 @@ function GoalStep({
   return (
     <View style={{ gap: spacing.xl }}>
       <SectionHeader
-        eyebrow="Training model"
-        title="Define the block, not your identity."
-        body="Goal controls rep ranges and rest. Training age calibrates exercise complexity, starting volume and RIR."
+        title="What are you training for?"
+        body="Your goal sets rep ranges and rest. Experience sets exercise choice, starting volume and effort."
       />
+      <OptionGrid label="Goal" options={GOAL_OPTIONS} selected={goal} onSelect={setGoal} />
       <OptionGrid
-        label="Primary objective"
-        options={GOAL_OPTIONS}
-        selected={goal}
-        onSelect={setGoal}
-      />
-      <OptionGrid
-        label="Consistent lifting history"
+        label="How long have you lifted consistently?"
         options={EXPERIENCE_OPTIONS}
         selected={experience}
         onSelect={setExperience}
@@ -561,12 +521,11 @@ function ScheduleStep({
   return (
     <View style={{ gap: spacing.xl }}>
       <SectionHeader
-        eyebrow="Weekly structure"
-        title="Make the program fit the week."
-        body="Session length guides the exercise budget. Estimates can vary with priorities, rest and exercise availability."
+        title="When do you train?"
+        body="Session length decides how many exercises fit. Times are estimates."
       />
       <InlineChips
-        label="Training frequency"
+        label="Days a week"
         options={DAY_OPTIONS}
         selected={daysPerWeek}
         onSelect={setDaysPerWeek}
@@ -574,7 +533,7 @@ function ScheduleStep({
       />
       <View style={{ gap: spacing.sm }}>
         <View style={styles.labelRow}>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>Training days</Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>Which days</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             {preferredDays.length}/{daysPerWeek}
           </Text>
@@ -583,21 +542,13 @@ function ScheduleStep({
           {WEEKDAYS.map((day) => {
             const active = preferredDays.includes(day.value);
             return (
-              <Chip
+              <Pill
                 key={day.value}
-                compact
+                label={day.short}
                 accessibilityLabel={day.label}
-                selected={active}
-                mode={active ? 'flat' : 'outlined'}
+                active={active}
                 onPress={() => toggleTrainingDay(day.value)}
-                style={[
-                  styles.choiceChip,
-                  active ? { backgroundColor: colors.accentSoft } : undefined,
-                ]}
-                textStyle={active ? { color: colors.accent } : undefined}
-              >
-                {day.short}
-              </Chip>
+              />
             );
           })}
         </View>
@@ -606,7 +557,7 @@ function ScheduleStep({
         </HelperText>
       </View>
       <InlineChips
-        label="Session target"
+        label="Session length"
         options={SESSION_OPTIONS}
         selected={sessionMinutes}
         onSelect={setSessionMinutes}
@@ -639,19 +590,18 @@ function SetupStep({
   return (
     <View style={{ gap: spacing.xl }}>
       <SectionHeader
-        eyebrow="Exercise pool"
-        title="Control what can enter the block."
-        body="Start from a gym preset, then keep only the equipment you can reliably use."
+        title="What do you have access to?"
+        body="Pick a preset, then untick anything you can't reliably use."
       />
       <OptionGrid
-        label="Training environment"
+        label="Where you train"
         options={ENVIRONMENT_OPTIONS}
         selected={environment}
         onSelect={selectEnvironment}
       />
       <View style={{ gap: spacing.sm }}>
         <View style={styles.labelRow}>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>Equipment</Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>Equipment</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             {equipment.length} selected
           </Text>
@@ -668,11 +618,9 @@ function SetupStep({
       </View>
       <View style={{ gap: spacing.sm }}>
         <View style={styles.labelRow}>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-            Priority muscles
-          </Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>Priority muscles</Text>
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            Optional · {musclePriorities.length}/3
+            Optional, {musclePriorities.length} of 3
           </Text>
         </View>
         <ToggleChips
@@ -682,8 +630,7 @@ function SetupStep({
           format={(value) => MUSCLE_LABELS[value]}
         />
         <Text style={[typography.caption, { color: colors.textMuted }]}>
-          Priorities receive limited extra weekly volume while the rest of the program remains
-          balanced.
+          Priorities get a few extra sets a week. The rest stays balanced.
         </Text>
         <HelperText type="error" visible={Boolean(priorityIssue)}>
           {priorityIssue}
@@ -694,76 +641,51 @@ function SetupStep({
 }
 
 function ReviewStep({
-  displayName,
   preferences,
   program,
 }: {
-  displayName: string;
   preferences: ReturnType<typeof buildOnboardingPreferences>;
   program: ReturnType<typeof generateProgram>;
 }) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const scheduledDays = preferences.preferredDays
     .map((day) => WEEKDAYS.find((option) => option.value === day)?.short)
     .filter(Boolean)
-    .join(' · ');
+    .join(', ');
   return (
     <View style={{ gap: spacing.xl }}>
       <SectionHeader
-        eyebrow="Block preview"
-        title="Review before activation."
-        body="This is the exact local plan GymBroFitness will activate. You can edit its days and exercises later without rewriting history."
+        title="Your plan"
+        body="You can edit days and exercises any time. Your history is never rewritten."
       />
-      <View style={styles.summaryGrid}>
-        <SummaryCell label="profile" value={displayName.trim()} />
-        <SummaryCell label="split" value={program.name} />
-        <SummaryCell label="objective" value={formatGoal(preferences.goal)} />
-        <SummaryCell label="training age" value={formatExperience(preferences.experience)} />
-        <SummaryCell label="schedule" value={scheduledDays} />
-        <SummaryCell label="session target" value={`${preferences.sessionMinutes} min`} />
+      <View>
+        <ListRow
+          title={program.name}
+          subtitle={`${formatGoal(preferences.goal)}, ${formatExperience(preferences.experience).toLowerCase()}`}
+        />
+        <ListRow
+          title="Schedule"
+          subtitle={`${scheduledDays}, ${preferences.sessionMinutes} min sessions`}
+          last
+        />
       </View>
-      <View
-        style={[styles.rationale, { backgroundColor: colors.accentSoft, borderRadius: radius.lg }]}
-      >
-        <Text style={[typography.captionBold, { color: colors.accent }]}>Why this block</Text>
-        <Text style={[typography.caption, { color: colors.textSecondary }]}>
-          {program.rationale}
-        </Text>
-      </View>
-      <View style={{ gap: spacing.sm }}>
-        <Text style={[typography.captionBold, { color: colors.textPrimary }]}>Generated week</Text>
-        {program.days.map((day, index) => (
-          <View
-            key={day.id}
-            style={[
-              styles.dayRow,
-              { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.dayIndex}>
-              <Text style={[typography.captionBold, { color: colors.accent }]}>{index + 1}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{day.name}</Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                {
-                  WEEKDAYS.find((option) => option.value === preferences.preferredDays[index])
-                    ?.label
-                }
-                {' · '}
-                {day.focus.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}
-              </Text>
-            </View>
-            <View style={styles.dayMeta}>
-              <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-                {day.prescriptions.length} exercises
-              </Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                ~{day.estimatedMinutes} min
-              </Text>
-            </View>
-          </View>
-        ))}
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{program.rationale}</Text>
+      <View style={{ gap: spacing.xs }}>
+        <Text style={[typography.heading, { color: colors.textPrimary }]}>Your week</Text>
+        <View>
+          {program.days.map((day, index) => (
+            <ListRow
+              key={day.id}
+              title={day.name}
+              subtitle={`${
+                WEEKDAYS.find((option) => option.value === preferences.preferredDays[index])
+                  ?.label ?? ''
+              }, ${day.focus.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}`}
+              value={`${day.prescriptions.length} ex`}
+              last={index === program.days.length - 1}
+            />
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -779,12 +701,11 @@ function formatExperience(experience: ExperienceLevel): string {
   return EXPERIENCE_OPTIONS.find((option) => option.value === experience)?.title ?? experience;
 }
 
-function SectionHeader({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) {
+function SectionHeader({ title, body }: { title: string; body: string }) {
   const { colors, typography } = useTheme();
   return (
     <View style={{ gap: 6 }}>
-      <Text style={[typography.micro, { color: colors.accent }]}>{eyebrow}</Text>
-      <Text style={[typography.heading, { color: colors.textPrimary }]}>{title}</Text>
+      <Text style={[typography.display, { color: colors.textPrimary }]}>{title}</Text>
       <Text style={[typography.body, { color: colors.textSecondary }]}>{body}</Text>
     </View>
   );
@@ -801,10 +722,10 @@ function OptionGrid<T extends string>({
   selected: T;
   onSelect: (value: T) => void;
 }) {
-  const { colors, spacing, typography } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{label}</Text>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
       <View style={{ gap: spacing.sm }}>
         {options.map((option) => {
           const active = selected === option.value;
@@ -817,36 +738,24 @@ function OptionGrid<T extends string>({
               style={({ pressed }) => [
                 styles.optionRow,
                 {
-                  backgroundColor: pressed
-                    ? colors.surfacePressed
-                    : active
-                      ? colors.accentSoft
-                      : colors.surfaceRaised,
-                  borderColor: active ? colors.accent : colors.border,
+                  backgroundColor: pressed ? colors.surfacePressed : colors.surface,
+                  borderColor: active ? colors.accent : 'transparent',
+                  borderRadius: radius.lg,
                 },
               ]}
             >
               <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    typography.bodyBold,
-                    { color: active ? colors.accent : colors.textPrimary },
-                  ]}
-                >
+                <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
                   {option.title}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textMuted }]}>
                   {option.detail}
                 </Text>
               </View>
-              <View
-                style={[
-                  styles.radioDot,
-                  {
-                    borderColor: active ? colors.accent : colors.borderStrong,
-                    backgroundColor: active ? colors.accent : 'transparent',
-                  },
-                ]}
+              <MaterialCommunityIcons
+                name={active ? 'radiobox-marked' : 'radiobox-blank'}
+                size={22}
+                color={active ? colors.accent : colors.textMuted}
               />
             </Pressable>
           );
@@ -872,23 +781,15 @@ function InlineChips<T extends string | number>({
   const { colors, typography } = useTheme();
   return (
     <View style={{ gap: 8 }}>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{label}</Text>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
       <View style={styles.chipRow}>
         {options.map((option) => (
-          <Chip
+          <Pill
             key={String(option)}
-            compact
-            selected={selected === option}
-            mode={selected === option ? 'flat' : 'outlined'}
+            label={format(option)}
+            active={selected === option}
             onPress={() => onSelect(option)}
-            style={[
-              styles.choiceChip,
-              selected === option ? { backgroundColor: colors.accentSoft } : undefined,
-            ]}
-            textStyle={selected === option ? { color: colors.accent } : undefined}
-          >
-            {format(option)}
-          </Chip>
+          />
         ))}
       </View>
     </View>
@@ -906,52 +807,23 @@ function ToggleChips<T extends string>({
   onToggle: (value: T) => void;
   format: (value: T) => string;
 }) {
-  const { colors } = useTheme();
   return (
     <View style={styles.chipRow}>
-      {options.map((option) => {
-        const active = selected.includes(option);
-        return (
-          <Chip
-            key={option}
-            compact
-            selected={active}
-            mode={active ? 'flat' : 'outlined'}
-            onPress={() => onToggle(option)}
-            style={[styles.choiceChip, active ? { backgroundColor: colors.accentSoft } : undefined]}
-            textStyle={active ? { color: colors.accent } : undefined}
-          >
-            {format(option)}
-          </Chip>
-        );
-      })}
-    </View>
-  );
-}
-
-function SummaryCell({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-  return (
-    <View style={[styles.summaryCell, { backgroundColor: colors.surfaceRaised }]}>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{value}</Text>
+      {options.map((option) => (
+        <Pill
+          key={option}
+          label={format(option)}
+          active={selected.includes(option)}
+          onPress={() => onToggle(option)}
+        />
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  stepBadge: {
-    minWidth: 52,
-    minHeight: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 999,
-  },
-  stepLabels: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  progress: { height: 5, borderRadius: 999 },
-  heroCard: { borderWidth: StyleSheet.hairlineWidth },
+  stepBars: { flexDirection: 'row', gap: 4 },
+  stepBar: { flex: 1, height: 3, borderRadius: 2 },
   actionRow: {
     minHeight: 52,
     flexDirection: 'row',
@@ -959,46 +831,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  primaryAction: { flex: 1 },
+  primaryContent: { minHeight: 52 },
   optionRow: {
     minHeight: 68,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    paddingHorizontal: 14,
+    borderWidth: 1,
+    paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  radioDot: { width: 16, height: 16, borderWidth: 2, borderRadius: 999 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  choiceChip: { minHeight: 48, justifyContent: 'center' },
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  summaryCell: {
-    flexGrow: 1,
-    flexBasis: '47%',
-    minHeight: 62,
-    borderRadius: 14,
-    justifyContent: 'center',
-    gap: 4,
-    padding: 12,
-  },
-  rationale: { gap: 6, padding: 14 },
-  dayRow: {
-    minHeight: 72,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  dayIndex: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  dayMeta: { alignItems: 'flex-end', gap: 2 },
 });

@@ -1,33 +1,27 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Body from 'react-native-body-highlighter';
-import {
-  Button,
-  Card,
-  Chip,
-  Dialog,
-  Divider,
-  IconButton,
-  List,
-  Menu,
-  Portal,
-  TextInput,
-} from 'react-native-paper';
+import { Button, Dialog, IconButton, Menu, Portal, TextInput } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Reveal } from '@/components/ui/Reveal';
 import { InfoHint } from '@/components/ui/InfoHint';
+import { ListRow } from '@/components/ui/ListRow';
+import { ExerciseStrip } from '@/components/home/ExerciseStrip';
+import { DayCard } from '@/components/program/DayCard';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { Tile } from '@/components/ui/Tile';
+import { requireExercise } from '@/domain/exercises/catalog';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import {
   DetailCard,
-  MetricBlock,
   ProgramExerciseRow,
   ProgressionCockpit,
   SwapPanel,
   VolumeRow,
 } from '@/components/program/ProgramBlocks';
-import { useTheme } from '@/theme';
+import { inputTheme, useTheme } from '@/theme';
 
 import { formatEquipmentSummary, formatGoal } from '@/features/program/program.helpers';
 import { useProgramScreen } from '@/features/program/useProgramScreen';
@@ -38,7 +32,7 @@ type RenameTarget =
   | { kind: 'template'; id: string; name: string };
 
 export default function ProgramScreen() {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
@@ -84,6 +78,11 @@ export default function ProgramScreen() {
     setRenameTarget(null);
   }
 
+  const priorities =
+    preferences.musclePriorities.length > 0
+      ? preferences.musclePriorities.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')
+      : 'Balanced week';
+
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
@@ -91,159 +90,84 @@ export default function ProgramScreen() {
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
         paddingBottom: insets.bottom + 120,
         paddingHorizontal: spacing.lg,
-        gap: spacing.lg,
+        gap: 12,
       }}
     >
       <Reveal>
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[typography.caption, { color: colors.textSecondary }]}>
-              Your training plan
+          <Pressable
+            style={{ flex: 1, minWidth: 0 }}
+            disabled={saving}
+            onPress={() => setRenameTarget({ kind: 'program', name: program.name })}
+            accessibilityRole="button"
+            accessibilityLabel={`Rename ${program.name}`}
+          >
+            <Text style={[typography.display, { color: colors.textPrimary }]}>Plan</Text>
+            <Text style={[typography.body, { color: colors.textSecondary }]} numberOfLines={1}>
+              {program.name}, {program.daysPerWeek} days a week
+              {source === 'local' ? ', edited' : ''}
             </Text>
-            <Text style={[typography.title, { color: colors.textPrimary }]}>Plan</Text>
-          </View>
-          <Chip compact mode="flat" icon="calendar-week">
-            {program.daysPerWeek}d/wk
-          </Chip>
-        </View>
-      </Reveal>
-
-      <Reveal index={1}>
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <Card.Content style={{ gap: spacing.md }}>
-            <View style={styles.activePlanHeader}>
-              <View style={styles.activePlanTitle}>
-                <Text style={[typography.micro, { color: colors.accent }]}>Active split</Text>
-                <Text style={[typography.heading, { color: colors.textPrimary }]} numberOfLines={2}>
-                  {program.name}
-                </Text>
-              </View>
+          </Pressable>
+          <Menu
+            visible={planMenuOpen}
+            onDismiss={() => setPlanMenuOpen(false)}
+            anchor={
               <IconButton
-                icon="pencil-outline"
-                mode="contained-tonal"
+                icon="dots-horizontal"
+                iconColor={colors.textSecondary}
                 disabled={saving}
-                accessibilityLabel="Rename active program"
-                onPress={() => setRenameTarget({ kind: 'program', name: program.name })}
-                style={styles.renameButton}
+                accessibilityLabel="More plan actions"
+                onPress={() => setPlanMenuOpen(true)}
+                style={styles.iconButton}
               />
-              <Chip
-                compact
-                mode="flat"
-                icon={source === 'local' ? 'content-save-check' : 'auto-fix'}
-              >
-                {source === 'local' ? 'Edited' : 'Generated'}
-              </Chip>
-            </View>
-
-            <View style={styles.metricGrid}>
-              <MetricBlock label="days" value={String(program.days.length)} />
-              <MetricBlock label="session" value={`${preferences.sessionMinutes}m`} />
-              <MetricBlock label="goal" value={formatGoal(preferences.goal)} />
-            </View>
-
-            <View style={styles.chipRow}>
-              {preferences.musclePriorities.length > 0 ? (
-                preferences.musclePriorities.map((muscle) => (
-                  <Chip key={muscle} compact mode="outlined">
-                    {MUSCLE_LABELS[muscle]}
-                  </Chip>
-                ))
-              ) : (
-                <Chip compact mode="outlined">
-                  Balanced week
-                </Chip>
-              )}
-            </View>
-
-            <Text style={[typography.caption, { color: colors.textSecondary }]}>
-              Equipment: {formatEquipmentSummary(preferences.equipment)}
-            </Text>
-
-            <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={3}>
-              {program.rationale}
-            </Text>
-
-            <Divider />
-
-            <View style={styles.planManagementHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-                  Change plan
-                </Text>
-                <Text style={[typography.micro, { color: colors.textMuted }]}>
-                  Browse a split or build your own.
-                </Text>
-              </View>
-              <Menu
-                visible={planMenuOpen}
-                onDismiss={() => setPlanMenuOpen(false)}
-                anchor={
-                  <IconButton
-                    icon="dots-horizontal"
-                    size={20}
-                    disabled={saving}
-                    accessibilityLabel="More plan actions"
-                    onPress={() => setPlanMenuOpen(true)}
-                    style={styles.planMenuButton}
-                  />
-                }
-              >
-                <Menu.Item
-                  leadingIcon="restart"
-                  title="Restore generated plan"
-                  onPress={() => {
-                    setPlanMenuOpen(false);
-                    setResetDialogOpen(true);
-                  }}
-                />
-              </Menu>
-            </View>
-
-            <View style={styles.planActionRow}>
-              <Button
-                style={styles.planAction}
-                mode="outlined"
-                icon="book-open-variant"
-                disabled={saving}
-                onPress={() => router.push('/program-library')}
-              >
-                Library
-              </Button>
-              <Button
-                style={styles.planAction}
-                mode="outlined"
-                icon="playlist-plus"
-                disabled={saving}
-                onPress={() => router.push('/program-builder')}
-              >
-                Build
-              </Button>
-            </View>
-            {status ? (
-              <Text
-                accessibilityLiveRegion="polite"
-                style={[typography.caption, { color: colors.textSecondary }]}
-              >
-                {status}
-              </Text>
-            ) : null}
-          </Card.Content>
-        </Card>
+            }
+          >
+            <Menu.Item
+              leadingIcon="pencil-outline"
+              title="Rename plan"
+              onPress={() => {
+                setPlanMenuOpen(false);
+                setRenameTarget({ kind: 'program', name: program.name });
+              }}
+            />
+            <Menu.Item
+              leadingIcon="book-open-variant"
+              title="Browse plans"
+              onPress={() => {
+                setPlanMenuOpen(false);
+                router.push('/program-library');
+              }}
+            />
+            <Menu.Item
+              leadingIcon="playlist-plus"
+              title="Build a plan"
+              onPress={() => {
+                setPlanMenuOpen(false);
+                router.push('/program-builder');
+              }}
+            />
+            <Menu.Item
+              leadingIcon="restart"
+              title="Restore generated plan"
+              onPress={() => {
+                setPlanMenuOpen(false);
+                setResetDialogOpen(true);
+              }}
+            />
+          </Menu>
+        </View>
+        {status ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.sm }]}
+          >
+            {status}
+          </Text>
+        ) : null}
       </Reveal>
 
       <Portal>
         <Dialog visible={resetDialogOpen} onDismiss={() => setResetDialogOpen(false)}>
-          <Dialog.Icon icon="restart-alert" />
           <Dialog.Title>Restore generated plan?</Dialog.Title>
           <Dialog.Content>
             <Text style={[typography.body, { color: colors.textSecondary }]}>
@@ -260,13 +184,14 @@ export default function ProgramScreen() {
         <Dialog visible={renameTarget != null} onDismiss={() => setRenameTarget(null)}>
           <Dialog.Title>
             {renameTarget?.kind === 'program'
-              ? 'Rename program'
+              ? 'Rename plan'
               : renameTarget?.kind === 'day'
                 ? 'Rename day'
                 : 'Rename workout'}
           </Dialog.Title>
           <Dialog.Content>
             <TextInput
+              theme={inputTheme}
               autoFocus
               mode="outlined"
               label="Name"
@@ -292,225 +217,188 @@ export default function ProgramScreen() {
         </Dialog>
       </Portal>
 
-      <Reveal index={2}>
-        <DetailCard eyebrow="Saved workouts" title="Ready to replay">
-          {templates.length === 0 ? (
-            <List.Item
-              title="No saved workouts yet"
-              description="Build a custom workout and tap Save workout. It will appear here immediately."
-              onPress={() => router.push('/custom-workout')}
-              left={(props) => (
-                <List.Icon {...props} icon="content-save-outline" color={colors.accent} />
-              )}
-              right={(props) => (
-                <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
-              )}
-              titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-              descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-              style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-            />
-          ) : (
-            templates.slice(0, 4).map((template, index) => (
-              <View key={template.id}>
-                <List.Item
-                  title={template.name}
-                  description={`${template.day.prescriptions.length} exercises · est. ${template.day.estimatedMinutes}m`}
-                  onPress={() => startTemplate(template.id)}
-                  left={(props) => (
-                    <List.Icon {...props} icon="playlist-play" color={colors.accent} />
-                  )}
-                  right={(props) => (
-                    <View style={styles.templateActions}>
-                      <IconButton
-                        icon="pencil-outline"
-                        size={20}
-                        disabled={saving}
-                        accessibilityLabel={`Rename ${template.name}`}
-                        onPress={() =>
-                          setRenameTarget({
-                            kind: 'template',
-                            id: template.id,
-                            name: template.name,
-                          })
-                        }
-                        style={styles.templateActionButton}
-                      />
-                      <List.Icon {...props} icon="chevron-right" color={colors.textMuted} />
-                    </View>
-                  )}
-                  titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-                  descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-                />
-                {index < Math.min(templates.length, 4) - 1 ? <Divider /> : null}
-              </View>
-            ))
-          )}
-          <Button
-            mode="text"
-            icon="playlist-plus"
-            onPress={() => router.push('/custom-workout')}
-            style={styles.newWorkoutButton}
-          >
-            New custom workout
-          </Button>
-        </DetailCard>
-      </Reveal>
-
-      <Reveal index={3}>
-        <ProgressionCockpit summary={progressionSummary} units={preferences.units} />
-      </Reveal>
-
-      <Reveal index={4}>
+      <Reveal index={1}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.dayRail}
+          style={{ marginHorizontal: -spacing.lg }}
         >
+          <View style={{ width: spacing.lg - 10 }} />
           {program.days.map((day, index) => (
-            <Chip
+            <DayCard
               key={day.id}
-              compact
+              day={day}
+              index={index}
               selected={selectedDayIndex === index}
-              mode={selectedDayIndex === index ? 'flat' : 'outlined'}
               onPress={() => setSelectedDayIndex(index)}
-              style={
-                selectedDayIndex === index ? { backgroundColor: colors.accentSoft } : undefined
-              }
-              textStyle={selectedDayIndex === index ? { color: colors.accent } : undefined}
-            >
-              {day.name}
-            </Chip>
+            />
           ))}
+          <View style={{ width: spacing.lg - 10 }} />
         </ScrollView>
       </Reveal>
 
-      <Reveal index={5}>
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <Card.Content style={{ gap: spacing.md }}>
-            <View style={styles.selectedDayHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={[typography.micro, { color: colors.accent }]}>Selected day</Text>
-                <Text style={[typography.heading, { color: colors.textPrimary }]}>
-                  {selectedDay.name}
+      <Reveal index={2}>
+        <Tile glow style={{ gap: spacing.lg }}>
+          <View style={styles.headerRow}>
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <Text style={[typography.title, { color: colors.textPrimary }]}>
+                {selectedDay.name}
+              </Text>
+              {selectedDay.focus.length > 0 ? (
+                <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                  {selectedDay.focus.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}
                 </Text>
-              </View>
-              <IconButton
-                icon="pencil-outline"
-                mode="contained-tonal"
-                disabled={saving}
-                accessibilityLabel={`Rename ${selectedDay.name}`}
-                onPress={() => setRenameTarget({ kind: 'day', name: selectedDay.name })}
-                style={styles.renameButton}
-              />
+              ) : null}
             </View>
-
-            <View style={styles.metricGrid}>
-              <MetricBlock label="exercises" value={String(selectedDay.prescriptions.length)} />
-              <MetricBlock label="sets" value={String(dayStats.sets)} />
-              <MetricBlock label="est." value={`${selectedDay.estimatedMinutes}m`} />
-            </View>
-
-            <View style={styles.focusRow}>
-              {selectedDay.focus.map((muscle) => (
-                <Chip key={muscle} compact mode="flat">
-                  {MUSCLE_LABELS[muscle]}
-                </Chip>
-              ))}
-            </View>
-
-            <View style={styles.dayActions}>
-              <Button
-                mode="contained"
-                icon="play"
-                onPress={() => startDay()}
-                contentStyle={styles.primaryActionContent}
-              >
-                Start workout
+            <IconButton
+              icon="pencil-outline"
+              iconColor={colors.textSecondary}
+              disabled={saving}
+              accessibilityLabel={`Rename ${selectedDay.name}`}
+              onPress={() => setRenameTarget({ kind: 'day', name: selectedDay.name })}
+              style={styles.iconButton}
+            />
+          </View>
+          <View style={styles.heroStats}>
+            <PlanStat value={String(selectedDay.prescriptions.length)} label="exercises" />
+            <PlanStat value={String(dayStats.sets)} label="sets" />
+            <PlanStat value={`~${selectedDay.estimatedMinutes}`} label="min" />
+          </View>
+          <ExerciseStrip
+            items={selectedDay.prescriptions.map((prescription, index) => ({
+              key: `${prescription.exerciseId}-${index}`,
+              exercise: requireExercise(prescription.exerciseId),
+              detail: `${prescription.workingSets} × ${prescription.minReps}-${prescription.maxReps}`,
+            }))}
+            onPressItem={(exercise) =>
+              router.push({ pathname: '/exercise/[id]', params: { id: exercise.id } })
+            }
+          />
+          <View style={{ gap: spacing.xs }}>
+            <Button
+              mode="contained"
+              onPress={() => startDay()}
+              contentStyle={styles.primaryActionContent}
+            >
+              Start {selectedDay.name}
+            </Button>
+            <View style={styles.secondaryActionRow}>
+              <Button compact mode="text" onPress={() => editDay()}>
+                Edit before starting
               </Button>
-              <View style={styles.secondaryActionRow}>
-                <Button
-                  mode="outlined"
-                  icon="pencil"
-                  onPress={() => editDay()}
-                  contentStyle={styles.secondaryActionContent}
-                  style={styles.secondaryAction}
-                >
-                  Edit exercises
-                </Button>
-                <Button
-                  mode="outlined"
-                  icon="content-save-outline"
-                  disabled={saving}
-                  onPress={saveSelectedDayAsTemplate}
-                  contentStyle={styles.secondaryActionContent}
-                  style={styles.secondaryAction}
-                >
-                  Save template
-                </Button>
-              </View>
+              <Button
+                compact
+                mode="text"
+                disabled={saving}
+                onPress={saveSelectedDayAsTemplate}
+                textColor={colors.textSecondary}
+              >
+                Save as workout
+              </Button>
             </View>
-          </Card.Content>
-        </Card>
+          </View>
+        </Tile>
       </Reveal>
 
-      <Reveal index={6}>
-        <DetailCard eyebrow="Prescription" title="Exercise order">
-          {selectedDay.prescriptions.map((prescription, index) => (
-            <View key={`${prescription.exerciseId}-${index}`}>
-              <ProgramExerciseRow
-                prescription={prescription}
-                index={index}
-                saving={saving}
-                swapOpen={
-                  swapTarget?.dayIndex === selectedDayIndex &&
-                  swapTarget.prescriptionIndex === index
-                }
-                onPatch={(patch) => patchPrescription(index, patch)}
-                onMoveUp={index > 0 ? () => movePrescription(index, -1) : undefined}
-                onMoveDown={
-                  index < selectedDay.prescriptions.length - 1
-                    ? () => movePrescription(index, 1)
-                    : undefined
-                }
-                onSwap={() =>
-                  setSwapTarget((current) =>
-                    current?.dayIndex === selectedDayIndex && current.prescriptionIndex === index
-                      ? null
-                      : { dayIndex: selectedDayIndex, prescriptionIndex: index },
-                  )
-                }
-              />
-              {swapTarget?.dayIndex === selectedDayIndex &&
-              swapTarget.prescriptionIndex === index ? (
-                <SwapPanel
-                  options={swapOptions}
+      <Reveal index={3}>
+        <Tile title="Exercises">
+          <View>
+            {selectedDay.prescriptions.map((prescription, index) => (
+              <View
+                key={`${prescription.exerciseId}-${index}`}
+                style={{
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                  borderBottomColor: colors.border,
+                }}
+              >
+                <ProgramExerciseRow
+                  prescription={prescription}
+                  index={index}
                   saving={saving}
-                  onSelect={replacePrescription}
-                  onCancel={() => setSwapTarget(null)}
+                  swapOpen={
+                    swapTarget?.dayIndex === selectedDayIndex &&
+                    swapTarget.prescriptionIndex === index
+                  }
+                  onPatch={(patch) => patchPrescription(index, patch)}
+                  onMoveUp={index > 0 ? () => movePrescription(index, -1) : undefined}
+                  onMoveDown={
+                    index < selectedDay.prescriptions.length - 1
+                      ? () => movePrescription(index, 1)
+                      : undefined
+                  }
+                  onSwap={() =>
+                    setSwapTarget((current) =>
+                      current?.dayIndex === selectedDayIndex && current.prescriptionIndex === index
+                        ? null
+                        : { dayIndex: selectedDayIndex, prescriptionIndex: index },
+                    )
+                  }
                 />
-              ) : null}
-              {index < selectedDay.prescriptions.length - 1 ? <Divider /> : null}
+                {swapTarget?.dayIndex === selectedDayIndex &&
+                swapTarget.prescriptionIndex === index ? (
+                  <SwapPanel
+                    options={swapOptions}
+                    saving={saving}
+                    onSelect={replacePrescription}
+                    onCancel={() => setSwapTarget(null)}
+                  />
+                ) : null}
+              </View>
+            ))}
+          </View>
+        </Tile>
+      </Reveal>
+
+      <Reveal index={4}>
+        <DetailCard
+          title="Saved workouts"
+          titleRight={
+            <Button compact mode="text" onPress={() => router.push('/custom-workout')}>
+              New
+            </Button>
+          }
+        >
+          {templates.length === 0 ? (
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              Build a custom workout and tap Save workout. It shows up here so you can repeat it.
+            </Text>
+          ) : (
+            <View>
+              {templates.slice(0, 4).map((template, index, shown) => (
+                <ListRow
+                  key={template.id}
+                  title={template.name}
+                  subtitle={`${template.day.prescriptions.length} exercises, about ${template.day.estimatedMinutes} min`}
+                  onPress={() => startTemplate(template.id)}
+                  last={index === shown.length - 1}
+                  accessibilityLabel={`Start ${template.name}`}
+                  left={
+                    <IconButton
+                      icon="pencil-outline"
+                      size={18}
+                      iconColor={colors.textMuted}
+                      disabled={saving}
+                      accessibilityLabel={`Rename ${template.name}`}
+                      onPress={() =>
+                        setRenameTarget({ kind: 'template', id: template.id, name: template.name })
+                      }
+                      style={styles.templateRename}
+                    />
+                  }
+                />
+              ))}
             </View>
-          ))}
+          )}
         </DetailCard>
       </Reveal>
 
-      <Reveal index={7}>
-        <DetailCard
-          eyebrow="Weekly dose"
-          title="Muscle volume"
-          titleRight={<InfoHint term="volumeLandmarks" />}
-        >
+      <Reveal index={5}>
+        <ProgressionCockpit summary={progressionSummary} units={preferences.units} />
+      </Reveal>
+
+      <Reveal index={6}>
+        <DetailCard title="Weekly volume" titleRight={<InfoHint term="volumeLandmarks" />}>
           <View style={styles.bodyRow}>
             <Body
               data={bodyData}
@@ -518,7 +406,7 @@ export default function ProgramScreen() {
               side="front"
               scale={0.34}
               border="none"
-              defaultFill={colors.surfacePressed}
+              defaultFill={colors.surfaceRaised}
               defaultStroke={colors.border}
             />
             <Body
@@ -527,236 +415,86 @@ export default function ProgramScreen() {
               side="back"
               scale={0.34}
               border="none"
-              defaultFill={colors.surfacePressed}
+              defaultFill={colors.surfaceRaised}
               defaultStroke={colors.border}
             />
           </View>
 
-          <View style={{ gap: spacing.sm }}>
+          <View style={{ gap: spacing.md }}>
             {muscleLoads.slice(0, 6).map((item) => (
               <VolumeRow key={item.muscle} item={item} />
             ))}
           </View>
         </DetailCard>
       </Reveal>
+
+      <Reveal index={7}>
+        <DetailCard title="About this plan">
+          <View>
+            <ListRow title="Goal" value={formatGoal(preferences.goal)} />
+            <ListRow title="Session length" value={`${preferences.sessionMinutes} min`} />
+            <ListRow title="Priorities" subtitle={priorities} />
+            <ListRow
+              title="Equipment"
+              subtitle={formatEquipmentSummary(preferences.equipment)}
+              last
+            />
+          </View>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>{program.rationale}</Text>
+        </DetailCard>
+      </Reveal>
     </ScrollView>
+  );
+}
+
+function PlanStat({ value, label }: { value: string; label: string }) {
+  const { colors, typography } = useTheme();
+  return (
+    <View style={{ flex: 1 }}>
+      <AnimatedNumber
+        value={value}
+        style={[typography.jumbo, { color: colors.textPrimary, fontSize: 26, lineHeight: 30 }]}
+      />
+      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  selectedDayHeader: {
-    flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
   },
-  activePlanHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  activePlanTitle: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  planManagementHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  planMenuButton: {
+  iconButton: {
+    width: 44,
+    height: 44,
     margin: 0,
   },
-  renameButton: {
-    width: 48,
-    height: 48,
-    margin: 0,
-  },
-  planActionRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  planAction: {
-    flex: 1,
-  },
-  dayActions: {
+  dayRail: {
     gap: 10,
-    marginTop: 4,
+  },
+  heroStats: {
+    flexDirection: 'row',
+    gap: 12,
   },
   primaryActionContent: {
-    minHeight: 50,
+    minHeight: 52,
   },
   secondaryActionRow: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  secondaryAction: {
-    flex: 1,
-  },
-  secondaryActionContent: {
-    minHeight: 48,
-  },
-  templateActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  templateActionButton: {
-    width: 48,
-    height: 48,
-    margin: 0,
-  },
-  newWorkoutButton: {
-    alignSelf: 'flex-start',
-  },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  metricGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  metricBlock: {
-    flex: 1,
-    minHeight: 58,
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
     justifyContent: 'space-between',
+    marginTop: -4,
   },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  dayRail: {
-    gap: 8,
-    paddingRight: 16,
-  },
-  focusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  exerciseRow: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingVertical: 12,
-  },
-  orderColumn: {
-    alignItems: 'center',
-    gap: 4,
-    paddingTop: 0,
-  },
-  orderMoveButton: {
-    width: 28,
-    height: 28,
+  templateRename: {
+    width: 36,
+    height: 36,
     margin: 0,
-  },
-  orderBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-  },
-  rowChipRail: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  stepper: {
-    minWidth: 76,
-    borderRadius: 14,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-    gap: 5,
-  },
-  stepperControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 5,
-  },
-  stepperButton: {
-    width: 28,
-    height: 28,
-    margin: 0,
-  },
-  swapButton: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  swapPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 4,
-    marginBottom: 8,
+    marginLeft: -8,
   },
   bodyRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 20,
-  },
-  volumeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  volumeMeter: {
-    width: 104,
-    gap: 5,
-  },
-  progress: {
-    height: 6,
-    borderRadius: 999,
-  },
-  listPanel: {
-    borderRadius: 14,
-  },
-  progressionHero: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 12,
-    gap: 4,
-  },
-  progressionRow: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  actionBadge: {
-    minWidth: 72,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    alignItems: 'center',
-  },
-  readinessRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  emptyProgressionPanel: {
-    borderRadius: 14,
-    padding: 12,
-    gap: 4,
   },
 });

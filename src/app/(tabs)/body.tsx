@@ -1,19 +1,28 @@
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Button, Card, Chip, Divider, List, ProgressBar } from 'react-native-paper';
+import { Button } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { runOnJS } from 'react-native-reanimated';
 
+import { Sparkline } from '@/components/charts/Sparkline';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { ListRow } from '@/components/ui/ListRow';
+import { Tile } from '@/components/ui/Tile';
+import { listBodyMeasurements } from '@/domain/body/bodyTrackingStore';
+import type { BodyMeasurementEntry } from '@/domain/body/measurements';
+import { bodyweightSnapshot } from '@/domain/workouts/dashboard';
+import { ProgressLine } from '@/components/ui/ProgressLine';
 import { Reveal } from '@/components/ui/Reveal';
+import { Segmented } from '@/components/ui/Segmented';
+import { Stat } from '@/components/ui/Stat';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import {
-  BODY_HEAT_COLORS,
   BODY_HEAT_LEGEND,
   DEFAULT_MUSCLE,
   RANK_TIER_COLORS,
@@ -29,8 +38,6 @@ import {
 import {
   buildMuscleIntelligence,
   type MuscleIntelligence,
-  type MuscleProgramExercise,
-  type MuscleRecentSession,
 } from '@/domain/workouts/muscleIntelligence';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
 import {
@@ -42,17 +49,24 @@ import { VolumeLandmarkGauge } from '@/components/muscles/VolumeLandmarkGauge';
 import { formatDate } from '@/utils/dates';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme, type SemanticColors } from '@/theme';
-import type { MuscleGroup, Units, WorkoutSession } from '@/types';
-import { formatLoad, formatVolumeLoad } from '@/utils/units';
+import type { MuscleGroup, WorkoutSession } from '@/types';
+import { displayLoad, formatLoad, formatVolumeLoad, unitLabel } from '@/utils/units';
+
+const BODY_SIDES = [
+  { label: 'Front', value: 'front' },
+  { label: 'Back', value: 'back' },
+] as const;
 
 export default function BodyScreen() {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleGroup>(DEFAULT_MUSCLE);
   const [bodySide, setBodySide] = useState<BodySide>('front');
   const [history, setHistory] = useState<WorkoutSession[]>([]);
+  const [measurements, setMeasurements] = useState<BodyMeasurementEntry[]>([]);
+  const bodyweight = useMemo(() => bodyweightSnapshot(measurements), [measurements]);
   const { program, preferences } = useActiveProgram();
   const bodyScale = useMemo(
     () => Math.min(1.1, Math.max(0.9, (width - spacing.x4l * 2) / 240)),
@@ -65,6 +79,11 @@ export default function BodyScreen() {
       listWorkoutHistory().then((next) => {
         if (mounted) setHistory(next);
       });
+      listBodyMeasurements()
+        .then((next) => {
+          if (mounted) setMeasurements(next);
+        })
+        .catch(() => undefined);
       return () => {
         mounted = false;
       };
@@ -86,9 +105,6 @@ export default function BodyScreen() {
     () => buildBodyData(intelligence, selected.muscle, colors),
     [colors, intelligence, selected.muscle],
   );
-  const selectedTone = useMemo(() => muscleTone(selected, colors), [colors, selected]);
-  const selectedUiColor =
-    selectedTone.fill === BODY_HEAT_COLORS.dormant ? colors.textSecondary : selectedTone.fill;
 
   const selectMuscle = useCallback((muscle: MuscleGroup) => {
     setSelectedMuscle(muscle);
@@ -121,6 +137,8 @@ export default function BodyScreen() {
     if (nextMuscle) selectMuscle(nextMuscle);
   }
 
+  const latestSession = selected.recentSessions[0];
+
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
@@ -128,401 +146,284 @@ export default function BodyScreen() {
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
         paddingBottom: insets.bottom + 120,
         paddingHorizontal: spacing.lg,
-        gap: spacing.lg,
+        gap: 12,
       }}
     >
-      <Reveal>
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              Muscle intelligence
-            </Text>
-            <Text style={[typography.title, { color: colors.textPrimary }]}>Body</Text>
-          </View>
-          <Chip compact mode="flat" icon="database">
-            {history.length} logs
-          </Chip>
-        </View>
+      <Reveal style={{ marginBottom: spacing.sm }}>
+        <Text style={[typography.display, { color: colors.textPrimary }]}>Body</Text>
+        <Text style={[typography.body, { color: colors.textSecondary }]}>
+          {history.length === 1 ? '1 workout logged' : `${history.length} workouts logged`}
+        </Text>
       </Reveal>
 
       <Reveal index={1}>
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
+        <Tile
+          title="Weight and progress photos"
+          onPress={() => router.push('/body-log')}
+          accessibilityLabel="Open weight, measurements and progress photos"
         >
-          <Card.Content style={{ gap: spacing.lg }}>
-            <View style={styles.headerRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[typography.micro, { color: selectedUiColor }]}>Selected tissue</Text>
-                <Text style={[typography.heading, { color: colors.textPrimary }]}>
-                  {MUSCLE_LABELS[selected.muscle]}
+          {bodyweight ? (
+            <View style={styles.weightRow}>
+              <View style={{ gap: 2 }}>
+                <AnimatedNumber
+                  value={`${displayLoad(bodyweight.latestKg, preferences.units) ?? 0}`}
+                  style={[
+                    typography.jumbo,
+                    { color: colors.textPrimary, fontSize: 30, lineHeight: 34 },
+                  ]}
+                />
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  {unitLabel(preferences.units)}, {formatDate(bodyweight.date)}
+                  {bodyweight.deltaKg != null
+                    ? `, ${bodyweight.deltaKg > 0 ? '+' : ''}${(displayLoad(bodyweight.deltaKg, preferences.units) ?? 0).toFixed(1)}`
+                    : ''}
                 </Text>
               </View>
-              <Chip
-                compact
-                mode="flat"
-                icon="gesture-swipe"
-                style={{ backgroundColor: withAlpha(selectedUiColor, '18') }}
-                textStyle={{ color: selectedUiColor }}
-                onPress={() => setBodySideFromGesture(bodySide === 'front' ? 'back' : 'front')}
-              >
-                {bodySide === 'front' ? 'Front' : 'Back'}
-              </Chip>
-            </View>
-
-            <GestureDetector gesture={swipeGesture}>
-              <View
-                style={[
-                  styles.bodyStageFrame,
-                  {
-                    shadowColor: selectedUiColor,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.bodyStage,
-                    {
-                      backgroundColor: colors.surfaceRaised,
-                      borderColor: withAlpha(selectedUiColor, '3D'),
-                    },
-                  ]}
-                >
-                  <LinearGradient
-                    colors={[withAlpha(selectedUiColor, '38'), 'transparent']}
-                    start={{ x: 0.1, y: 0 }}
-                    end={{ x: 0.85, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <Body
-                    data={bodyData}
-                    colors={[
-                      colors.surfacePressed,
-                      colors.surfacePressed,
-                      colors.surfacePressed,
-                      colors.surfacePressed,
-                    ]}
-                    side={bodySide}
-                    scale={bodyScale}
-                    border="none"
-                    defaultFill={colors.surfacePressed}
-                    defaultStroke={colors.border}
-                    defaultStrokeWidth={0.35}
-                    onBodyPartPress={handleBodyPartPress}
-                  />
-                </View>
-              </View>
-            </GestureDetector>
-            <HeatLegend />
-
-            <RankProgressPanel rank={selectedRank} />
-
-            <View style={styles.metricGrid}>
-              <MetricBlock
-                label="Direct sets"
-                value={`${selected.trainingLoad.directSets}`}
-                detail={shortVolumeZoneLabel(selected.trainingLoad.volume.zone)}
-              />
-              <MetricBlock
-                label="Indirect"
-                value={`${selected.trainingLoad.indirectExposures}`}
-                detail="raw exposures"
-              />
-              <MetricBlock
-                label="Estimated"
-                value={`${selected.trainingLoad.weightedEstimate}`}
-                detail={`mapped · v${selected.trainingLoad.contributionModelVersion}`}
+              <Sparkline
+                values={bodyweight.series}
+                width={140}
+                height={44}
+                color={colors.textSecondary}
               />
             </View>
-            <VolumeLandmarkGauge
-              landmarks={selected.trainingLoad.volume.landmarks}
-              weeklySets={selected.trainingLoad.volume.weeklySets}
-              zone={selected.trainingLoad.volume.zone}
-            />
-            <View style={styles.fatigueMetaRow}>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                Direct sets drive the reference bar; estimates do not change the physical set total.
-              </Text>
-              <Text style={[typography.caption, { color: colors.textMuted }]}>
-                {lastTrainedLabel(selected)}
+          ) : (
+            <View style={styles.weightRow}>
+              <MaterialCommunityIcons name="scale-bathroom" size={28} color={colors.accent} />
+              <Text style={[typography.body, { color: colors.textSecondary, flex: 1 }]}>
+                Log bodyweight, measurements and photos to track how your body changes.
               </Text>
             </View>
-          </Card.Content>
-        </Card>
+          )}
+        </Tile>
       </Reveal>
 
       <Reveal index={2}>
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <Card.Content style={{ gap: spacing.md }}>
-            <View style={styles.headerRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[typography.micro, { color: selectedUiColor }]}>Command center</Text>
-                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  {selected.signal.label}
-                </Text>
-              </View>
-              <Chip
-                compact
-                mode="flat"
-                icon={signalIcon(selected.signal.kind)}
-                style={{ backgroundColor: withAlpha(selectedUiColor, '18') }}
-                textStyle={{ color: selectedUiColor }}
-              >
-                {selected.trainingLoad.label}
-              </Chip>
-            </View>
+        <Tile>
+          <View style={styles.headerRow}>
+            <Text style={[typography.heading, { color: colors.textPrimary, flex: 1 }]}>
+              Muscle map
+            </Text>
+            <Segmented options={BODY_SIDES} value={bodySide} onChange={setBodySideFromGesture} />
+          </View>
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            Direct sets this week. Tap a muscle, swipe to turn around.
+          </Text>
 
-            <View
-              style={[
-                styles.signalPanel,
-                { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-              ]}
-            >
-              <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-                {selected.signal.detail}
-              </Text>
-              <View style={styles.signalFacts}>
-                <SignalFact label="direct" value={`${selected.trainingLoad.directSets} sets`} />
-                <SignalFact
-                  label="indirect"
-                  value={`${selected.trainingLoad.indirectExposures} exposures`}
-                />
-                <SignalFact
-                  label="RIR"
-                  value={
-                    selected.trainingLoad.averageRir != null
-                      ? String(selected.trainingLoad.averageRir)
-                      : '--'
-                  }
-                />
-                <SignalFact
-                  label="Form"
-                  value={
-                    selected.formQuality.averageScore != null
-                      ? `${selected.formQuality.averageScore}/100`
-                      : 'off'
-                  }
-                />
-              </View>
-            </View>
-
-            {selected.recentSessions[0] ? (
-              <RecentSessionBlock
-                session={selected.recentSessions[0]}
-                units={preferences.units}
-                onOpen={() =>
-                  router.push({
-                    pathname: '/history',
-                    params: { sessionId: selected.recentSessions[0].sessionId },
-                  })
-                }
+          <GestureDetector gesture={swipeGesture}>
+            <View style={styles.bodyStage}>
+              <Body
+                data={bodyData}
+                colors={[
+                  colors.surfaceRaised,
+                  colors.surfaceRaised,
+                  colors.surfaceRaised,
+                  colors.surfaceRaised,
+                ]}
+                side={bodySide}
+                scale={bodyScale}
+                border="none"
+                defaultFill={colors.surfaceRaised}
+                defaultStroke={colors.border}
+                defaultStrokeWidth={0.35}
+                onBodyPartPress={handleBodyPartPress}
               />
-            ) : (
-              <EmptyListItem
-                icon="history"
-                title="No direct work yet"
-                description="Finish a session with direct sets for this muscle to unlock recent work."
-              />
-            )}
-
-            <View style={{ gap: spacing.xs }}>
-              <View style={styles.headerRow}>
-                <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-                  Form AI coverage
-                </Text>
-                <Text style={[typography.micro, { color: colors.textMuted }]}>
-                  {selected.formQuality.analyzedSetCount} sets ·{' '}
-                  {selected.formQuality.analyzedRepCount} reps
-                </Text>
-              </View>
-              <ProgressBar
-                progress={selected.formQuality.coveragePct / 100}
-                color={selectedUiColor}
-                style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
-              />
-              <Text style={[typography.micro, { color: colors.textMuted }]}>
-                {selected.formQuality.mostCommonIssue ??
-                  (selected.formQuality.averageScore != null
-                    ? 'No repeated issue detected.'
-                    : 'Camera analysis appears here for supported lifts.')}
-              </Text>
             </View>
-
-            <View style={styles.quickActions}>
-              <Button
-                compact
-                mode="contained-tonal"
-                icon="history"
-                onPress={() => router.push('/history')}
-                style={styles.quickActionButton}
-              >
-                History
-              </Button>
-              <Button
-                compact
-                mode="outlined"
-                icon="book-open-variant"
-                disabled={!selected.records[0]}
-                onPress={() =>
-                  selected.records[0] &&
-                  router.push({
-                    pathname: '/exercise/[id]',
-                    params: { id: selected.records[0].exerciseId },
-                  })
-                }
-                style={styles.quickActionButton}
-              >
-                Top exercise
-              </Button>
-            </View>
-          </Card.Content>
-        </Card>
+          </GestureDetector>
+          <HeatLegend />
+        </Tile>
       </Reveal>
 
       <Reveal index={3}>
-        <DetailCard
-          title="Training badges"
-          eyebrow={`${progression.unlockedBadgeCount} of ${progression.badges.length} unlocked`}
-        >
+        <Tile glow>
+          <View style={{ gap: 2 }}>
+            <Text style={[typography.title, { color: colors.textPrimary }]}>
+              {MUSCLE_LABELS[selected.muscle]}
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {shortVolumeZoneLabel(selected.trainingLoad.volume.zone)} volume,{' '}
+              {lastTrainedLabel(selected).toLowerCase()}
+            </Text>
+          </View>
+
+          <View style={styles.statRow}>
+            <Stat value={String(selected.trainingLoad.directSets)} label="direct sets" emphasis />
+            <Stat value={String(selected.trainingLoad.indirectExposures)} label="indirect" />
+            <Stat
+              value={
+                selected.trainingLoad.averageRir != null
+                  ? String(selected.trainingLoad.averageRir)
+                  : '-'
+              }
+              label="avg RIR"
+            />
+          </View>
+          <VolumeLandmarkGauge
+            landmarks={selected.trainingLoad.volume.landmarks}
+            weeklySets={selected.trainingLoad.volume.weeklySets}
+            zone={selected.trainingLoad.volume.zone}
+          />
+
+          <View style={{ gap: 2 }}>
+            <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
+              {selected.signal.label}
+            </Text>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>
+              {selected.signal.detail}
+            </Text>
+          </View>
+
+          <RankLine rank={selectedRank} />
+
           <Text style={[typography.caption, { color: colors.textMuted }]}>
-            Badges are calculated from completed workout history and never from planned sessions.
+            {selected.formQuality.averageScore != null
+              ? `Form AI ${selected.formQuality.averageScore}/100 over ${selected.formQuality.analyzedSetCount} sets. ${selected.formQuality.mostCommonIssue ?? 'No repeated issue.'}`
+              : 'Film a set on a supported lift to see Form AI scores here.'}
           </Text>
-          {progression.badges.map((badge, index) => (
-            <View key={badge.id}>
-              <BadgeRow badge={badge} />
-              {index < progression.badges.length - 1 ? <Divider /> : null}
-            </View>
-          ))}
-        </DetailCard>
+        </Tile>
       </Reveal>
 
       <Reveal index={4}>
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <Card.Content style={{ gap: spacing.md }}>
-            <View style={styles.headerRow}>
-              <View>
-                <Text style={[typography.micro, { color: selectedUiColor }]}>Interpretation</Text>
-                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  What this map can show
-                </Text>
-              </View>
-              <Chip
-                compact
-                mode="flat"
-                icon="information-outline"
-                style={{ backgroundColor: withAlpha(selectedUiColor, '18') }}
-                textStyle={{ color: selectedUiColor }}
-              >
-                Reference
-              </Chip>
+        <Section title="Last session">
+          {latestSession ? (
+            <View>
+              <ListRow
+                title={latestSession.dayName}
+                subtitle={`${formatDate(latestSession.performedAt)}, ${latestSession.sets} sets, ${formatVolumeLoad(latestSession.volumeKg, preferences.units)}`}
+                onPress={() =>
+                  router.push({
+                    pathname: '/history',
+                    params: { sessionId: latestSession.sessionId },
+                  })
+                }
+              />
+              {latestSession.exercises.slice(0, 3).map((exercise, index, shown) => (
+                <ListRow
+                  key={exercise.exerciseId}
+                  title={exercise.name}
+                  subtitle={`${exercise.sets} sets, best ${exercise.bestSetLabel}`}
+                  value={
+                    exercise.averageFormScore != null ? `${exercise.averageFormScore}` : undefined
+                  }
+                  last={index === shown.length - 1}
+                />
+              ))}
             </View>
-            <Text style={[typography.body, { color: colors.textSecondary }]}>
-              Colors summarize direct sets logged this week against general reference ranges. Rank
-              tracks long-term training evidence separately; neither one diagnoses fatigue or
-              measures recovery.
-            </Text>
-            <Text style={[typography.caption, { color: colors.textMuted }]}>
-              Strength remains exercise-specific below, because loads from different movements and
-              machines are not directly comparable.
-            </Text>
-          </Card.Content>
-        </Card>
+          ) : (
+            <EmptyText>Finish a session with direct sets for this muscle to see it here.</EmptyText>
+          )}
+          <Button
+            compact
+            mode="text"
+            onPress={() => router.push('/history')}
+            style={styles.inlineButton}
+          >
+            All workout history
+          </Button>
+        </Section>
       </Reveal>
 
       <Reveal index={5}>
-        <DetailCard title="Program exercises" eyebrow="Current plan">
-          {selected.programExercises.length === 0 ? (
-            <EmptyListItem
-              icon="dumbbell"
-              title="No direct prescription"
-              description="This muscle is not a primary target in the current generated week."
-            />
-          ) : (
-            selected.programExercises
-              .slice(0, 6)
-              .map((exercise, index) => (
-                <ProgramExerciseItem
-                  key={`${exercise.exerciseId}-${exercise.dayName}`}
-                  exercise={exercise}
-                  showDivider={index < Math.min(selected.programExercises.length, 6) - 1}
-                />
-              ))
-          )}
-        </DetailCard>
-      </Reveal>
-
-      <Reveal index={6}>
-        <DetailCard title="Records" eyebrow="Saved history">
+        <Section title="Records">
           {selected.records.length === 0 ? (
-            <EmptyListItem
-              icon="trophy-outline"
-              title="No records yet"
-              description="Finish loaded work for this muscle to unlock PRs and previous-set context."
-            />
+            <EmptyText>Finish loaded work for this muscle to set your first records.</EmptyText>
           ) : (
-            selected.records.slice(0, 5).map((record, index) => (
-              <View key={record.exerciseId}>
-                <List.Item
+            <View>
+              {selected.records.slice(0, 5).map((record, index, shown) => (
+                <ListRow
+                  key={record.exerciseId}
                   title={record.name}
-                  description={[
+                  subtitle={[
                     record.bestLoadKg != null
                       ? `Top ${formatLoad(record.bestLoadKg, preferences.units)} x ${record.repsAtBestLoad ?? 0}`
                       : 'No loaded top set',
                     record.bestE1rmKg != null
                       ? `e1RM ${formatLoad(record.bestE1rmKg, preferences.units)}`
                       : null,
-                    `${record.lastSessionSets} sets last time`,
+                    record.lastPerformedAt ? formatDate(record.lastPerformedAt) : null,
                   ]
                     .filter(Boolean)
-                    .join(' · ')}
-                  left={(props) => (
-                    <List.Icon {...props} icon="medal-outline" color={colors.accent} />
-                  )}
-                  right={() => (
-                    <Text
-                      style={[typography.micro, { color: colors.textMuted, alignSelf: 'center' }]}
-                    >
-                      {record.lastPerformedAt ? formatDate(record.lastPerformedAt) : ''}
-                    </Text>
-                  )}
-                  titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-                  descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+                    .join(', ')}
+                  onPress={() =>
+                    router.push({ pathname: '/exercise/[id]', params: { id: record.exerciseId } })
+                  }
+                  last={index === shown.length - 1}
                 />
-                {index < Math.min(selected.records.length, 5) - 1 ? <Divider /> : null}
-              </View>
-            ))
+              ))}
+            </View>
           )}
-        </DetailCard>
+        </Section>
+      </Reveal>
+
+      <Reveal index={6}>
+        <Section title="In your plan">
+          {selected.programExercises.length === 0 ? (
+            <EmptyText>This muscle is not a main target in your current plan.</EmptyText>
+          ) : (
+            <View>
+              {selected.programExercises.slice(0, 6).map((exercise, index, shown) => (
+                <ListRow
+                  key={`${exercise.exerciseId}-${exercise.dayName}`}
+                  title={exercise.name}
+                  subtitle={`${exercise.dayName}, ${exercise.workingSets} x ${exercise.repRangeLabel}, RIR ${exercise.targetRir}`}
+                  last={index === shown.length - 1}
+                />
+              ))}
+            </View>
+          )}
+        </Section>
+      </Reveal>
+
+      <Reveal index={7}>
+        <Section
+          title="Badges"
+          right={
+            <Text style={[typography.numeric, { color: colors.textMuted, fontSize: 15 }]}>
+              {progression.unlockedBadgeCount}/{progression.badges.length}
+            </Text>
+          }
+        >
+          <View>
+            {progression.badges.map((badge, index) => (
+              <BadgeRow
+                key={badge.id}
+                badge={badge}
+                last={index === progression.badges.length - 1}
+              />
+            ))}
+          </View>
+        </Section>
+      </Reveal>
+
+      <Reveal index={8}>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          Colors compare this week&apos;s direct sets with general reference ranges. Rank tracks
+          long-term training history. Neither measures fatigue or recovery, and strength stays
+          exercise-specific because different machines are not comparable.
+        </Text>
       </Reveal>
     </ScrollView>
   );
+}
+
+function Section({
+  title,
+  right,
+  children,
+}: {
+  title: string;
+  right?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Tile title={title} aside={right}>
+      {children}
+    </Tile>
+  );
+}
+
+function EmptyText({ children }: { children: ReactNode }) {
+  const { colors, typography } = useTheme();
+  return <Text style={[typography.caption, { color: colors.textMuted }]}>{children}</Text>;
 }
 
 function HeatLegend() {
@@ -540,51 +441,32 @@ function HeatLegend() {
   );
 }
 
-function RankProgressPanel({ rank }: { rank: MuscleRankProgress }) {
+function RankLine({ rank }: { rank: MuscleRankProgress }) {
   const { colors, typography } = useTheme();
   const rankColor = RANK_TIER_COLORS[rank.rank];
 
   return (
-    <View
-      accessibilityLabel={rankAccessibilityLabel(rank)}
-      style={[
-        styles.rankPanel,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <View style={[styles.rankMark, { backgroundColor: withAlpha(rankColor, '24') }]}>
-        <Text style={[typography.micro, { color: rankColor }]}>RANK</Text>
-        <Text style={[typography.heading, { color: rankColor }]}>
-          {rank.rank === 'Unranked' ? '—' : rank.rank}
+    <View accessibilityLabel={rankAccessibilityLabel(rank)} style={{ gap: 6 }}>
+      <View style={styles.headerRow}>
+        <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
+          {rank.rank === 'Unranked' ? 'Not ranked yet' : `Rank ${rank.rank}`}
+        </Text>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          {rank.directSets} sets, {rank.sessionCount} sessions
         </Text>
       </View>
-      <View style={styles.rankCopy}>
-        <View style={styles.headerRow}>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-            {rank.rank === 'Unranked' ? 'Not ranked yet' : 'Training evidence'}
-          </Text>
-          <Text style={[typography.micro, { color: colors.textMuted }]}>
-            {rank.directSets} sets · {rank.sessionCount} sessions
-          </Text>
-        </View>
-        <ProgressBar
-          progress={rank.progress}
-          color={rankColor}
-          style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
-        />
-        <Text style={[typography.micro, { color: colors.textMuted }]}>
-          {rank.nextRank
-            ? `${rank.setsRemaining} ${rank.setsRemaining === 1 ? 'set' : 'sets'} and ${rank.sessionsRemaining} ${rank.sessionsRemaining === 1 ? 'session' : 'sessions'} to Rank ${rank.nextRank}`
-            : 'Highest evidence rank reached'}
-        </Text>
-      </View>
+      <ProgressLine progress={rank.progress} color={rankColor} />
+      <Text style={[typography.caption, { color: colors.textMuted }]}>
+        {rank.nextRank
+          ? `${rank.setsRemaining} ${rank.setsRemaining === 1 ? 'set' : 'sets'} and ${rank.sessionsRemaining} ${rank.sessionsRemaining === 1 ? 'session' : 'sessions'} to Rank ${rank.nextRank}`
+          : 'Highest rank reached'}
+      </Text>
     </View>
   );
 }
 
-function BadgeRow({ badge }: { badge: BodyBadge }) {
+function BadgeRow({ badge, last }: { badge: BodyBadge; last: boolean }) {
   const { colors, typography } = useTheme();
-  const tone = badge.unlocked ? colors.success : colors.textMuted;
   const progressLabel = badge.unlocked
     ? 'Unlocked'
     : badge.unit === '%'
@@ -594,208 +476,33 @@ function BadgeRow({ badge }: { badge: BodyBadge }) {
   return (
     <View
       accessibilityLabel={`${badge.name}. ${badge.description} ${progressLabel}`}
-      style={styles.badgeRow}
-    >
-      <View
-        style={[
-          styles.badgeIcon,
-          { backgroundColor: badge.unlocked ? colors.successSoft : colors.surfaceRaised },
-        ]}
-      >
-        <List.Icon icon={badge.icon} color={tone} />
-      </View>
-      <View style={styles.badgeCopy}>
-        <View style={styles.headerRow}>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{badge.name}</Text>
-          <Text style={[typography.micro, { color: tone }]}>{progressLabel}</Text>
-        </View>
-        <Text style={[typography.caption, { color: colors.textMuted }]}>{badge.description}</Text>
-        {!badge.unlocked ? (
-          <ProgressBar
-            progress={badge.progress}
-            color={colors.accent}
-            style={[styles.badgeProgress, { backgroundColor: colors.surfacePressed }]}
-          />
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
-function DetailCard({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  children: ReactNode;
-}) {
-  const { colors, radius, spacing, typography } = useTheme();
-
-  return (
-    <Card
-      mode="contained"
       style={[
-        styles.card,
+        styles.badgeRow,
         {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: radius.xl,
+          borderBottomColor: colors.border,
+          borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
+          opacity: badge.unlocked ? 1 : 0.7,
         },
       ]}
     >
-      <Card.Content style={{ gap: spacing.sm }}>
-        <View>
-          <Text style={[typography.micro, { color: colors.accent }]}>{eyebrow}</Text>
-          <Text style={[typography.subheading, { color: colors.textPrimary }]}>{title}</Text>
-        </View>
-        {children}
-      </Card.Content>
-    </Card>
-  );
-}
-
-function MetricBlock({ label, value, detail }: { label: string; value: string; detail: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={[styles.metricBlock, { backgroundColor: colors.surfaceRaised }]}>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
-      <Text numberOfLines={1} style={[typography.micro, { color: colors.textMuted }]}>
-        {detail}
-      </Text>
-    </View>
-  );
-}
-
-function SignalFact({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={styles.signalFact}>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function RecentSessionBlock({
-  session,
-  units,
-  onOpen,
-}: {
-  session: MuscleRecentSession;
-  units: Units;
-  onOpen: () => void;
-}) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View
-      style={[
-        styles.recentPanel,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <View style={styles.headerRow}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[typography.micro, { color: colors.textMuted }]}>Last direct session</Text>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-            {session.dayName}
-          </Text>
-        </View>
-        <Text style={[typography.micro, { color: colors.textMuted }]}>
-          {formatDate(session.performedAt)}
-        </Text>
-      </View>
-
-      <View style={styles.signalFacts}>
-        <SignalFact label="sets" value={String(session.sets)} />
-        <SignalFact label="volume" value={formatVolumeLoad(session.volumeKg, units)} />
-        <SignalFact
-          label="RIR"
-          value={session.averageRir != null ? String(session.averageRir) : '--'}
-        />
-        <SignalFact
-          label="form"
-          value={session.averageFormScore != null ? `${session.averageFormScore}/100` : '--'}
-        />
-      </View>
-
-      {session.exercises.slice(0, 3).map((exercise, index) => (
-        <View key={exercise.exerciseId}>
-          <List.Item
-            title={exercise.name}
-            description={`${exercise.sets} sets · ${formatVolumeLoad(exercise.volumeKg, units)} · best ${exercise.bestSetLabel}`}
-            left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
-            right={() =>
-              exercise.averageFormScore != null ? (
-                <Chip compact mode="flat" icon="camera-outline" style={styles.formChip}>
-                  {exercise.averageFormScore}
-                </Chip>
-              ) : null
-            }
-            titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-            descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-          />
-          {index < Math.min(session.exercises.length, 3) - 1 ? <Divider /> : null}
-        </View>
-      ))}
-
-      <Button compact mode="text" icon="open-in-new" onPress={onOpen}>
-        Open source session
-      </Button>
-    </View>
-  );
-}
-
-function ProgramExerciseItem({
-  exercise,
-  showDivider,
-}: {
-  exercise: MuscleProgramExercise;
-  showDivider: boolean;
-}) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View>
-      <List.Item
-        title={exercise.name}
-        description={`${exercise.dayName} · ${exercise.workingSets} x ${exercise.repRangeLabel} · RIR ${exercise.targetRir} · ${exercise.role}`}
-        left={(props) => <List.Icon {...props} icon="dumbbell" color={colors.accent} />}
-        titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-        descriptionStyle={[typography.caption, { color: colors.textMuted }]}
+      <MaterialCommunityIcons
+        name={badge.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+        size={22}
+        color={badge.unlocked ? colors.accent : colors.textMuted}
       />
-      {showDivider ? <Divider /> : null}
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{badge.name}</Text>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>{badge.description}</Text>
+      </View>
+      <Text
+        style={[
+          typography.captionBold,
+          { color: badge.unlocked ? colors.accent : colors.textSecondary },
+        ]}
+      >
+        {progressLabel}
+      </Text>
     </View>
-  );
-}
-
-function EmptyListItem({
-  icon,
-  title,
-  description,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-}) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <List.Item
-      title={title}
-      description={description}
-      left={(props) => <List.Icon {...props} icon={icon} color={colors.accent} />}
-      titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-      descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-      style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-    />
   );
 }
 
@@ -843,19 +550,6 @@ function muscleTone(item: MuscleIntelligence, colors: SemanticColors) {
   };
 }
 
-function signalIcon(kind: MuscleIntelligence['signal']['kind']): string {
-  switch (kind) {
-    case 'train':
-      return 'target';
-    case 'maintain':
-      return 'chart-line';
-    case 'recover':
-      return 'sleep';
-    case 'build_baseline':
-      return 'database-plus-outline';
-  }
-}
-
 function lastTrainedLabel(selected: MuscleIntelligence): string {
   if (!selected.trainingLoad.lastTrainedAt) return 'No direct session yet';
   if (selected.trainingLoad.lastTrainedDaysAgo === 0) return 'Trained today';
@@ -875,129 +569,43 @@ function withAlpha(hex: string, alpha: string): string {
 }
 
 const styles = StyleSheet.create({
+  weightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  bodyStageFrame: {
-    borderRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.45,
-    shadowRadius: 26,
-    elevation: 12,
-  },
   bodyStage: {
-    minHeight: 456,
-    borderRadius: 18,
-    borderWidth: 1,
+    minHeight: 440,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    overflow: 'hidden',
   },
-  rankPanel: {
-    minHeight: 86,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 10,
+  statRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  inlineButton: {
+    alignSelf: 'flex-start',
+    marginLeft: -12,
+  },
+  badgeRow: {
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  rankMark: {
-    width: 58,
-    minHeight: 58,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rankCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: 7,
-  },
-  metricGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  metricBlock: {
-    flex: 1,
-    minHeight: 76,
-    borderRadius: 14,
-    paddingHorizontal: 10,
     paddingVertical: 10,
-    justifyContent: 'space-between',
-  },
-  signalPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 12,
-    gap: 10,
-  },
-  signalFacts: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  signalFact: {
-    flex: 1,
-    minWidth: 0,
-  },
-  recentPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 10,
-    gap: 4,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  quickActionButton: {
-    flex: 1,
-  },
-  formChip: {
-    alignSelf: 'center',
-  },
-  progress: {
-    height: 7,
-    borderRadius: 999,
-  },
-  badgeRow: {
-    minHeight: 72,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-  },
-  badgeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  badgeCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: 3,
-  },
-  badgeProgress: {
-    height: 4,
-    borderRadius: 999,
-    marginTop: 3,
   },
   heatLegend: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 10,
-    marginTop: -4,
+    gap: 12,
   },
   heatLegendItem: {
     flexDirection: 'row',
@@ -1005,16 +613,8 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   heatLegendDot: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: 999,
-  },
-  fatigueMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  listPanel: {
-    borderRadius: 14,
   },
 });

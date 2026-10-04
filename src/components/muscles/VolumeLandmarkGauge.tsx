@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { BODY_HEAT_COLORS, heatColorForVolumeZone } from '@/domain/muscles/muscleMap';
+import { BODY_HEAT_COLORS } from '@/domain/muscles/muscleMap';
 import type { VolumeLandmarks, VolumeZone } from '@/domain/workouts/volumeLandmarks';
 import { useTheme } from '@/theme';
 
@@ -27,10 +27,8 @@ function buildVolumeGaugeSegments(landmarks: VolumeLandmarks, domainMax: number)
 
 /**
  * Segmented MEV/MAV/MRV reference gauge with a marker at the current weekly
- * set count — shared by Body, Plan, and Progress so the same volume data
- * reads the same way everywhere, rather than each screen's own flat
- * single-color progress bar (which couldn't distinguish below-MV from
- * exactly-at-MEV, since both render as an empty bar).
+ * set count. Shared by Body, Plan, and Progress so the same volume data reads
+ * the same way everywhere, and below-MV stays distinguishable from at-MEV.
  */
 export function VolumeLandmarkGauge({
   landmarks,
@@ -47,7 +45,7 @@ export function VolumeLandmarkGauge({
     () => buildVolumeGaugeSegments(landmarks, domainMax),
     [landmarks, domainMax],
   );
-  const markerColor = heatColorForVolumeZone(zone);
+  const markerColor = zone === 'below_mv' ? colors.textMuted : colors.textPrimary;
   const markerPct = Math.min(98, Math.max(2, (weeklySets / domainMax) * 100));
 
   return (
@@ -61,7 +59,7 @@ export function VolumeLandmarkGauge({
               {
                 left: `${segment.startPct}%`,
                 width: `${segment.widthPct}%`,
-                backgroundColor: withAlpha(segment.color, '38'),
+                backgroundColor: withAlpha(segment.color, '66'),
               },
             ]}
           />
@@ -83,11 +81,11 @@ function withAlpha(hex: string, alpha: string): string {
 
 const styles = StyleSheet.create({
   gaugeWrap: {
-    height: 18,
+    height: 14,
     justifyContent: 'center',
   },
   gaugeTrack: {
-    height: 12,
+    height: 6,
     borderRadius: 999,
     overflow: 'hidden',
   },
@@ -98,11 +96,11 @@ const styles = StyleSheet.create({
   },
   gaugeMarker: {
     position: 'absolute',
-    top: -3,
-    width: 4,
-    height: 18,
+    top: 0,
+    width: 3,
+    height: 14,
     borderRadius: 2,
-    borderWidth: 1.5,
-    transform: [{ translateX: -2 }],
+    borderWidth: 1,
+    transform: [{ translateX: -1.5 }],
   },
 });

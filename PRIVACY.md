@@ -12,6 +12,10 @@ Your training profile, program, workout history, personal records, and settings 
 
 The optional Form Check feature uses your device's camera to analyze exercise form in real time. Video frames are processed entirely on your device to estimate body position and rep quality — they are never recorded, stored, uploaded, or transmitted anywhere, including to us. Nothing from the camera leaves your phone.
 
+## Photo library and camera (Body tracking)
+
+The optional Body tracking feature lets you attach a progress photo to a weight/measurement entry, either by picking one from your photo library or taking a new one. That photo is copied into this app's own private storage on your device — it is never uploaded anywhere, including to us, and stays local the same way your workout history does. Deleting a progress photo in the app removes that copy from your device.
+
 ## Optional account and cloud sync
 
 Signing in is entirely optional — GymBroFitness works fully without an account. If you choose to create an account (email and password), we use this only to:

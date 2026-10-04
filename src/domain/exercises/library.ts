@@ -1,6 +1,12 @@
 import type { Exercise, MuscleGroup } from '@/types';
 
-import { EXERCISE_CATALOG, getExercise } from './catalog';
+import {
+  EXERCISE_CATALOG,
+  EXTENDED_EXERCISES,
+  EXTENDED_IMAGE_BASE,
+  EXTENDED_IMAGES,
+  getExercise,
+} from './catalog';
 import libraryData from './seed/library.json';
 import repDbMediaData from './seed/repdb-media.json';
 
@@ -29,6 +35,16 @@ export const EXERCISE_LIBRARY = libraryData as LibraryExercise[];
 
 const CATALOG_LIBRARY_PREFIX = 'catalog:';
 const REPDB_MEDIA = repDbMediaData.media as Readonly<Record<string, string[]>>;
+/** free-exercise-db id -> RepDB illustration of the same-named exercise. */
+const REPDB_REFERENCE_TWINS = repDbMediaData.references as Readonly<Record<string, string[]>>;
+
+/** RepDB image path -> loggable exercise using it, to link reference twins to something loggable. */
+const EXERCISE_BY_REPDB_IMAGE = new Map<string, string>([
+  ...Object.entries(REPDB_MEDIA).flatMap(([id, paths]) => paths.map((path) => [path, id] as const)),
+  ...Object.entries(EXTENDED_IMAGES).flatMap(([id, paths]) =>
+    paths.map((path) => [path, id] as const),
+  ),
+]);
 const REPDB_IMAGE_BASE = `https://raw.githubusercontent.com/RepDB/exercise-dataset/${repDbMediaData.commit}/`;
 
 /**
@@ -147,9 +163,12 @@ const catalogIdsRepresentedByReferences = new Set(
   }),
 );
 
-export const CATALOG_LIBRARY_SUPPLEMENTS: LibraryExercise[] = EXERCISE_CATALOG.filter(
-  (exercise) => !catalogIdsRepresentedByReferences.has(exercise.id),
-).map(catalogExerciseAsLibraryEntry);
+export const CATALOG_LIBRARY_SUPPLEMENTS: LibraryExercise[] = [
+  ...EXERCISE_CATALOG,
+  ...EXTENDED_EXERCISES,
+]
+  .filter((exercise) => !catalogIdsRepresentedByReferences.has(exercise.id))
+  .map(catalogExerciseAsLibraryEntry);
 
 export const BROWSABLE_EXERCISE_LIBRARY: LibraryExercise[] = [
   ...EXERCISE_LIBRARY,
@@ -209,14 +228,18 @@ export function preferredLibraryImages(reference: LibraryExercise): string[] {
     const repDbImages = repDbImagesForCatalog(loggableExercise);
     if (repDbImages.length > 0) return repDbImages;
   }
-  return reference.images.map(referenceImageUrl);
+  return referenceImages(reference);
 }
 
 function pinReferenceImages(reference: LibraryExercise): LibraryExercise {
-  return {
-    ...reference,
-    images: reference.images.map(referenceImageUrl),
-  };
+  return { ...reference, images: referenceImages(reference) };
+}
+
+/** RepDB twin illustration when one exists, otherwise the pinned free-exercise-db photos. */
+function referenceImages(reference: LibraryExercise): string[] {
+  const twin = REPDB_REFERENCE_TWINS[reference.id];
+  if (twin?.length) return twin.map((path) => `${REPDB_IMAGE_BASE}${path}`);
+  return reference.images.map(referenceImageUrl);
 }
 
 export function referenceImageUrl(image: string): string {
@@ -227,11 +250,18 @@ export function referenceImageUrl(image: string): string {
 }
 
 function repDbImagesForCatalog(exercise: Exercise): string[] {
-  return (REPDB_MEDIA[exercise.id] ?? []).map((path) => `${REPDB_IMAGE_BASE}${path}`);
+  const curated = REPDB_MEDIA[exercise.id];
+  if (curated?.length) return curated.map((path) => `${REPDB_IMAGE_BASE}${path}`);
+  return (EXTENDED_IMAGES[exercise.id] ?? []).map((path) => `${EXTENDED_IMAGE_BASE}${path}`);
 }
 
 function reviewedCatalogIdForReference(reference: LibraryExercise): string | null {
-  return REFERENCE_TO_CATALOG_ID[reference.id] ?? getExercise(reference.name)?.id ?? null;
+  const twin = REPDB_REFERENCE_TWINS[reference.id]?.[0];
+  return (
+    REFERENCE_TO_CATALOG_ID[reference.id] ??
+    getExercise(reference.name)?.id ??
+    (twin ? (EXERCISE_BY_REPDB_IMAGE.get(twin) ?? null) : null)
+  );
 }
 
 function catalogExerciseAsLibraryEntry(exercise: Exercise): LibraryExercise {

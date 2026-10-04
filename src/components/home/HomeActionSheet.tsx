@@ -6,12 +6,12 @@ import {
 } from '@gorhom/bottom-sheet';
 import type { ElementRef, RefObject } from 'react';
 import { useCallback } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Button, Chip, Icon, List } from 'react-native-paper';
+import { Text, View } from 'react-native';
+import { Button } from 'react-native-paper';
 
 import { useTheme } from '@/theme';
 
-export type HomeSheet = 'swap' | 'weakPoint' | 'streak';
+export type HomeSheet = 'swap' | 'streak';
 
 type SheetModalRef = ElementRef<typeof BottomSheetModal>;
 
@@ -34,10 +34,10 @@ export function HomeActionSheet({
   onDismiss,
   onConfirmSwap,
 }: HomeActionSheetProps) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing, typography } = useTheme();
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.52} />
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.6} />
     ),
     [],
   );
@@ -45,151 +45,44 @@ export function HomeActionSheet({
   return (
     <BottomSheetModal
       ref={modalRef}
-      snapPoints={['42%', '58%']}
+      enableDynamicSizing
       onDismiss={onDismiss}
-      backgroundStyle={{ backgroundColor: colors.surface }}
+      backgroundStyle={{ backgroundColor: colors.surface, borderRadius: radius.xl }}
       handleIndicatorStyle={{ backgroundColor: colors.borderStrong }}
       backdropComponent={renderBackdrop}
     >
-      <BottomSheetView style={[styles.sheet, { padding: spacing.lg }]}>
+      <BottomSheetView
+        style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.x3l, gap: spacing.md }}
+      >
         {activeSheet === 'swap' && (
-          <SwapSheet
-            currentDayName={currentDayName}
-            swapLabel={swapLabel}
-            onConfirmSwap={onConfirmSwap}
-          />
+          <>
+            <Text style={[typography.title, { color: colors.textPrimary }]}>
+              Switch to {swapLabel}?
+            </Text>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>
+              Only today changes. {currentDayName} stays in your week, so use this when equipment is
+              taken or something is sore.
+            </Text>
+            <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+              <Button mode="contained" onPress={onConfirmSwap} contentStyle={{ minHeight: 52 }}>
+                Switch to {swapLabel}
+              </Button>
+              <Button mode="text" onPress={() => modalRef.current?.dismiss()}>
+                Keep {currentDayName}
+              </Button>
+            </View>
+          </>
         )}
-        {activeSheet === 'weakPoint' && <WeakPointSheet />}
-        {activeSheet === 'streak' && <StreakSheet streakDays={streakDays} />}
+        {activeSheet === 'streak' && (
+          <>
+            <Text style={[typography.jumbo, { color: colors.textPrimary }]}>{streakDays}</Text>
+            <Text style={[typography.title, { color: colors.textPrimary }]}>day streak</Text>
+            <Text style={[typography.body, { color: colors.textSecondary }]}>
+              Your streak stays alive while your last completed workout was today or yesterday.
+            </Text>
+          </>
+        )}
       </BottomSheetView>
     </BottomSheetModal>
   );
 }
-
-function SheetHeader({ icon, title, eyebrow }: { icon: string; title: string; eyebrow: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={styles.sheetHeader}>
-      <View style={[styles.headerIcon, { backgroundColor: colors.accentSoft }]}>
-        <Icon source={icon} size={18} color={colors.accent} />
-      </View>
-      <View>
-        <Text style={[typography.micro, { color: colors.textMuted }]}>{eyebrow}</Text>
-        <Text style={[typography.heading, { color: colors.textPrimary }]}>{title}</Text>
-      </View>
-    </View>
-  );
-}
-
-function SwapSheet({
-  currentDayName,
-  swapLabel,
-  onConfirmSwap,
-}: {
-  currentDayName: string;
-  swapLabel: string;
-  onConfirmSwap: () => void;
-}) {
-  const { colors, spacing, typography } = useTheme();
-
-  return (
-    <View style={{ gap: spacing.lg }}>
-      <SheetHeader icon="swap-horizontal" eyebrow="Program adjustment" title="Switch today?" />
-      <Text style={[typography.body, { color: colors.textSecondary }]}>
-        Keep the week coherent: swapping changes today&apos;s training day, not the whole block.
-      </Text>
-      <View style={{ gap: spacing.xs }}>
-        <List.Item
-          title={`Keep ${currentDayName}`}
-          description="Best if recovery and equipment are normal."
-          left={(props) => <List.Icon {...props} icon="calendar-check" />}
-          titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-          descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-        />
-        <List.Item
-          title={`Swap to ${swapLabel}`}
-          description="Use this when today's main pattern is blocked or sore."
-          left={(props) => <List.Icon {...props} icon="shuffle-variant" />}
-          titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-          descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-        />
-      </View>
-      <Button mode="contained" icon="swap-horizontal" onPress={onConfirmSwap}>
-        Swap to {swapLabel}
-      </Button>
-    </View>
-  );
-}
-
-function WeakPointSheet() {
-  const { colors, spacing, typography } = useTheme();
-
-  return (
-    <View style={{ gap: spacing.lg }}>
-      <SheetHeader icon="target" eyebrow="Auto-regulation" title="Weak point focus" />
-      <Text style={[typography.body, { color: colors.textSecondary }]}>
-        Pick one bias when you want today&apos;s session to lean toward a lagging area. This will
-        eventually feed the generator instead of being a manual tweak.
-      </Text>
-      <View style={styles.chipWrap}>
-        {['Upper chest', 'Side delts', 'Triceps lockout', 'Pump finish'].map((label) => (
-          <Chip key={label} compact mode="flat" disabled>
-            {label}
-          </Chip>
-        ))}
-      </View>
-      <Button mode="outlined" icon="lock-outline" disabled>
-        Connect to preferences later
-      </Button>
-    </View>
-  );
-}
-
-function StreakSheet({ streakDays }: { streakDays: number }) {
-  const { colors, spacing, typography } = useTheme();
-
-  return (
-    <View style={{ gap: spacing.lg }}>
-      <SheetHeader icon="fire" eyebrow="Consistency" title={`${streakDays} day streak`} />
-      <View style={[styles.streakPanel, { backgroundColor: colors.accentSoft }]}>
-        <Text style={[typography.display, { color: colors.accent }]}>{streakDays}</Text>
-        <Text style={[typography.body, { color: colors.textPrimary }]}>
-          The streak stays alive if the last completed workout was today or yesterday.
-        </Text>
-      </View>
-      <Text style={[typography.caption, { color: colors.textMuted }]}>
-        Streaks should motivate consistency, not punish planned rest days. Once persistence lands,
-        rest days can preserve the chain when they are part of the program.
-      </Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  sheet: {
-    flex: 1,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  headerIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  streakPanel: {
-    borderRadius: 16,
-    padding: 16,
-    gap: 6,
-  },
-});

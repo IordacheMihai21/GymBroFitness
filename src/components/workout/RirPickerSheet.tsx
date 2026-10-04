@@ -60,11 +60,11 @@ export function RirPickerSheet({
       <BottomSheetView
         style={[styles.sheet, { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl }]}
       >
-        <Text style={[typography.subheading, { color: colors.textPrimary, textAlign: 'center' }]}>
+        <Text style={[typography.heading, { color: colors.textPrimary, textAlign: 'center' }]}>
           Reps in reserve
         </Text>
         <Text style={[typography.caption, { color: colors.textMuted, textAlign: 'center' }]}>
-          0 = failure · 5 = very easy
+          0 is failure, 5 is very easy
         </Text>
 
         <WheelPicker
@@ -75,10 +75,10 @@ export function RirPickerSheet({
           itemHeight={40}
           visibleItemCount={5}
           width="60%"
-          itemTextStyle={[typography.heading, { color: colors.textPrimary }]}
+          itemTextStyle={[typography.numeric, { color: colors.textPrimary, fontSize: 20 }]}
           overlayItemStyle={[
             styles.overlayItem,
-            { backgroundColor: colors.accentSoft, borderRadius: radius.md },
+            { backgroundColor: colors.surfacePressed, borderRadius: radius.md },
           ]}
         />
 
@@ -86,7 +86,7 @@ export function RirPickerSheet({
           Set RIR {formatRir(draft)}
         </Button>
         <Button mode="text" onPress={onClear}>
-          Not sure · leave RIR empty
+          Not sure, leave it empty
         </Button>
       </BottomSheetView>
     </BottomSheetModal>

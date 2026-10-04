@@ -3,6 +3,7 @@ import { useColorScheme } from 'react-native';
 import {
   darkColors,
   elevation,
+  fonts,
   lightColors,
   MIN_TOUCH_TARGET,
   radius,
@@ -36,5 +37,12 @@ export function useTheme(): Theme {
   };
 }
 
-export { MIN_TOUCH_TARGET, spacing, radius, typography, elevation };
+/**
+ * Paper's MD3 TextInput derives its corner radius straight from `roundness`,
+ * which is tuned for buttons (5x). Pass this as `theme` on inputs so they use
+ * the same radius as other controls.
+ */
+export const inputTheme = { roundness: radius.md } as const;
+
+export { MIN_TOUCH_TARGET, spacing, radius, typography, elevation, fonts };
 export type { SemanticColors };

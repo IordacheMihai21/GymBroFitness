@@ -3,6 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo-google-fonts/geist": "^0.4.2",
+    "@expo-google-fonts/geist-mono": "^0.4.3",
     "@expo/vector-icons": "^15.0.2",
     "@gorhom/bottom-sheet": "^5.2.14",
     "@quidone/react-native-wheel-picker": "^1.7.1",
@@ -24,6 +26,7 @@
     "expo-font": "~57.0.1",
     "expo-haptics": "~57.0.3",
     "expo-image": "~57.0.5",
+    "expo-image-picker": "~57.0.20",
     "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.10",
     "expo-notifications": "~57.0.20",
@@ -82,7 +85,7 @@
   },
   "scripts": {
     "start": "expo start",
-    "postinstall": "patch-package",
+    "postinstall": "patch-package && node scripts/import-repdb-catalog.mjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
@@ -92,7 +95,9 @@
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "exercises:repdb": "node scripts/import-repdb-media.mjs && node scripts/import-repdb-catalog.mjs",
+    "exercises:audit": "tsx --tsconfig tsconfig.json scripts/audit-exercise-media.ts"
   },
   "private": true
 }

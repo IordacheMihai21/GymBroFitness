@@ -1,16 +1,65 @@
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Redirect, Tabs, usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { ActivityIndicator, type ColorValue, Keyboard, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  FadeInDown,
+  FadeOutDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { popSpring } from '@/components/ui/motion';
+import { PressableScale } from '@/components/ui/PressableScale';
+import { ProgressLine } from '@/components/ui/ProgressLine';
+import { TAB_BAR_HEIGHT } from '@/constants/layout';
 import { getInProgressWorkoutSession } from '@/domain/workouts/historyStore';
 import { useTrainingProfile } from '@/hooks/useTrainingProfile';
-import { useTheme } from '@/theme';
+import { fonts, useTheme } from '@/theme';
 import type { WorkoutSession } from '@/types';
 
+type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
+
+function tabIcon(active: IconName, inactive: IconName) {
+  return function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
+    return <AnimatedTabIcon name={focused ? active : inactive} color={color} focused={focused} />;
+  };
+}
+
+/** Icon that gives a short spring kick when its tab becomes active. */
+function AnimatedTabIcon({
+  name,
+  color,
+  focused,
+}: {
+  name: IconName;
+  color: ColorValue;
+  focused: boolean;
+}) {
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    if (!focused) return;
+    scale.value = withSequence(withTiming(0.86, { duration: 80 }), withSpring(1, popSpring));
+  }, [focused, scale]);
+
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <Animated.View style={style}>
+      <MaterialCommunityIcons name={name} color={color} size={24} />
+    </Animated.View>
+  );
+}
+
 export default function TabsLayout() {
-  const { colors, typography } = useTheme();
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const profile = useTrainingProfile();
 
   if (profile.loading) {
@@ -29,83 +78,66 @@ export default function TabsLayout() {
     <View style={styles.container}>
       <Tabs
         backBehavior="history"
+        screenListeners={{ tabPress: () => void Haptics.selectionAsync() }}
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: colors.accent,
+          tabBarActiveTintColor: colors.textPrimary,
           tabBarInactiveTintColor: colors.textMuted,
-          tabBarShowLabel: true,
           tabBarHideOnKeyboard: true,
-          tabBarLabelStyle: { fontSize: typography.micro.fontSize, fontWeight: '600' },
-          tabBarActiveBackgroundColor: colors.accentSoft,
-          tabBarItemStyle: styles.tabItem,
-          tabBarStyle: [
-            styles.tabBar,
-            {
-              backgroundColor: colors.surfaceRaised,
-              borderColor: colors.border,
-            },
-          ],
+          tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 11 },
+          tabBarStyle: {
+            backgroundColor: colors.background,
+            borderTopColor: colors.border,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            height: TAB_BAR_HEIGHT + insets.bottom,
+            paddingTop: 6,
+            elevation: 0,
+          },
         }}
       >
         <Tabs.Screen
           name="index"
-          options={{
-            title: 'Today',
-            tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
-          }}
+          options={{ title: 'Today', tabBarIcon: tabIcon('home-variant', 'home-variant-outline') }}
         />
         <Tabs.Screen
           name="program"
           options={{
             title: 'Plan',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="clipboard" color={color} size={size} />
-            ),
+            tabBarIcon: tabIcon('clipboard-text', 'clipboard-text-outline'),
           }}
         />
         <Tabs.Screen
           name="body"
-          options={{
-            title: 'Body',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="body-outline" color={color} size={size} />
-            ),
-          }}
+          options={{ title: 'Body', tabBarIcon: tabIcon('human', 'human-handsdown') }}
         />
         <Tabs.Screen
           name="analytics"
-          options={{
-            title: 'Progress',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="stats-chart" color={color} size={size} />
-            ),
-          }}
+          options={{ title: 'Progress', tabBarIcon: tabIcon('chart-line', 'chart-line-variant') }}
         />
         <Tabs.Screen
           name="library"
           options={{
             title: 'Exercises',
-            tabBarIcon: ({ color, size }) => <Ionicons name="library" color={color} size={size} />,
+            tabBarIcon: tabIcon('dumbbell', 'dumbbell'),
           }}
         />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="workout"
-          options={{
-            href: null,
-          }}
-        />
+        <Tabs.Screen name="profile" options={{ href: null }} />
+        <Tabs.Screen name="workout" options={{ href: null }} />
       </Tabs>
       <ActiveWorkoutBar />
+      {/* Scrim under the status bar so scrolled content doesn't collide with the clock. */}
+      <View
+        pointerEvents="none"
+        style={[styles.statusScrim, { height: insets.top, backgroundColor: colors.background }]}
+      />
     </View>
   );
 }
 
+/**
+ * The one persistent "resume" affordance outside Today (Today renders its own
+ * resume hero, so the bar would duplicate it there).
+ */
 function ActiveWorkoutBar() {
   const { colors, radius, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
@@ -113,8 +145,6 @@ function ActiveWorkoutBar() {
   const pathname = usePathname();
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [lastSessionId, setLastSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -135,13 +165,9 @@ function ActiveWorkoutBar() {
     };
   }, []);
 
-  const sessionId = session?.id ?? null;
-  if (sessionId !== lastSessionId) {
-    setLastSessionId(sessionId);
-    if (sessionId) setCollapsed(false);
+  if (!session || pathname === '/' || pathname.includes('/workout') || keyboardVisible) {
+    return null;
   }
-
-  if (!session || pathname.includes('/workout') || keyboardVisible) return null;
 
   const completedSets = session.exercises.reduce(
     (total, exercise) =>
@@ -152,71 +178,45 @@ function ActiveWorkoutBar() {
     (total, exercise) => total + exercise.sets.length,
     0,
   );
-  const bottom = Math.max(insets.bottom, spacing.sm) + 84;
-  const label = session.reviewStartedAt ? 'REVIEW WORKOUT' : 'RESUME WORKOUT';
-  const icon = session.reviewStartedAt ? 'clipboard-outline' : 'play-circle';
+  const verb = session.reviewStartedAt ? 'Review' : 'Resume';
 
-  const pill = (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Show ${label.toLowerCase()} bar for ${session.dayName}`}
-      onPress={() => setCollapsed(false)}
-      style={({ pressed }) => [
-        styles.activeWorkoutFab,
-        { backgroundColor: pressed ? colors.accentPressed : colors.accent },
-      ]}
+  return (
+    <Animated.View
+      entering={FadeInDown.springify().damping(18).stiffness(200)}
+      exiting={FadeOutDown.duration(160)}
+      style={[styles.barWrap, { bottom: TAB_BAR_HEIGHT + insets.bottom + spacing.sm }]}
     >
-      <Ionicons name={icon} color={colors.onAccent} size={26} />
-    </Pressable>
-  );
-
-  const bar = (
-    <>
-      <Pressable
+      <PressableScale
         accessibilityRole="button"
-        accessibilityLabel={`${session.reviewStartedAt ? 'Review' : 'Resume'} ${session.dayName}, ${completedSets} of ${plannedSets} sets complete`}
+        accessibilityLabel={`${verb} ${session.dayName}, ${completedSets} of ${plannedSets} sets complete`}
         onPress={() => router.push('/workout')}
-        style={({ pressed }) => [styles.activeWorkoutContent, pressed && { opacity: 0.7 }]}
+        style={[
+          styles.bar,
+          {
+            backgroundColor: colors.surfaceRaised,
+            borderColor: colors.border,
+            borderRadius: radius.xl,
+          },
+        ]}
       >
-        <View style={{ flex: 1 }}>
-          <Text style={[typography.micro, { color: colors.accent }]}>{label}</Text>
-          <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
-            {session.dayName}
-          </Text>
+        <View style={{ flex: 1, gap: 6 }}>
+          <View>
+            <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
+              {session.dayName}
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {completedSets} of {plannedSets} sets
+            </Text>
+          </View>
+          <ProgressLine progress={completedSets / Math.max(1, plannedSets)} height={2} />
         </View>
-        <Text style={[typography.captionBold, { color: colors.textSecondary }]}>
-          {completedSets}/{plannedSets} sets
-        </Text>
-        <Ionicons name={icon} color={colors.accent} size={28} />
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Minimize active workout bar"
-        hitSlop={10}
-        onPress={() => setCollapsed(true)}
-        style={styles.minimizeButton}
-      >
-        <Ionicons name="chevron-down" color={colors.textMuted} size={18} />
-      </Pressable>
-    </>
-  );
-
-  return collapsed ? (
-    <View style={[styles.activeWorkoutFabWrap, { bottom }]}>{pill}</View>
-  ) : (
-    <View
-      style={[
-        styles.activeWorkoutBar,
-        {
-          bottom,
-          backgroundColor: colors.surface,
-          borderColor: colors.accent,
-          borderRadius: radius.lg,
-        },
-      ]}
-    >
-      {bar}
-    </View>
+        <View
+          style={[styles.barAction, { backgroundColor: colors.accent, borderRadius: radius.md }]}
+        >
+          <Text style={[typography.captionBold, { color: colors.onAccent }]}>{verb}</Text>
+        </View>
+      </PressableScale>
+    </Animated.View>
   );
 }
 
@@ -229,60 +229,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabBar: {
+  statusScrim: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 10,
-    height: 72,
-    borderRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    elevation: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 5,
+    top: 0,
+    left: 0,
+    right: 0,
+    opacity: 0.94,
   },
-  tabItem: {
-    borderRadius: 14,
-    marginHorizontal: 2,
-  },
-  activeWorkoutBar: {
+  barWrap: {
     position: 'absolute',
     left: 16,
     right: 16,
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    elevation: 10,
   },
-  activeWorkoutContent: {
-    flex: 1,
+  bar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingLeft: 16,
+    paddingRight: 8,
+    paddingVertical: 8,
   },
-  minimizeButton: {
-    paddingLeft: 10,
-    paddingVertical: 4,
+  barAction: {
+    minHeight: 40,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  activeWorkoutFabWrap: {
-    position: 'absolute',
-    right: 16,
-  },
-  activeWorkoutFab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
   },
 });

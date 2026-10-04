@@ -7,7 +7,7 @@ import type {
   TrainingProgram,
 } from '@/types';
 
-import { availableExercises, requireExercise } from '../exercises/catalog';
+import { availableExercises, isAutoProgrammed, requireExercise } from '../exercises/catalog';
 import {
   DEFAULT_SETS,
   estimateExerciseMinutes,
@@ -129,7 +129,7 @@ export function exerciseCandidatesForProgramDay(
   const normalizedQuery = query.trim().toLowerCase();
   const focus = new Set(day.focus);
 
-  return availableExercises(preferences.equipment, excludedSlugs)
+  return availableExercises(preferences.equipment, excludedSlugs, { includeExtended: true })
     .filter((exercise) => !usedExerciseIds.has(exercise.id))
     .filter((exercise) => matchesQuery(exercise, normalizedQuery))
     .sort(
@@ -237,7 +237,8 @@ function scoreCandidate(
   focus: Set<MuscleGroup>,
   preferences: TrainingPreferences,
 ): number {
-  let score = 0;
+  // Curated exercises carry full coaching data, so they lead ties.
+  let score = isAutoProgrammed(exercise) ? 6 : 0;
   for (const muscle of exercise.primaryMuscles) {
     if (focus.has(muscle)) score += 40;
     if (preferences.musclePriorities.includes(muscle)) score += 16;

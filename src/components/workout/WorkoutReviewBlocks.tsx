@@ -1,5 +1,7 @@
-import { StyleSheet, Text, View, type DimensionValue } from 'react-native';
-import { Chip, ProgressBar } from 'react-native-paper';
+import { StyleSheet, Text, View } from 'react-native';
+
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { ProgressLine } from '@/components/ui/ProgressLine';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import type { WorkoutExerciseSummary } from '@/domain/workouts/history';
@@ -23,8 +25,7 @@ import { displayLoad, formatVolumeLoad, unitLabel } from '@/utils/units';
 
 /**
  * Small presentational blocks used by the workout screen's finish/review
- * summary. Pulled out of `workout.tsx` (originally 2,340 lines) since none of
- * these need that screen's live session state — each takes explicit props.
+ * summary. Each takes explicit props and renders on the canvas, not in a box.
  */
 
 export function Metric({ label, value }: { label: string; value: string }) {
@@ -32,8 +33,10 @@ export function Metric({ label, value }: { label: string; value: string }) {
 
   return (
     <View style={styles.metric}>
-      <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[typography.numeric, { color: colors.textPrimary }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
     </View>
   );
 }
@@ -42,9 +45,9 @@ export function AssistantFact({ label, value }: { label: string; value: string }
   const { colors, typography } = useTheme();
 
   return (
-    <View style={styles.assistantFact}>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+    <View style={styles.metric}>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={2}>
         {value}
       </Text>
     </View>
@@ -55,16 +58,12 @@ export function FinishMetric({ label, value }: { label: string; value: string })
   const { colors, typography } = useTheme();
 
   return (
-    <View
-      style={[
-        styles.finishMetric,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <Text style={[typography.numeric, { color: colors.textPrimary }]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
+    <View style={styles.finishMetric}>
+      <AnimatedNumber
+        value={value}
+        style={[typography.jumbo, { color: colors.textPrimary, fontSize: 32, lineHeight: 38 }]}
+      />
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
     </View>
   );
 }
@@ -81,25 +80,18 @@ export function TopExerciseRow({
   const { colors, typography } = useTheme();
   const bestLabel =
     exercise.bestE1rmKg != null
-      ? `e1RM ${displayLoad(exercise.bestE1rmKg, units)}${unitLabel(units)}`
+      ? `best e1RM ${displayLoad(exercise.bestE1rmKg, units)} ${unitLabel(units)}`
       : exercise.bestSetLabel;
 
   return (
-    <View
-      style={[
-        styles.reviewRow,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <View style={[styles.rankBadge, { backgroundColor: colors.accentSoft }]}>
-        <Text style={[typography.micro, { color: colors.accent }]}>#{rank}</Text>
-      </View>
-      <View style={styles.reviewRowText}>
-        <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+    <View style={[styles.row, { borderBottomColor: colors.border }]}>
+      <Text style={[typography.numeric, { color: colors.textMuted, width: 24 }]}>{rank}</Text>
+      <View style={styles.rowText}>
+        <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
           {exercise.name}
         </Text>
-        <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={1}>
-          {exercise.completedSets} sets · {formatVolumeLoad(exercise.volumeKg, units)} · {bestLabel}
+        <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
+          {exercise.completedSets} sets, {formatVolumeLoad(exercise.volumeKg, units)}, {bestLabel}
         </Text>
       </View>
     </View>
@@ -108,19 +100,22 @@ export function TopExerciseRow({
 
 export function MuscleDoseRow({ dose }: { dose: WorkoutMuscleDose }) {
   const { colors, typography } = useTheme();
-  const width = `${Math.max(6, Math.round(Math.min(1, dose.share) * 100))}%` as DimensionValue;
 
   return (
     <View style={{ gap: 6 }}>
-      <View style={styles.muscleDoseHeader}>
-        <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+      <View style={styles.spread}>
+        <Text style={[typography.body, { color: colors.textPrimary }]}>
           {MUSCLE_LABELS[dose.muscle]}
         </Text>
-        <Text style={[typography.micro, { color: colors.textMuted }]}>{dose.sets} sets</Text>
+        <Text style={[typography.numeric, { color: colors.textSecondary, fontSize: 15 }]}>
+          {dose.sets} sets
+        </Text>
       </View>
-      <View style={[styles.muscleDoseTrack, { backgroundColor: colors.surfacePressed }]}>
-        <View style={[styles.muscleDoseFill, { width, backgroundColor: colors.accent }]} />
-      </View>
+      <ProgressLine
+        progress={Math.max(0.04, Math.min(1, dose.share))}
+        trackColor="transparent"
+        height={3}
+      />
     </View>
   );
 }
@@ -128,11 +123,12 @@ export function MuscleDoseRow({ dose }: { dose: WorkoutMuscleDose }) {
 export function RirQualityBlock({ review }: { review: WorkoutRirReview | null }) {
   return (
     <QualityBlock
-      label="RIR discipline"
-      value={review ? `${review.accuracyPct}%` : 'missing'}
-      detail={review?.detail ?? 'Log RIR on working sets to unlock effort accuracy.'}
-      progress={review ? review.accuracyPct / 100 : 0}
-      title={review?.label ?? 'No effort signal yet'}
+      label="RIR accuracy"
+      value={review ? `${review.accuracyPct}%` : '-'}
+      detail={
+        review?.detail ?? 'Log RIR on your working sets to see how close you trained to target.'
+      }
+      title={review?.label ?? 'No RIR logged'}
     />
   );
 }
@@ -141,14 +137,13 @@ export function FormQualityBlock({ review }: { review: WorkoutFormReview | null 
   return (
     <QualityBlock
       label="Form AI"
-      value={review ? `${review.averageScore}/100` : 'off'}
+      value={review ? `${review.averageScore}/100` : '-'}
       detail={
         review
-          ? `${review.analyzedSetCount} analyzed sets · ${review.coveragePct}% coverage · ${review.cue}`
-          : 'Run a camera set on supported lifts to track technical quality.'
+          ? `${review.analyzedSetCount} sets analyzed (${review.coveragePct}% of the session). ${review.cue}`
+          : 'Film a set on a supported lift to score your technique.'
       }
-      progress={review ? review.averageScore / 100 : 0}
-      title={review?.label ?? 'No camera data'}
+      title={review?.label ?? 'No sets filmed'}
     />
   );
 }
@@ -158,69 +153,57 @@ function QualityBlock({
   value,
   title,
   detail,
-  progress,
 }: {
   label: string;
   value: string;
   title: string;
   detail: string;
-  progress: number;
 }) {
   const { colors, typography } = useTheme();
 
   return (
-    <View
-      style={[
-        styles.qualityBlock,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <View style={styles.sectionHeader}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-            {title}
-          </Text>
-        </View>
-        <Text style={[typography.captionBold, { color: colors.accent }]}>{value}</Text>
+    <View style={{ gap: 4 }}>
+      <View style={styles.spread}>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
+        <Text style={[typography.numeric, { color: colors.textPrimary }]}>{value}</Text>
       </View>
-      <ProgressBar
-        progress={Math.max(0, Math.min(1, progress))}
-        color={colors.accent}
-        style={[styles.progress, { backgroundColor: colors.surfacePressed }]}
-      />
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{detail}</Text>
+      <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{title}</Text>
+      <Text style={[typography.caption, { color: colors.textSecondary }]}>{detail}</Text>
     </View>
   );
 }
 
 export function ProgressionTargetPanel({ target, units }: { target: TargetToBeat; units: Units }) {
-  const { colors, typography } = useTheme();
-  const action = progressionActionLabel(target.decision.action);
+  const { colors, radius, spacing, typography } = useTheme();
 
   return (
     <View
       style={[
-        styles.progressionPanel,
-        { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+        styles.targetPanel,
+        {
+          borderColor: colors.border,
+          borderRadius: radius.lg,
+          padding: spacing.md,
+          gap: spacing.sm,
+        },
       ]}
     >
-      <View style={styles.sectionHeader}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[typography.micro, { color: colors.accent }]}>Progression target</Text>
-          <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-            {formatDecisionTarget(target.decision, units)}
-          </Text>
-        </View>
-        <Chip compact mode="flat" icon="trending-up">
-          {action}
-        </Chip>
+      <View style={styles.spread}>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          Target, {progressionActionLabel(target.decision.action).toLowerCase()}
+        </Text>
+        <Text style={[typography.numeric, { color: colors.accent }]}>
+          {formatDecisionTarget(target.decision, units)}
+        </Text>
       </View>
-      <View style={styles.progressionFacts}>
-        <AssistantFact label="last" value={formatProgressionSignal(target.lastSignal, units)} />
-        <AssistantFact label="win" value={formatTargetWinCondition(target, units)} />
+      <View style={styles.facts}>
+        <AssistantFact
+          label="Last time"
+          value={formatProgressionSignal(target.lastSignal, units)}
+        />
+        <AssistantFact label="To beat it" value={formatTargetWinCondition(target, units)} />
       </View>
-      <Text style={[typography.micro, { color: colors.textSecondary }]} numberOfLines={2}>
+      <Text style={[typography.caption, { color: colors.textSecondary }]} numberOfLines={3}>
         {target.decision.explanation}
       </Text>
     </View>
@@ -237,25 +220,16 @@ export function ProgressionReviewRow({
   const { colors, typography } = useTheme();
 
   return (
-    <View
-      style={[
-        styles.reviewRow,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-      ]}
-    >
-      <View style={[styles.rankBadge, { backgroundColor: colors.accentSoft }]}>
-        <Text style={[typography.micro, { color: colors.accent }]}>
-          {item.actionLabel.slice(0, 3)}
-        </Text>
-      </View>
-      <View style={styles.reviewRowText}>
-        <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
+    <View style={[styles.row, { borderBottomColor: colors.border }]}>
+      <View style={styles.rowText}>
+        <Text style={[typography.bodyBold, { color: colors.textPrimary }]} numberOfLines={1}>
           {item.exerciseName}
         </Text>
-        <Text style={[typography.micro, { color: colors.textMuted }]} numberOfLines={2}>
+        <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={2}>
           {formatTargetSummary(item.target, units)}
         </Text>
       </View>
+      <Text style={[typography.captionBold, { color: colors.accent }]}>{item.actionLabel}</Text>
     </View>
   );
 }
@@ -263,79 +237,39 @@ export function ProgressionReviewRow({
 const styles = StyleSheet.create({
   metric: {
     flex: 1,
-  },
-  assistantFact: {
-    flex: 1,
     minWidth: 0,
+    gap: 2,
   },
   finishMetric: {
     flexGrow: 1,
-    flexBasis: '47%',
-    minWidth: 130,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 12,
+    flexBasis: '45%',
     gap: 2,
+    paddingVertical: 4,
   },
-  sectionHeader: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
+    gap: 12,
+    minHeight: 56,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  reviewRow: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  rankBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewRowText: {
+  rowText: {
     flex: 1,
     minWidth: 0,
     gap: 2,
   },
-  muscleDoseHeader: {
+  spread: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 12,
   },
-  muscleDoseTrack: {
-    height: 7,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  muscleDoseFill: {
-    height: '100%',
-    borderRadius: 999,
-  },
-  qualityBlock: {
+  targetPanel: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 12,
-    gap: 10,
   },
-  progress: {
-    height: 6,
-    borderRadius: 999,
-  },
-  progressionPanel: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    padding: 12,
-    gap: 10,
-  },
-  progressionFacts: {
+  facts: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
 });

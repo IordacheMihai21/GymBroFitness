@@ -1,22 +1,13 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
-import {
-  Button,
-  Card,
-  Chip,
-  Dialog,
-  HelperText,
-  IconButton,
-  List,
-  Portal,
-  Searchbar,
-  TextInput,
-} from 'react-native-paper';
+import { Button, Dialog, HelperText, List, Portal, Searchbar, TextInput } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccountCard } from '@/components/settings/AccountCard';
+import { ListRow } from '@/components/ui/ListRow';
+import { Pill } from '@/components/ui/Pill';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
-import { ENVIRONMENT_EQUIPMENT, EXERCISE_CATALOG } from '@/domain/exercises/catalog';
+import { ALL_EXERCISES, ENVIRONMENT_EQUIPMENT } from '@/domain/exercises/catalog';
 import { generateProgram } from '@/domain/programs/generator';
 import {
   createBackupSnapshot,
@@ -50,7 +41,7 @@ import {
 import { resetActiveProgram, saveActiveProgram } from '@/domain/programs/programStore';
 import { importWorkoutSessions, listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { useTrainingProfile } from '@/hooks/useTrainingProfile';
-import { useTheme } from '@/theme';
+import { inputTheme, useTheme } from '@/theme';
 import type {
   CoachingTone,
   ExperienceLevel,
@@ -95,7 +86,7 @@ export default function SettingsScreen() {
 }
 
 function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState(profile.user.displayName);
   const [goal, setGoal] = useState(profile.preferences.goal);
@@ -171,7 +162,7 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
   }, [draftPreferences, profile.user.id]);
   const mappingChoices = useMemo(() => {
     const query = mappingQuery.trim().toLocaleLowerCase();
-    return EXERCISE_CATALOG.filter((exercise) =>
+    return ALL_EXERCISES.filter((exercise) =>
       query
         ? [exercise.name, ...exercise.aliases].some((name) =>
             name.toLocaleLowerCase().includes(query),
@@ -473,185 +464,121 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
       keyboardShouldPersistTaps="handled"
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={{
-        paddingTop: Math.max(insets.top, spacing.xxl) + spacing.md,
+        paddingTop: spacing.md,
         paddingBottom: insets.bottom + 120,
         paddingHorizontal: spacing.lg,
-        gap: spacing.lg,
+        gap: spacing.xl,
       }}
     >
-      <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>Local profile</Text>
-          <Text style={[typography.title, { color: colors.textPrimary }]}>Settings</Text>
-        </View>
-        <IconButton
-          icon="content-save-outline"
-          mode="contained-tonal"
-          onPress={() => persistProfile('profile')}
-          disabled={savingMode !== null}
+      <Section title="Profile">
+        <TextInput
+          theme={inputTheme}
+          mode="outlined"
+          label="Display name"
+          value={displayName}
+          onChangeText={(value) => {
+            setDisplayName(value);
+            setFieldIssues((current) => ({ ...current, displayName: undefined }));
+          }}
+          autoCapitalize="words"
+          textColor={colors.textPrimary}
+          outlineColor={colors.border}
+          activeOutlineColor={colors.accent}
+          error={Boolean(fieldIssues.displayName)}
+          style={{ backgroundColor: colors.surfaceRaised }}
         />
-      </View>
-
-      <Card
-        mode="contained"
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: radius.xl,
-          },
-        ]}
-      >
-        <Card.Content style={{ gap: spacing.md }}>
-          <SectionHeader eyebrow="Athlete" title="Identity" />
-          <TextInput
-            mode="outlined"
-            label="Display name"
-            value={displayName}
-            onChangeText={(value) => {
-              setDisplayName(value);
-              setFieldIssues((current) => ({ ...current, displayName: undefined }));
-            }}
-            autoCapitalize="words"
-            textColor={colors.textPrimary}
-            outlineColor={colors.border}
-            activeOutlineColor={colors.accent}
-            error={Boolean(fieldIssues.displayName)}
-            style={{ backgroundColor: colors.surfaceRaised }}
-          />
-          <HelperText type="error" visible={Boolean(fieldIssues.displayName)}>
-            {fieldIssues.displayName}
-          </HelperText>
-          <SegmentedChips
-            label="Units"
-            options={UNIT_OPTIONS}
-            selected={units}
-            onSelect={setUnits}
-          />
-        </Card.Content>
-      </Card>
+        <HelperText type="error" visible={Boolean(fieldIssues.displayName)}>
+          {fieldIssues.displayName}
+        </HelperText>
+        <SegmentedChips label="Units" options={UNIT_OPTIONS} selected={units} onSelect={setUnits} />
+      </Section>
 
       <AccountCard />
 
-      <Card
-        mode="contained"
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: radius.xl,
-          },
-        ]}
+      <Section
+        title="Training"
+        detail="These shape your generated plan, the exercises it can use and weekly volume."
       >
-        <Card.Content style={{ gap: spacing.md }}>
-          <SectionHeader
-            eyebrow="Training model"
-            title="Program defaults"
-            detail="These fields control the generated split, available exercises and weekly volume."
-          />
-          <SegmentedChips
-            label="Primary goal"
-            options={GOAL_OPTIONS}
-            selected={goal}
-            onSelect={setGoal}
-            format={formatGoal}
-          />
-          <SegmentedChips
-            label="Experience"
-            options={EXPERIENCE_OPTIONS}
-            selected={experience}
-            onSelect={setExperience}
-            format={formatExperience}
-          />
-          <SegmentedChips
-            label="Current nutrition context"
-            options={NUTRITION_OPTIONS}
-            selected={nutritionContext}
-            onSelect={setNutritionContext}
-            format={formatNutritionContext}
-          />
-          <Text style={[typography.caption, { color: colors.textMuted }]}>
-            This is optional context for conservative volume suggestions, not a calorie target.
-          </Text>
-          <SegmentedChips
-            label="Training environment"
-            options={ENVIRONMENT_OPTIONS}
-            selected={environment}
-            onSelect={setEnvironment}
-            format={formatEnvironment}
-          />
-          <SegmentedChips
-            label="Days per week"
-            options={DAY_OPTIONS}
-            selected={daysPerWeek}
-            onSelect={setDaysPerWeek}
-            format={(value) => `${value}d`}
-          />
-          <SegmentedChips
-            label="Session target"
-            options={SESSION_OPTIONS}
-            selected={sessionMinutes}
-            onSelect={setSessionMinutes}
-            format={(value) => `${value}m`}
-          />
-          <SegmentedChips
-            label="Coach voice"
-            options={TONE_OPTIONS}
-            selected={coachingTone}
-            onSelect={setCoachingTone}
-            format={formatTone}
-          />
-        </Card.Content>
-      </Card>
+        <SegmentedChips
+          label="Primary goal"
+          options={GOAL_OPTIONS}
+          selected={goal}
+          onSelect={setGoal}
+          format={formatGoal}
+        />
+        <SegmentedChips
+          label="Experience"
+          options={EXPERIENCE_OPTIONS}
+          selected={experience}
+          onSelect={setExperience}
+          format={formatExperience}
+        />
+        <SegmentedChips
+          label="Current nutrition context"
+          options={NUTRITION_OPTIONS}
+          selected={nutritionContext}
+          onSelect={setNutritionContext}
+          format={formatNutritionContext}
+        />
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          This is optional context for conservative volume suggestions, not a calorie target.
+        </Text>
+        <SegmentedChips
+          label="Training environment"
+          options={ENVIRONMENT_OPTIONS}
+          selected={environment}
+          onSelect={setEnvironment}
+          format={formatEnvironment}
+        />
+        <SegmentedChips
+          label="Days per week"
+          options={DAY_OPTIONS}
+          selected={daysPerWeek}
+          onSelect={setDaysPerWeek}
+          format={(value) => `${value}d`}
+        />
+        <SegmentedChips
+          label="Session target"
+          options={SESSION_OPTIONS}
+          selected={sessionMinutes}
+          onSelect={setSessionMinutes}
+          format={(value) => `${value}m`}
+        />
+        <SegmentedChips
+          label="Coach voice"
+          options={TONE_OPTIONS}
+          selected={coachingTone}
+          onSelect={setCoachingTone}
+          format={formatTone}
+        />
+      </Section>
 
-      <Card
-        mode="contained"
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: radius.xl,
-          },
-        ]}
+      <Section
+        title="Priority muscles"
+        detail="Pick up to three. They get extra sets without overloading the rest of the week."
       >
-        <Card.Content style={{ gap: spacing.md }}>
-          <SectionHeader
-            eyebrow="Priority muscles"
-            title="Bias the weekly dose"
-            detail="Pick up to three muscles. The generator gives them extra sets without blowing up the whole week."
-          />
-          <View style={styles.muscleGrid}>
-            {PRIORITY_MUSCLES.map((muscle) => {
-              const active = musclePriorities.includes(muscle);
-              const disabled = !active && musclePriorities.length >= 3;
-              return (
-                <Chip
-                  key={muscle}
-                  compact
-                  selected={active}
-                  disabled={disabled}
-                  mode={active ? 'flat' : 'outlined'}
-                  onPress={() => toggleMuscle(muscle)}
-                  style={active ? { backgroundColor: colors.accentSoft } : undefined}
-                  textStyle={active ? { color: colors.accent } : undefined}
-                >
-                  {MUSCLE_LABELS[muscle]}
-                </Chip>
-              );
-            })}
-          </View>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>
-            {musclePriorities.length > 0
-              ? `${musclePriorities.length}/3 selected: ${musclePriorities
-                  .map((muscle) => MUSCLE_LABELS[muscle])
-                  .join(', ')}`
-              : 'Balanced plan selected.'}
-          </Text>
-        </Card.Content>
-      </Card>
+        <View style={styles.muscleGrid}>
+          {PRIORITY_MUSCLES.map((muscle) => {
+            const active = musclePriorities.includes(muscle);
+            const disabled = !active && musclePriorities.length >= 3;
+            return (
+              <Pill
+                key={muscle}
+                label={MUSCLE_LABELS[muscle]}
+                active={active}
+                onPress={() => {
+                  if (!disabled) toggleMuscle(muscle);
+                }}
+              />
+            );
+          })}
+        </View>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          {musclePriorities.length > 0
+            ? `${musclePriorities.length} of 3 picked`
+            : 'None picked, the week stays balanced.'}
+        </Text>
+      </Section>
 
       <PlanPreviewCard
         program={preview.program}
@@ -663,123 +590,72 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
         onRegenerate={() => persistProfile('regenerate')}
       />
 
-      <Card
-        mode="contained"
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: radius.xl,
-          },
-        ]}
+      <Section
+        title="Your data"
+        detail="Backups include your profile, plan, history, saved workouts and any workout in progress."
       >
-        <Card.Content style={{ gap: spacing.md }}>
-          <SectionHeader
-            eyebrow="Data portability"
-            title="Backup, restore, export"
-            detail="JSON includes your local profile, plan, history, active draft, and templates. CSV contains completed sets in canonical kg."
+        <View>
+          <ListRow
+            title="Back up everything"
+            subtitle={
+              portabilityMode === 'backup' ? 'Preparing file' : 'JSON file you can restore later'
+            }
+            onPress={portabilityMode ? undefined : exportBackup}
           />
-          <View style={styles.portabilityActions}>
-            <Button
-              mode="contained-tonal"
-              icon="database-export-outline"
-              onPress={exportBackup}
-              loading={portabilityMode === 'backup'}
-              disabled={portabilityMode !== null}
-            >
-              Backup JSON
-            </Button>
-            <Button
-              mode="outlined"
-              icon="file-delimited-outline"
-              onPress={exportCsv}
-              loading={portabilityMode === 'csv'}
-              disabled={portabilityMode !== null}
-            >
-              Export CSV
-            </Button>
-            <Button
-              mode="outlined"
-              icon="database-import-outline"
-              onPress={chooseBackup}
-              loading={portabilityMode === 'import'}
-              disabled={portabilityMode !== null}
-            >
-              Restore JSON
-            </Button>
-            <Button
-              mode="outlined"
-              icon="file-import-outline"
-              onPress={chooseWorkoutCsv}
-              loading={portabilityMode === 'workout_import'}
-              disabled={portabilityMode !== null}
-            >
-              Import Hevy/Strong
-            </Button>
-            <Button
-              mode="text"
-              icon="backup-restore"
-              onPress={chooseRecoverySnapshot}
-              disabled={portabilityMode !== null}
-            >
-              Recover pre-restore data
-            </Button>
-          </View>
-          <SegmentedChips
-            label="Strong CSV weight unit"
-            options={UNIT_OPTIONS}
-            selected={strongImportUnit}
-            onSelect={setStrongImportUnit}
+          <ListRow
+            title="Export sets as CSV"
+            subtitle={
+              portabilityMode === 'csv' ? 'Preparing file' : 'Completed sets, weights in kg'
+            }
+            onPress={portabilityMode ? undefined : exportCsv}
           />
-          <Text style={[typography.micro, { color: colors.textMuted }]}>
-            Before restore, the current local data is saved to a recovery snapshot. A current active
-            draft is never overwritten.
-          </Text>
-        </Card.Content>
-      </Card>
+          <ListRow
+            title="Restore from backup"
+            subtitle="Pick a JSON backup file"
+            onPress={portabilityMode ? undefined : chooseBackup}
+          />
+          <ListRow
+            title="Import from Hevy or Strong"
+            subtitle={portabilityMode === 'workout_import' ? 'Reading file' : 'Pick a CSV export'}
+            onPress={portabilityMode ? undefined : chooseWorkoutCsv}
+          />
+          <ListRow
+            title="Undo last restore"
+            subtitle="Bring back the data saved before your last restore"
+            onPress={portabilityMode ? undefined : chooseRecoverySnapshot}
+            last
+          />
+        </View>
+        <SegmentedChips
+          label="Weight unit in Strong files"
+          options={UNIT_OPTIONS}
+          selected={strongImportUnit}
+          onSelect={setStrongImportUnit}
+        />
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          Restoring saves a copy of your current data first and never overwrites a workout in
+          progress.
+        </Text>
+      </Section>
 
-      <Card
-        mode="contained"
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            borderRadius: radius.xl,
-          },
-        ]}
+      <Section
+        title="Credits"
+        detail="Exercise reference data and demo images come from these projects."
       >
-        <Card.Content style={{ gap: spacing.sm }}>
-          <SectionHeader
-            eyebrow="Credits"
-            title="Exercise library sources"
-            detail="GymBroFitness keeps its own programming and coaching logic. These projects provide reviewed reference data and demonstration imagery."
-          />
-          <List.Item
-            title="Exercise data by RepDB"
-            description="Consistent start and finish illustrations for supported movements."
+        <View>
+          <ListRow
+            title="Exercise data by RepDB (repdb.co)"
+            subtitle="Exercise illustrations, used under the RepDB free license"
             onPress={() => void Linking.openURL('https://repdb.co')}
-            left={(props) => (
-              <List.Icon {...props} icon="motion-play-outline" color={colors.accent} />
-            )}
-            right={(props) => <List.Icon {...props} icon="open-in-new" color={colors.textMuted} />}
-            titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-            descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-            style={[styles.creditRow, { backgroundColor: colors.surfaceRaised }]}
           />
-          <List.Item
+          <ListRow
             title="Free Exercise DB"
-            description="Public-domain exercise reference catalog and fallback images."
+            subtitle="Public-domain exercise catalog and fallback images"
             onPress={() => void Linking.openURL('https://github.com/yuhonas/free-exercise-db')}
-            left={(props) => <List.Icon {...props} icon="database-outline" color={colors.accent} />}
-            right={(props) => <List.Icon {...props} icon="open-in-new" color={colors.textMuted} />}
-            titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-            descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-            style={[styles.creditRow, { backgroundColor: colors.surfaceRaised }]}
+            last
           />
-        </Card.Content>
-      </Card>
+        </View>
+      </Section>
 
       <Portal>
         <Dialog visible={importCandidate != null} onDismiss={() => setImportCandidate(null)}>
@@ -921,7 +797,7 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
                 <List.Item
                   key={exercise.id}
                   title={exercise.name}
-                  description={`${exercise.equipment.join(', ')} · ${exercise.primaryMuscles.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}`}
+                  description={`${exercise.equipment.join(', ')}, ${exercise.primaryMuscles.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}`}
                   titleNumberOfLines={2}
                   descriptionNumberOfLines={2}
                   onPress={() => mapExternalExercise(exercise.id)}
@@ -969,45 +845,38 @@ function SettingsEditor({ profile }: { profile: TrainingProfileSnapshot }) {
 
       <View style={styles.actionRow}>
         <Button
-          mode="outlined"
-          icon="restart"
+          mode="text"
+          textColor={colors.textSecondary}
           onPress={resetProfile}
           disabled={savingMode !== null}
         >
-          Reset
-        </Button>
-        <Button
-          mode="contained"
-          icon="autorenew"
-          onPress={() => persistProfile('regenerate')}
-          loading={savingMode === 'regenerate'}
-          disabled={savingMode !== null || Boolean(preview.error)}
-        >
-          Save & regenerate
+          Discard changes
         </Button>
       </View>
     </ScrollView>
   );
 }
 
-function SectionHeader({
-  eyebrow,
+function Section({
   title,
   detail,
+  children,
 }: {
-  eyebrow: string;
   title: string;
   detail?: string;
+  children: ReactNode;
 }) {
-  const { colors, typography } = useTheme();
+  const { colors, spacing, typography } = useTheme();
 
   return (
-    <View style={{ gap: 4 }}>
-      <Text style={[typography.micro, { color: colors.accent }]}>{eyebrow}</Text>
-      <Text style={[typography.subheading, { color: colors.textPrimary }]}>{title}</Text>
-      {detail ? (
-        <Text style={[typography.caption, { color: colors.textMuted }]}>{detail}</Text>
-      ) : null}
+    <View style={{ gap: spacing.md }}>
+      <View style={{ gap: 2 }}>
+        <Text style={[typography.heading, { color: colors.textPrimary }]}>{title}</Text>
+        {detail ? (
+          <Text style={[typography.caption, { color: colors.textMuted }]}>{detail}</Text>
+        ) : null}
+      </View>
+      {children}
     </View>
   );
 }
@@ -1029,102 +898,52 @@ function PlanPreviewCard({
   onSaveProfile: () => void;
   onRegenerate: () => void;
 }) {
-  const { colors, radius, spacing, typography } = useTheme();
+  const { colors, typography } = useTheme();
 
   return (
-    <Card
-      mode="contained"
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: programAffectingChanged ? colors.accent : colors.border,
-          borderRadius: radius.xl,
-        },
-      ]}
+    <Section
+      title={programAffectingChanged ? 'Your plan will be rebuilt' : 'Plan is up to date'}
+      detail="Rebuilding replaces the active plan. Your workout history stays."
     >
-      <Card.Content style={{ gap: spacing.md }}>
-        <View style={styles.headerRow}>
-          <SectionHeader
-            eyebrow="Plan preview"
-            title={programAffectingChanged ? 'Plan will be rebuilt' : 'Current setup is synced'}
-            detail="Regeneration replaces the active program. Your workout history stays untouched."
+      {error ? <Text style={[typography.caption, { color: colors.danger }]}>{error}</Text> : null}
+
+      {program ? (
+        <View>
+          <ListRow
+            title={program.name}
+            subtitle={`${formatGoal(preferences.goal)}, ${preferences.daysPerWeek} days a week, ${preferences.sessionMinutes} min sessions`}
           />
-          <Chip compact mode="flat" icon={programAffectingChanged ? 'alert-circle' : 'check'}>
-            {programAffectingChanged ? 'changed' : 'synced'}
-          </Chip>
+          {program.days.map((day, index) => (
+            <ListRow
+              key={day.id}
+              title={day.name}
+              subtitle={day.focus.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}
+              value={`${day.prescriptions.length} ex, ${day.estimatedMinutes}m`}
+              last={index === program.days.length - 1}
+            />
+          ))}
         </View>
+      ) : null}
 
-        {error ? <Text style={[typography.caption, { color: colors.danger }]}>{error}</Text> : null}
-
-        {program ? (
-          <>
-            <View style={styles.summaryGrid}>
-              <SummaryCell label="split" value={program.name} />
-              <SummaryCell label="goal" value={formatGoal(preferences.goal)} />
-              <SummaryCell label="schedule" value={`${preferences.daysPerWeek}d/wk`} />
-              <SummaryCell label="session" value={`${preferences.sessionMinutes} min`} />
-              <SummaryCell
-                label="priority"
-                value={
-                  preferences.musclePriorities.length > 0
-                    ? preferences.musclePriorities.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')
-                    : 'balanced'
-                }
-              />
-            </View>
-
-            <View style={{ gap: spacing.sm }}>
-              {program.days.map((day) => (
-                <View
-                  key={day.id}
-                  style={[
-                    styles.dayRow,
-                    { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
-                  ]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
-                      {day.name}
-                    </Text>
-                    <Text style={[typography.caption, { color: colors.textMuted }]}>
-                      {day.focus.map((muscle) => MUSCLE_LABELS[muscle]).join(', ')}
-                    </Text>
-                  </View>
-                  <Text style={[typography.captionBold, { color: colors.accent }]}>
-                    {day.prescriptions.length} ex
-                  </Text>
-                  <Text style={[typography.caption, { color: colors.textMuted }]}>
-                    {day.estimatedMinutes}m
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </>
-        ) : null}
-
-        <View style={styles.previewActions}>
-          <Button
-            mode="outlined"
-            icon="content-save-outline"
-            onPress={onSaveProfile}
-            loading={savingMode === 'profile'}
-            disabled={savingMode !== null}
-          >
-            Save profile only
-          </Button>
-          <Button
-            mode="contained"
-            icon="autorenew"
-            onPress={onRegenerate}
-            loading={savingMode === 'regenerate'}
-            disabled={savingMode !== null || Boolean(error)}
-          >
-            Regenerate plan
-          </Button>
-        </View>
-      </Card.Content>
-    </Card>
+      <View style={styles.previewActions}>
+        <Button
+          mode="text"
+          onPress={onSaveProfile}
+          loading={savingMode === 'profile'}
+          disabled={savingMode !== null}
+        >
+          Save without rebuilding
+        </Button>
+        <Button
+          mode="contained"
+          onPress={onRegenerate}
+          loading={savingMode === 'regenerate'}
+          disabled={savingMode !== null || Boolean(error)}
+        >
+          Save and rebuild
+        </Button>
+      </View>
+    </Section>
   );
 }
 
@@ -1145,38 +964,17 @@ function SegmentedChips<T extends string | number>({
 
   return (
     <View style={{ gap: 8 }}>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]}>{label}</Text>
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
       <View style={styles.chipRow}>
         {options.map((option) => (
-          <Chip
+          <Pill
             key={option}
-            compact
-            selected={selected === option}
-            mode={selected === option ? 'flat' : 'outlined'}
+            label={format(option)}
+            active={selected === option}
             onPress={() => onSelect(option)}
-            style={[
-              styles.choiceChip,
-              selected === option ? { backgroundColor: colors.accentSoft } : undefined,
-            ]}
-            textStyle={selected === option ? { color: colors.accent } : undefined}
-          >
-            {format(option)}
-          </Chip>
+          />
         ))}
       </View>
-    </View>
-  );
-}
-
-function SummaryCell({ label, value }: { label: string; value: string }) {
-  const { colors, typography } = useTheme();
-
-  return (
-    <View style={[styles.summaryCell, { backgroundColor: colors.surfaceRaised }]}>
-      <Text style={[typography.micro, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[typography.captionBold, { color: colors.textPrimary }]} numberOfLines={1}>
-        {value}
-      </Text>
     </View>
   );
 }
@@ -1258,45 +1056,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
-  },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  choiceChip: {
-    minHeight: 44,
-    justifyContent: 'center',
-  },
   muscleGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  summaryCell: {
-    width: '48%',
-    minHeight: 56,
-    justifyContent: 'center',
-    gap: 4,
-    borderRadius: 14,
-    padding: 12,
-  },
-  dayRow: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
   },
   previewActions: {
     flexDirection: 'row',
@@ -1308,15 +1076,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
-  },
-  portabilityActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  creditRow: {
-    minHeight: 72,
-    borderRadius: 14,
   },
   mappingResults: {
     maxHeight: 320,

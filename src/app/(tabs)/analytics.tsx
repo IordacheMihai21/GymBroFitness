@@ -1,14 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import {
-  BarChart,
-  LineChart,
-  type barDataItem,
-  type lineDataItem,
-} from 'react-native-gifted-charts';
+import { LineChart, type lineDataItem } from 'react-native-gifted-charts';
 import Body, { type ExtendedBodyPart } from 'react-native-body-highlighter';
-import { Card, Chip, List } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
@@ -25,14 +20,21 @@ import { buildActivityHeatmap } from '@/domain/workouts/activityHeatmap';
 import { buildPlannedWeek, buildWorkoutHistoryInsights } from '@/domain/workouts/historyInsights';
 import { listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { ActivityHeatmapCard } from '@/components/progress/ActivityHeatmapCard';
-import { LevelCard } from '@/components/profile/LevelCard';
-import { PersonalRecordCard } from '@/components/profile/PersonalRecordCard';
-import { StreakCard } from '@/components/profile/StreakCard';
+import { ListRow } from '@/components/ui/ListRow';
+import { ProgressLine } from '@/components/ui/ProgressLine';
 import { Reveal } from '@/components/ui/Reveal';
+import { Segmented } from '@/components/ui/Segmented';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { Pill } from '@/components/ui/Pill';
+import { Tile } from '@/components/ui/Tile';
+import { sessionVolumeKg } from '@/domain/workouts/analytics';
+import { buildExerciseTrend, type ExerciseTrendPoint } from '@/domain/workouts/exerciseTrend';
+import { requireExercise } from '@/domain/exercises/catalog';
+import { formatDate } from '@/utils/dates';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type { MuscleGroup, WorkoutSession } from '@/types';
-import { displayLoad, unitLabel } from '@/utils/units';
+import { displayLoad, formatVolumeLoad, unitLabel } from '@/utils/units';
 
 type Period = '4w' | '12w' | 'block';
 
@@ -42,16 +44,16 @@ type MuscleLoad = {
   zone: VolumeZone;
   mev: number;
   mrv: number;
-  /** 0 at MEV, 1 at MRV — clamped to [0,1] for gauge rendering. */
+  /** 0 at MEV, 1 at MRV, clamped to [0,1] for gauge rendering. */
   gaugeFraction: number;
   landmarks: VolumeLandmarks;
 };
 
-const PERIODS: { label: string; value: Period }[] = [
+const PERIODS = [
   { label: '4W', value: '4w' },
   { label: '12W', value: '12w' },
   { label: 'All', value: 'block' },
-];
+] as const satisfies readonly { label: string; value: Period }[];
 
 export default function AnalyticsScreen() {
   const { colors, radius, spacing, typography } = useTheme();
@@ -60,7 +62,7 @@ export default function AnalyticsScreen() {
   const [period, setPeriod] = useState<Period>('4w');
   const [history, setHistory] = useState<WorkoutSession[]>([]);
   const [lineChartWidth, setLineChartWidth] = useState(0);
-  const [barChartWidth, setBarChartWidth] = useState(0);
+  const [liftId, setLiftId] = useState<string | null>(null);
   const { preferences, program } = useActiveProgram();
 
   useFocusEffect(
@@ -88,7 +90,6 @@ export default function AnalyticsScreen() {
   const muscleSetMap = insights.weeklySetsByMuscle;
   const muscleLoads = useMemo(() => computeMuscleLoads(muscleSetMap), [muscleSetMap]);
   const hasMuscleLoads = muscleLoads.length > 0;
-  const maxMuscleSets = Math.max(...muscleLoads.map((item) => item.sets), 1);
   const bodyData: ExtendedBodyPart[] = muscleLoads.flatMap((item) => {
     const fill = heatColorForVolumeZone(item.zone);
     return bodySlugsForMuscle(item.muscle).map((slug) => ({
@@ -101,8 +102,19 @@ export default function AnalyticsScreen() {
       },
     }));
   });
+  const liftOptions = useMemo(
+    () => buildLiftOptions(insights.completedSessions),
+    [insights.completedSessions],
+  );
+  const activeLiftId = liftId ?? insights.strengthTrend?.exerciseId ?? liftOptions[0]?.id ?? null;
+  const activeLift = liftOptions.find((option) => option.id === activeLiftId) ?? null;
+  const allTimeVolume = useMemo(
+    () =>
+      insights.completedSessions.reduce((total, session) => total + sessionVolumeKg(session), 0),
+    [insights.completedSessions],
+  );
   const trendValues = valuesForPeriod(
-    insights.strengthTrend?.points.map((point) => ({
+    activeLift?.points.map((point) => ({
       sessionId: point.sessionId,
       date: point.date,
       value: point.e1rmKg,
@@ -120,7 +132,6 @@ export default function AnalyticsScreen() {
     if (source) router.push({ pathname: '/history', params: { sessionId: source.sessionId } });
   });
   const lineMaxValue = Math.max(...chartValues) - lineBaseline + 2;
-  const barData = buildBarData(muscleLoads);
   const trendDelta = hasTrend
     ? (chartValues[chartValues.length - 1] ?? 0) - (chartValues[0] ?? 0)
     : 0;
@@ -128,9 +139,9 @@ export default function AnalyticsScreen() {
     ? `${trendDelta >= 0 ? '+' : ''}${trendDelta.toFixed(1)}`
     : hasAnyStrengthPoint
       ? (displayLoad(trendValues[trendValues.length - 1].value, preferences.units) ?? 0).toFixed(1)
-      : '0.0';
+      : '-';
   const decisionItems = buildDecisionItems({
-    trendName: insights.strengthTrend?.exerciseName,
+    trendName: activeLift?.name,
     hasTrend,
     hasAnyStrengthPoint,
     trendDelta,
@@ -145,243 +156,191 @@ export default function AnalyticsScreen() {
         paddingTop: Math.max(insets.top, spacing.xxl) + spacing.lg,
         paddingBottom: insets.bottom + 120,
         paddingHorizontal: spacing.lg,
-        gap: spacing.lg,
+        gap: 12,
       }}
     >
-      <Reveal>
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[typography.caption, { color: colors.textSecondary }]}>
-              Your completed workouts
-            </Text>
-            <Text style={[typography.title, { color: colors.textPrimary }]}>Progress</Text>
-          </View>
-          <Chip compact mode="flat" icon="calendar-clock">
-            {insights.totalWorkouts} sessions
-          </Chip>
-        </View>
+      <Reveal style={{ marginBottom: spacing.sm }}>
+        <Text style={[typography.display, { color: colors.textPrimary }]}>Progress</Text>
+        <Text style={[typography.body, { color: colors.textSecondary }]}>
+          From your completed workouts
+        </Text>
       </Reveal>
 
       <Reveal index={1}>
-        <View style={{ gap: spacing.xs }}>
-          <Text style={[typography.micro, { color: colors.textMuted }]}>Strength window</Text>
-          <View style={styles.periodRow}>
-            {PERIODS.map((item) => (
-              <Chip
-                key={item.value}
-                selected={period === item.value}
-                onPress={() => setPeriod(item.value)}
-                mode={period === item.value ? 'flat' : 'outlined'}
-              >
-                {item.label}
-              </Chip>
-            ))}
+        <Tile glow title="All time">
+          <View style={styles.statRow}>
+            <BigStat value={String(insights.totalWorkouts)} label="workouts" />
+            <BigStat value={formatVolumeLoad(allTimeVolume, preferences.units)} label="lifted" />
+            <BigStat value={String(insights.personalRecords.length)} label="records" />
           </View>
-        </View>
+          <View style={{ gap: 6 }}>
+            <View style={styles.headerRow}>
+              <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
+                {level.tier.name}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {level.nextTier
+                  ? `${level.nextTier.minWorkouts - insights.totalWorkouts} workouts to ${level.nextTier.name}`
+                  : 'Top level reached'}
+              </Text>
+            </View>
+            <ProgressLine progress={level.progress} height={4} />
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {streakDays > 0 ? `${streakDays} day streak going` : 'Train today to start a streak'}
+            </Text>
+          </View>
+        </Tile>
       </Reveal>
 
       <Reveal index={2}>
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <Card.Content style={{ gap: spacing.md }}>
-            <View style={styles.headerRow}>
-              <View>
-                <View style={styles.inlineHint}>
-                  <Text style={[typography.micro, { color: colors.accent }]}>Strength trend</Text>
-                  <InfoHint term="e1rm" />
-                </View>
-                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  {insights.strengthTrend
-                    ? `${insights.strengthTrend.exerciseName} e1RM`
-                    : 'No strength trend yet'}
+        <Tile>
+          <View style={{ gap: spacing.sm }}>
+            <View style={styles.inlineHint}>
+              <Text
+                style={[typography.heading, { color: colors.textPrimary, flexShrink: 1 }]}
+                numberOfLines={1}
+              >
+                {liftOptions.length > 1 ? 'Estimated 1RM' : (activeLift?.name ?? 'Estimated 1RM')}
+              </Text>
+              <InfoHint term="e1rm" />
+            </View>
+            {liftOptions.length > 1 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.liftRail}
+                style={{ marginHorizontal: -spacing.lg }}
+              >
+                {liftOptions.map((option) => (
+                  <Pill
+                    key={option.id}
+                    label={option.name}
+                    active={option.id === activeLiftId}
+                    onPress={() => setLiftId(option.id)}
+                  />
+                ))}
+              </ScrollView>
+            ) : null}
+            <Segmented options={PERIODS} value={period} onChange={setPeriod} />
+          </View>
+          {hasAnyStrengthPoint ? (
+            <View style={styles.trendValueRow}>
+              <Text style={[typography.jumbo, { color: colors.textPrimary }]}>
+                {trendMetricText}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {unitLabel(preferences.units)} e1RM{hasTrend ? ' change' : ''}
+              </Text>
+            </View>
+          ) : null}
+
+          <View
+            style={styles.lineChartFrame}
+            onLayout={(event) => setLineChartWidth(event.nativeEvent.layout.width)}
+          >
+            {hasTrend && lineChartWidth > 0 ? (
+              <LineChart
+                data={lineData}
+                height={130}
+                width={Math.max(1, lineChartWidth - 8)}
+                maxValue={lineMaxValue}
+                spacing={Math.max(24, (lineChartWidth - 16) / Math.max(1, lineData.length - 1))}
+                initialSpacing={0}
+                endSpacing={0}
+                thickness={2}
+                color={colors.accent}
+                curved
+                areaChart
+                startFillColor={colors.accent}
+                endFillColor={colors.accent}
+                startOpacity={0.16}
+                endOpacity={0}
+                hideAxesAndRules
+                hideYAxisText
+                xAxisThickness={0}
+                yAxisThickness={0}
+                yAxisLabelWidth={0}
+                labelsExtraHeight={0}
+                dataPointsColor={colors.accent}
+                dataPointsRadius={3}
+                disableScroll
+                backgroundColor="transparent"
+              />
+            ) : (
+              <View
+                style={[styles.emptyChart, { borderColor: colors.border, borderRadius: radius.lg }]}
+              >
+                <Text
+                  style={[typography.caption, { color: colors.textMuted, textAlign: 'center' }]}
+                >
+                  {hasAnyStrengthPoint
+                    ? 'One session saved. Repeat the lift to draw a trend.'
+                    : 'Log the same loaded lift twice to draw a trend.'}
                 </Text>
               </View>
-              <View style={styles.metricRight}>
-                <Text style={[typography.display, { color: colors.textPrimary }]}>
-                  {trendMetricText}
-                </Text>
-                <Text style={[typography.micro, { color: colors.textMuted }]}>
-                  {unitLabel(preferences.units)} e1RM
-                </Text>
-              </View>
-            </View>
-
-            <View
-              style={styles.lineChartFrame}
-              onLayout={(event) => setLineChartWidth(event.nativeEvent.layout.width)}
-            >
-              {hasTrend && lineChartWidth > 0 ? (
-                <LineChart
-                  data={lineData}
-                  height={130}
-                  width={Math.max(1, lineChartWidth - 8)}
-                  maxValue={lineMaxValue}
-                  spacing={Math.max(24, (lineChartWidth - 16) / Math.max(1, lineData.length - 1))}
-                  initialSpacing={0}
-                  endSpacing={0}
-                  thickness={3}
-                  color={colors.accent}
-                  curved
-                  areaChart
-                  startFillColor={colors.accent}
-                  endFillColor={colors.accent}
-                  startOpacity={0.2}
-                  endOpacity={0.02}
-                  hideAxesAndRules
-                  hideYAxisText
-                  xAxisThickness={0}
-                  yAxisThickness={0}
-                  yAxisLabelWidth={0}
-                  labelsExtraHeight={0}
-                  dataPointsColor={colors.accent}
-                  dataPointsRadius={4}
-                  disableScroll
-                  backgroundColor="transparent"
-                />
-              ) : (
-                <View style={[styles.emptyChartPanel, { backgroundColor: colors.surfaceRaised }]}>
-                  <View style={[styles.emptyChartLine, { backgroundColor: colors.surfacePressed }]}>
-                    <View style={[styles.emptyChartDot, { backgroundColor: colors.accent }]} />
-                  </View>
-                  <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
-                    {hasAnyStrengthPoint ? 'One saved point logged' : 'No loaded sets yet'}
-                  </Text>
-                  <Text
-                    style={[typography.caption, { color: colors.textMuted, textAlign: 'center' }]}
-                  >
-                    Complete one more loaded session for this lift to draw a real e1RM trend.
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <List.Item
-              title={
-                hasTrend ? 'Keep load progression evidence-based' : 'Calibrating trend quality'
-              }
-              description={
-                hasTrend
-                  ? 'The chart uses saved workout history. Tap a point to open its source session.'
-                  : 'A real line appears after two comparable loaded sessions for the same exercise.'
-              }
-              left={(props) => <List.Icon {...props} icon="trending-up" color={colors.accent} />}
-              titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-              descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-              style={[styles.listPanel, { backgroundColor: colors.surfaceRaised }]}
-            />
-          </Card.Content>
-        </Card>
+            )}
+          </View>
+          {hasTrend ? (
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              Tap a point to open that workout.
+            </Text>
+          ) : null}
+        </Tile>
       </Reveal>
 
       <Reveal index={3}>
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <Card.Content style={{ gap: spacing.md }}>
-            <View style={styles.headerRow}>
-              <View>
-                <View style={styles.inlineHint}>
-                  <Text style={[typography.micro, { color: colors.accent }]}>Volume landmarks</Text>
-                  <InfoHint term="volumeLandmarks" />
-                </View>
-                <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-                  Logged direct sets this week
-                </Text>
-              </View>
-              <Chip compact mode="flat" icon="target">
-                {insights.rirSetCount > 0
-                  ? `${Math.round(insights.intensityMatchPct * 100)}% RIR match`
-                  : 'No RIR data'}
-              </Chip>
-            </View>
+        <Tile>
+          <ActivityHeatmapCard heatmap={activityHeatmap} units={preferences.units} />
+        </Tile>
+      </Reveal>
 
-            <View style={styles.bodyRow}>
-              <Body
-                data={bodyData}
-                colors={[`${colors.accent}77`, colors.accent]}
-                side="front"
-                scale={0.34}
-                border="none"
-                defaultFill={colors.surfacePressed}
-                defaultStroke={colors.border}
-              />
-              <Body
-                data={bodyData}
-                colors={[`${colors.accent}77`, colors.accent]}
-                side="back"
-                scale={0.34}
-                border="none"
-                defaultFill={colors.surfacePressed}
-                defaultStroke={colors.border}
-              />
+      <Reveal index={4}>
+        <Tile>
+          <View style={styles.headerRow}>
+            <View style={[styles.inlineHint, { flex: 1 }]}>
+              <Text style={[typography.heading, { color: colors.textPrimary }]}>This week</Text>
+              <InfoHint term="volumeLandmarks" />
             </View>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              {insights.rirSetCount > 0
+                ? `${Math.round(insights.intensityMatchPct * 100)}% RIR on target`
+                : 'No RIR logged'}
+            </Text>
+          </View>
 
-            <View
-              style={styles.barChartFrame}
-              onLayout={(event) => setBarChartWidth(event.nativeEvent.layout.width)}
-            >
-              {hasMuscleLoads && barChartWidth > 0 ? (
-                <BarChart
-                  data={barData}
-                  height={130}
-                  width={Math.max(1, barChartWidth - 8)}
-                  maxValue={maxMuscleSets + 2}
-                  barWidth={24}
-                  spacing={Math.max(
-                    8,
-                    (barChartWidth - barData.length * 24) / Math.max(1, barData.length + 1),
-                  )}
-                  roundedTop
-                  roundedBottom
-                  hideAxesAndRules
-                  hideYAxisText
-                  xAxisThickness={0}
-                  yAxisThickness={0}
-                  yAxisLabelWidth={0}
-                  disableScroll
-                  backgroundColor="transparent"
-                />
-              ) : (
-                <View style={[styles.emptyChartPanel, { backgroundColor: colors.surfaceRaised }]}>
-                  <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>
-                    No direct sets this week
-                  </Text>
-                  <Text
-                    style={[typography.caption, { color: colors.textMuted, textAlign: 'center' }]}
-                  >
-                    Finish a workout to compare logged direct sets with general weekly references.
-                  </Text>
-                </View>
-              )}
-            </View>
+          <View style={styles.bodyRow}>
+            <Body
+              data={bodyData}
+              colors={[`${colors.accent}77`, colors.accent]}
+              side="front"
+              scale={0.34}
+              border="none"
+              defaultFill={colors.surfaceRaised}
+              defaultStroke={colors.border}
+            />
+            <Body
+              data={bodyData}
+              colors={[`${colors.accent}77`, colors.accent]}
+              side="back"
+              scale={0.34}
+              border="none"
+              defaultFill={colors.surfaceRaised}
+              defaultStroke={colors.border}
+            />
+          </View>
 
+          {hasMuscleLoads ? (
             <View style={{ gap: spacing.md }}>
-              {muscleLoads.slice(0, 5).map((item) => (
-                <View key={item.muscle} style={styles.muscleRow}>
-                  <Text style={[typography.captionBold, { color: colors.textPrimary }]}>
-                    {MUSCLE_LABELS[item.muscle]}
-                  </Text>
-                  <Text style={[typography.micro, { color: colors.textMuted }]}>
-                    {item.sets} sets/wk · {volumeZoneLabel(item.zone)} (MEV {item.mev}–MRV{' '}
-                    {item.mrv})
-                  </Text>
+              {muscleLoads.slice(0, 6).map((item) => (
+                <View key={item.muscle} style={{ gap: 6 }}>
+                  <View style={styles.headerRow}>
+                    <Text style={[typography.body, { color: colors.textPrimary }]}>
+                      {MUSCLE_LABELS[item.muscle]}
+                    </Text>
+                    <Text style={[typography.caption, { color: colors.textMuted }]}>
+                      {item.sets} sets, {volumeZoneLabel(item.zone).toLowerCase()}
+                    </Text>
+                  </View>
                   <VolumeLandmarkGauge
                     landmarks={item.landmarks}
                     weeklySets={item.sets}
@@ -390,87 +349,95 @@ export default function AnalyticsScreen() {
                 </View>
               ))}
             </View>
-          </Card.Content>
-        </Card>
-      </Reveal>
-
-      <Reveal index={4}>
-        <ActivityHeatmapCard heatmap={activityHeatmap} units={preferences.units} />
+          ) : (
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              Finish a workout to compare your direct sets with general weekly ranges.
+            </Text>
+          )}
+        </Tile>
       </Reveal>
 
       <Reveal index={5}>
-        <Card
-          mode="contained"
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.xl,
-            },
-          ]}
-        >
-          <Card.Content style={{ gap: spacing.sm }}>
-            <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-              Decision queue
-            </Text>
-            {decisionItems.map((item) => (
-              <DecisionItem key={item.title} {...item} />
+        <Tile title="Next steps">
+          <View>
+            {decisionItems.map((item, index) => (
+              <ListRow
+                key={item.title}
+                title={item.title}
+                subtitle={item.description}
+                last={index === decisionItems.length - 1}
+              />
             ))}
-          </Card.Content>
-        </Card>
+          </View>
+        </Tile>
       </Reveal>
 
       <Reveal index={6}>
-        <StreakCard streakDays={streakDays} />
-      </Reveal>
-
-      <Reveal index={7}>
-        <LevelCard level={level} totalWorkouts={insights.totalWorkouts} />
-      </Reveal>
-
-      <View style={{ gap: spacing.sm }}>
-        <Reveal index={8}>
-          <Text style={[typography.subheading, { color: colors.textPrimary }]}>
-            Personal records
-          </Text>
-        </Reveal>
-        <View style={styles.prGrid}>
+        <Tile
+          title="Personal records"
+          aside={<MaterialCommunityIcons name="trophy-outline" size={18} color={colors.warning} />}
+        >
           {insights.personalRecords.length === 0 ? (
-            <Text style={[typography.body, { color: colors.textMuted }]}>
-              Finish loaded workouts and best e1RM records will appear here.
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              Finish loaded workouts and your best e1RM per lift shows up here.
             </Text>
-          ) : null}
-          {insights.personalRecords.map((record, i) => (
-            <Reveal key={record.id} index={9 + i} style={styles.prSlot}>
-              <PersonalRecordCard record={record} units={preferences.units} />
-            </Reveal>
-          ))}
-        </View>
-      </View>
+          ) : (
+            <View>
+              {insights.personalRecords.map((record, index) => (
+                <ListRow
+                  key={record.id}
+                  title={requireExercise(record.exerciseId).name}
+                  subtitle={formatDate(record.date)}
+                  value={`${displayLoad(record.value, preferences.units) ?? 0} ${unitLabel(preferences.units)}`}
+                  onPress={() =>
+                    router.push({ pathname: '/exercise/[id]', params: { id: record.exerciseId } })
+                  }
+                  last={index === insights.personalRecords.length - 1}
+                />
+              ))}
+            </View>
+          )}
+        </Tile>
+      </Reveal>
     </ScrollView>
   );
 }
 
-function DecisionItem({
-  icon,
-  title,
-  description,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-}) {
-  const { colors, typography } = useTheme();
+type LiftOption = {
+  id: string;
+  name: string;
+  points: (ExerciseTrendPoint & { e1rmKg: number })[];
+};
 
+/** Lifts with at least one loaded e1RM, most-logged first, so the picker leads with staples. */
+function buildLiftOptions(sessions: WorkoutSession[]): LiftOption[] {
+  const ids = new Set<string>();
+  for (const session of sessions) {
+    for (const performed of session.exercises) ids.add(performed.exerciseId);
+  }
+  return [...ids]
+    .map((id) => ({
+      id,
+      name: requireExercise(id).name,
+      points: buildExerciseTrend(sessions, id).filter(
+        (point): point is ExerciseTrendPoint & { e1rmKg: number } => point.e1rmKg != null,
+      ),
+    }))
+    .filter((option) => option.points.length > 0)
+    .sort((a, b) => b.points.length - a.points.length || a.name.localeCompare(b.name))
+    .slice(0, 10);
+}
+
+function BigStat({ value, label }: { value: string; label: string }) {
+  const { colors, typography } = useTheme();
   return (
-    <List.Item
-      title={title}
-      description={description}
-      left={(props) => <List.Icon {...props} icon={icon} color={colors.accent} />}
-      titleStyle={[typography.bodyBold, { color: colors.textPrimary }]}
-      descriptionStyle={[typography.caption, { color: colors.textMuted }]}
-    />
+    <View style={{ flex: 1 }}>
+      <AnimatedNumber
+        value={value}
+        style={[typography.jumbo, { color: colors.textPrimary, fontSize: 26, lineHeight: 30 }]}
+      />
+      <Text style={[typography.caption, { color: colors.textMuted }]}>{label}</Text>
+    </View>
   );
 }
 
@@ -552,10 +519,6 @@ function buildDecisionItems({
   ];
 }
 
-function zoneColor(zone: VolumeZone): string {
-  return heatColorForVolumeZone(zone);
-}
-
 function buildLineData(
   values: number[],
   baseline: number,
@@ -565,14 +528,6 @@ function buildLineData(
     value: value - baseline,
     label: '',
     onPress: () => onSelect(index),
-  }));
-}
-
-function buildBarData(muscles: MuscleLoad[]): barDataItem[] {
-  return muscles.slice(0, 6).map((item) => ({
-    value: item.sets,
-    label: MUSCLE_LABELS[item.muscle].slice(0, 3),
-    frontColor: zoneColor(item.zone),
   }));
 }
 
@@ -592,67 +547,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
-  headerActions: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  periodRow: {
-    flexDirection: 'row',
+  liftRail: {
     gap: 8,
+    paddingHorizontal: 16,
   },
-  card: {
-    borderWidth: StyleSheet.hairlineWidth,
+  statRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  metricRight: {
-    alignItems: 'flex-end',
+  trendValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
   },
   lineChartFrame: {
     width: '100%',
     height: 144,
     overflow: 'hidden',
   },
-  emptyChartPanel: {
-    minHeight: 144,
+  emptyChart: {
+    flex: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-  },
-  emptyChartLine: {
-    width: '72%',
-    height: 2,
-    justifyContent: 'center',
-  },
-  emptyChartDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 999,
-    alignSelf: 'center',
-  },
-  barChartFrame: {
-    width: '100%',
-    height: 154,
-    overflow: 'hidden',
-  },
-  listPanel: {
-    borderRadius: 14,
+    paddingHorizontal: 24,
   },
   bodyRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 20,
-  },
-  muscleRow: {
-    gap: 6,
-  },
-  prGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  prSlot: {
-    minWidth: '46%',
-    flexGrow: 1,
   },
 });
