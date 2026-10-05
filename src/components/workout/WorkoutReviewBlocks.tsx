@@ -1,4 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { ProgressLine } from '@/components/ui/ProgressLine';
@@ -173,40 +175,59 @@ function QualityBlock({
   );
 }
 
+/**
+ * The number to beat, on one line. Tapping it reveals last time, the win
+ * condition and why, so the reasoning is there without crowding the sets.
+ */
 export function ProgressionTargetPanel({ target, units }: { target: TargetToBeat; units: Units }) {
   const { colors, radius, spacing, typography } = useTheme();
+  const [open, setOpen] = useState(false);
 
   return (
-    <View
+    <Pressable
+      onPress={() => setOpen((current) => !current)}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      accessibilityLabel={`Target ${formatDecisionTarget(target.decision, units)}. ${open ? 'Hide' : 'Show'} details`}
       style={[
         styles.targetPanel,
         {
           borderColor: colors.border,
           borderRadius: radius.lg,
-          padding: spacing.md,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm,
           gap: spacing.sm,
         },
       ]}
     >
       <View style={styles.spread}>
-        <Text style={[typography.caption, { color: colors.textMuted }]}>
+        <Text style={[typography.caption, { color: colors.textMuted, flex: 1 }]} numberOfLines={1}>
           Target, {progressionActionLabel(target.decision.action).toLowerCase()}
         </Text>
         <Text style={[typography.numeric, { color: colors.accent }]}>
           {formatDecisionTarget(target.decision, units)}
         </Text>
-      </View>
-      <View style={styles.facts}>
-        <AssistantFact
-          label="Last time"
-          value={formatProgressionSignal(target.lastSignal, units)}
+        <MaterialCommunityIcons
+          name={open ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color={colors.textMuted}
         />
-        <AssistantFact label="To beat it" value={formatTargetWinCondition(target, units)} />
       </View>
-      <Text style={[typography.caption, { color: colors.textSecondary }]} numberOfLines={3}>
-        {target.decision.explanation}
-      </Text>
-    </View>
+      {open ? (
+        <>
+          <View style={styles.facts}>
+            <AssistantFact
+              label="Last time"
+              value={formatProgressionSignal(target.lastSignal, units)}
+            />
+            <AssistantFact label="To beat it" value={formatTargetWinCondition(target, units)} />
+          </View>
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            {target.decision.explanation}
+          </Text>
+        </>
+      ) : null}
+    </Pressable>
   );
 }
 

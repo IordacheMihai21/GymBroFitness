@@ -959,3 +959,138 @@ The user pointed out that the whole app exists to maximize muscle growth. The fi
 Result: **265** extended exercises (363 loggable in total), none time-tracked, all single-primary.
 
 Tests lock the rules in: single primary, no low-hypertrophy names, and `setsByMuscle` counts an extended exercise only for its main muscle. 491/491 passing.
+
+## Chest-day feedback: one side at a time, three-tap logging, a finished workout shows up everywhere (2026-10-05)
+
+The user trained chest/arms with the app and reported three problems.
+
+**1. One-sided work had no home.** Bayesian curls were done 2 sets per arm, lateral raises the same, and hammer curls were done on a machine instead of dumbbells. Nobody could tell whether the load field meant one dumbbell, one side or the whole bar, so progression could compare 12 kg with 24 kg.
+- `laterality.ts`: `isPerSide` resolves in order: the session choice, then the plan's `perSide`, then the exercise's `laterality`. A per-side set is **1 set** for MEV/MAV/MRV volume (each side got one set of stimulus) and **×2 for tonnage** (`performedVolumeKg`). Load and reps are always what one side did, the convention used by MyFitCoach, Steady and most trackers.
+- The load column is labelled by meaning: "kg/side", "kg each" (dumbbells, kettlebells), "kg total" (barbell, EZ bar, Smith) or plain "kg" (machine or stack), with a one-line hint above the table.
+- Workout screen: a "One side at a time" toggle (hidden for barbells) and **Swap**, a searchable sheet ranked by same muscles first that includes the extended library, so the machine hammer curl is one tap away. Swapping is refused once a set is logged, and the original id is kept in `replacedExerciseId`. A new session inherits last time's per-side choice.
+
+**2. Logging took too many taps.** Rebuilt around one rule: a set can be ticked with nothing typed.
+- `setFlow.ts`: ticking fills empty fields from the suggestion (last session, or the plan), effort defaults to the plan's RIR target, and **RIR 0 marks the set as failure automatically**, so nobody tags "failure" by hand.
+- **Next exercise** logs every open set that has typed or suggested numbers, then moves on; on the last exercise the button becomes **Finish workout**. Sets with nothing to go on stay open rather than being saved as zeros.
+- **Add set** and **Delete set** (unlogged sets only) live in the set table. `SetRow` became a single table row: set / last time / load / reps / RIR / check.
+- Removed "Fill next" and "Fill all". The target panel is one tappable line, and the readiness check-in is a one-line prompt that expands.
+- Typical exercise: about 3 to 4 taps (tick, tick, tick, Next).
+
+**3. The finished workout appeared in only two places.** Root causes:
+- A draft's `startedAt` came from the previous evening, which put the workout in last week. `normalizeSessionTiming` fixes this on save and on read.
+- Autosave created phantom drafts, so Resume showed workouts never started (`hasSessionActivity`).
+- Today was locked to plan day 0. `pickTodayPlan` maps weekdays to plan days, shows "Done for today" and points to the next session.
+- Plan didn't mark done days or show last performance (`lastPerformanceLabel`).
+
+**Found on the phone, fixed the same day:**
+- Set 2's greyed suggestion was copied from set 1's pre-filled planned load (80 kg, no reps) instead of its own planned 75 kg. Now only a set actually ticked today counts as "previous set", and a remembered set missing a field borrows it from the plan.
+- With a 1-30 rep plan, "Next exercise" would have logged untouched sets as 1 rep @ RIR 0. Bulk completion now trusts only typed numbers, last session, or sets done today. The plan's rep floor is a target, not a record. A single tick still uses the plan, since the lifter sees the greyed value first.
+- The screen stays awake while a workout is live (`expo-keep-awake`, as Hevy does).
+
+Verified on the phone (SM-S921B): Today shows "Done for today. Next tomorrow"; This week shows 1/6 with Monday ticked; Recovery shows chest, shoulders and biceps; Plan has Day 1 ticked with "Last: …" per exercise; Body and Progress count both workouts. tsc clean, eslint clean, 510/510 tests (13 new in `setFlow.test.ts`, plus dashboard tests).
+
+## Lock-screen logging, RP-style set feedback, automatic warm-ups (2026-10-05, same day)
+
+These are the top three ideas from the competitor deep dive (Hevy, RP Hypertrophy, Skulpt, Gravl).
+
+**1. Lock-screen notification (Hevy-style Live Activity, Android).** expo-notifications cannot show a live countdown, so this is a small local Expo module, `modules/workout-live` (Kotlin, autolinked from `modules/`).
+- An ongoing, silent, low-importance notification shows:
+  - the exercise and set ("Dumbbell Curl · Set 2 of 3") and the numbers it will be logged with ("Next: 14 kg each × 11 reps");
+  - a **live rest countdown** (chronometer), or elapsed workout time when not resting;
+  - a progress bar.
+- Buttons: **Log set** (only when the set can be logged without typing), **+30 s** and **Skip rest**. They come back to JavaScript as `onAction` events through a non-exported broadcast receiver.
+- Content is a pure function, `domain/workouts/liveNotification.ts`, and is tested.
+- Autosave writes immediately when the app is not in the foreground, because Android pauses JS timers there. A set logged from the lock screen is therefore on disk right away.
+- The notification hides in review, after saving and on discard, and times out after 4 h as a safety net.
+
+**2. Per-muscle feedback that changes set counts (RP Hypertrophy).** `domain/workouts/muscleFeedback.ts`:
+- **At a muscle's first exercise** (if it was trained in the last 14 days): "since last time" — Never sore / Healed early / Just in time / Still sore. One tap.
+- **After its last exercise:** Pump (Low / Moderate / Great), Workload (Easy / Right / Hard / Too much), Joints (Fine / Some / A lot). Three taps or Skip; the card also appears in Review for the last muscle.
+- **Decision rules** (`setDeltaFromFeedback`):
+
+  | Ratings | Change |
+  |---|---|
+  | joints "a lot", workload "too much", or still sore + hard | −1 set |
+  | still sore, some joint pain, recovered just in time, hard, or great pump at a fair workload | hold |
+  | recovered, and easy or just-right work | +1 set |
+
+- **Applied at the next session for that muscle** (`applyFeedbackVolume`):
+  - The change is stored as `setOffset` relative to the plan, so plan edits still apply and offsets accumulate week to week.
+  - Clamped to 1–5 sets per exercise and the muscle's weekly MRV across the whole plan.
+  - Added sets are spread across the muscle's exercises.
+  - Each rating is applied once.
+  - Two weeks off starts again from the plan.
+- The session shows why: "One more set today. It recovered with room to spare, so one set is added."
+
+**3. Warm-up calculator (Hevy).** `domain/workouts/warmup.ts`, with a "Warm up (n)" button on the exercise:
+
+| Exercise | Ramp |
+|---|---|
+| First compound for a muscle | 50% × 8, 70% × 5, 85% × 2 |
+| Compound, muscle already warm | 60% × 6, 80% × 3 |
+| First isolation for a muscle | 50% × 10, 75% × 5 |
+| Isolation, muscle already warm | 60% × 8 |
+
+- Loads are rounded to what the equipment can make: an empty 20 kg bar, a 10 kg EZ bar, 2 kg dumbbells, or the machine increment. Steps that collapse onto each other are dropped.
+- Warm-ups get a 60 s rest, no RIR, never count for volume or progression, and **don't shift which working set is compared with last time**: history and plan lookups now use the working-set index.
+
+Verified: tsc clean, eslint clean, 534/534 tests (+24: warm-up 7, muscle feedback 11, live notification 6).
+
+## Learned load jumps and smarter supersets (2026-10-05, same day)
+
+These are ideas 4 and 5 from the deep dive.
+
+**4. Load jumps learned per lifter and per exercise (Gravl-style).** `domain/progression/learning.ts`:
+- **What it learns from:** every past load increase on an exercise is checked after the fact. A jump **held** if every working set at the new load still reached the rep floor; its margin is the lowest reps minus the floor.
+- **The three modes:**
+
+  | Mode | When | Effect on the engine (step 9, rule version 3) |
+  |---|---|---|
+  | `early` | The last two jumps both held with ≥ 2 reps to spare | Load goes up when every set is within one rep of the top and at least one reached it (`TOP_OF_RANGE_LEARNED_EARLY`) |
+  | `patient` | The last jump missed, or 2 of the last 3 did | Hitting the top once holds the load (`CONFIRM_BEFORE_LOAD`); it goes up after a second session at the top at the same load |
+  | `standard` | Otherwise | Unchanged double progression |
+
+- **Scope:** it only changes *when* load goes up, never the increment or the safety rails. Pain holds, missing RIR, deloads and the 10% cap still come first.
+- **Visible to the lifter:** the exercise page shows "Load jumps held: 3 of 4. Next jump comes a rep early." and the explanation says why. `supportingMetrics` records `loadJumpsHeld` and `loadJumpMode`.
+
+**5. Supersets (Hevy-style auto-advance), fixed and labelled.**
+- **Auto-advance** to the partner after each set already existed, but it skipped rest on *every* move inside a chain, including the wrap from B back to A. A superset is A1, B1, rest, A2, B2, rest: moving forward in the round is back-to-back, and wrapping to the start of the chain now starts the rest timer. The old test encoded the bug and was corrected.
+- **Warm-up sets** never jump to the partner; they are done in a row first.
+- **Round label** under the exercise name: "Superset, round 2 of 3, with Lat Pulldown".
+
+Verified: tsc clean, eslint clean, 541/541 tests (+7: learning 5, superset 2).
+
+## Left/right logging, Health Connect, one side in the plan (2026-10-05, same day)
+
+These are ideas 6, 7 and 8 from the deep dive.
+
+**6. Left and right logged separately (imbalances).** `domain/workouts/sides.ts`:
+- **How to turn it on:** on one-side-at-a-time exercises, "Log each side" splits the reps field into L and R. The header reads "L / R", and the next session remembers the choice.
+- **`reps` stays the weaker side** (min of L and R), so double progression asks the weaker side to earn the next load. This is the standard advice for fixing an imbalance.
+- **Tonnage** uses the real L + R reps instead of ×2.
+- **Filling:** ticking an empty split set fills both sides from last time; "Last" shows "12 kg × 10/8"; the lock-screen notification shows "L10 R9".
+- **Exercise page, "Left vs right"** (last 6 sessions with both sides): total L and R reps and which side is behind and by how much. Within 5% counts as balanced. The advice is to start with the weaker side and stop the other at the same reps.
+
+**7. Android Health Connect.**
+- `react-native-health-connect` 4.1.3. Its Expo module registers the permission delegate itself, so `MainActivity` is untouched.
+- `app.json` adds only the 3 permissions used: READ_WEIGHT, READ_HEART_RATE and WRITE_EXERCISE. The plugin adds the privacy-rationale intent filter and the Android 14 activity alias.
+- **Profile card "Health Connect":** connect (the lifter picks what to share in the system screen), see what is on, import weight now, manage access, disconnect. Hidden where Health Connect does not exist; "Get Health Connect" when it needs installing.
+- **Weight → Body tab:**
+  - One entry per local day, the latest weigh-in; readings outside 25–350 kg are ignored.
+  - A weight typed in the app always wins; a day with only tape measurements gets the weight added.
+  - Synced on Body tab focus, at most every 6 h, looking back 180 days.
+- **Heart rate:** average and max during the workout are read on save (3 s timeout, so it never delays saving). Shown on the finish screen and in history ("142 bpm avg").
+- **Workouts out:** saved workouts are written as STRENGTH_TRAINING exercise sessions.
+  - The start is 5 min before the first set, the same rule as the draft-timing fix.
+  - `clientRecordId` is `gymbro-<workout id>`, so re-exports replace instead of duplicating.
+- **Pure rules** live in `domain/health/healthSync.ts` and are tested; `services/healthConnect.ts` swallows every native failure.
+- **Fixed in passing:** the body log used the UTC date, so a 01:00 weigh-in in Romania landed on the previous day. It now uses `toDateOnly`, the phone's local date.
+
+**8. "One side at a time" in the plan editor.** The exercise editor has a checkbox, hidden for barbell lifts. The row shows the tag, and sessions open that way: the plan's `perSide` comes after the session choice and before the exercise default.
+
+**Build notes:**
+- `expo prebuild` regenerates `android/` (gitignored) and deletes `android/local.properties`. Recreate it with `sdk.dir=$HOME/Library/Android/sdk`.
+- The release build needs a JDK of 17 or newer: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`. The system default is Corretto 11.
+- Signing stays the template debug keystore. Before `adb install -r`, compare certificates with `apksigner verify --print-certs`: a mismatch would force an uninstall, which wipes the phone's data.
+
+Verified: tsc clean, eslint clean, 556/556 tests (+15: Health Connect 7, sides 8).

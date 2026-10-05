@@ -41,7 +41,7 @@ async function cancelScheduledRestTimerNotifications(): Promise<void> {
   );
 }
 
-async function ensureNotificationPermission(): Promise<boolean> {
+export async function ensureNotificationPermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
     await setNotificationChannelAsync(REST_TIMER_CHANNEL_ID, {
       name: 'Rest timer',

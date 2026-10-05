@@ -33,6 +33,7 @@ import {
   type TargetToBeat,
 } from '@/domain/workouts/targetToBeat';
 import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
+import { sideBalance, type SideBalance } from '@/domain/workouts/sides';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
 import type { EquipmentType, Exercise, MuscleGroup, Units, WorkoutSession } from '@/types';
@@ -175,6 +176,8 @@ export default function ExerciseDetailScreen() {
           />
 
           <ProgressionCard target={progressionTarget} units={preferences.units} />
+
+          <SideBalanceCard balance={sideBalance(history, exerciseId)} />
 
           <LatestSessionCard session={intelligence.latestSession} units={preferences.units} />
 
@@ -409,6 +412,57 @@ function TrendCard({
   );
 }
 
+/** "Load jumps held: 3 of 4. Next jump comes a rep early." from what the engine learned. */
+function jumpLine(target: TargetToBeat): string | null {
+  const held = target.decision.supportingMetrics.loadJumpsHeld;
+  const mode = target.decision.supportingMetrics.loadJumpMode;
+  if (typeof held !== 'string') return null;
+  const [kept, total] = held.split('/').map(Number);
+  if (!total) return null;
+  const tail =
+    mode === 'early'
+      ? ' Next jump comes a rep early.'
+      : mode === 'patient'
+        ? ' Next jump waits for a confirming session.'
+        : '';
+  return `Load jumps held: ${kept} of ${total}.${tail}`;
+}
+
+/** Left vs right for exercises logged one side at a time; hidden until there is data. */
+function SideBalanceCard({ balance }: { balance: SideBalance | null }) {
+  const { colors, typography } = useTheme();
+  if (!balance) return null;
+  const weakerLabel = balance.weaker === 'left' ? 'Left' : 'Right';
+  return (
+    <Section
+      title="Left vs right"
+      right={
+        <Text
+          style={[
+            typography.captionBold,
+            { color: balance.weaker ? colors.warning : colors.success },
+          ]}
+        >
+          {balance.weaker ? `${weakerLabel} ${balance.gapPercent}% behind` : 'Balanced'}
+        </Text>
+      }
+    >
+      <Text style={[typography.title, { color: colors.textPrimary }]}>
+        {balance.leftReps} L · {balance.rightReps} R
+      </Text>
+      <Text style={[typography.caption, { color: colors.textSecondary }]}>
+        Reps over {balance.sets} sets in the last {balance.sessions}{' '}
+        {balance.sessions === 1 ? 'session' : 'sessions'}.
+      </Text>
+      <EmptyText>
+        {balance.weaker
+          ? `Start each set with your ${weakerLabel.toLowerCase()} side and stop the other side at the same reps. Progression already follows the weaker side.`
+          : 'Both sides are within 5% of each other. Keep starting with your weaker side.'}
+      </EmptyText>
+    </Section>
+  );
+}
+
 function ProgressionCard({ target, units }: { target: TargetToBeat | null; units: Units }) {
   const { colors, typography } = useTheme();
 
@@ -431,6 +485,11 @@ function ProgressionCard({ target, units }: { target: TargetToBeat | null; units
           <Text style={[typography.caption, { color: colors.textSecondary }]}>
             Last time: {formatProgressionSignal(target.lastSignal, units)}
           </Text>
+          {jumpLine(target) ? (
+            <Text style={[typography.caption, { color: colors.textSecondary }]}>
+              {jumpLine(target)}
+            </Text>
+          ) : null}
           <EmptyText>{target.decision.explanation}</EmptyText>
         </>
       ) : (

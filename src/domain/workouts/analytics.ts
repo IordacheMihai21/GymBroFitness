@@ -1,7 +1,17 @@
-import type { Exercise, MuscleGroup, PerformedSet, PersonalRecord, WorkoutSession } from '@/types';
+import type {
+  Exercise,
+  MuscleGroup,
+  PerformedExercise,
+  PerformedSet,
+  PersonalRecord,
+  WorkoutSession,
+} from '@/types';
 import { uuid } from '@/utils/ids';
 
 import { completedWorkingSets } from '../progression/engine';
+
+import { sideFactor } from './laterality';
+import { hasBothSides } from './sides';
 
 /**
  * Epley estimated 1RM. Only meaningful for loaded, lowish-rep sets; callers
@@ -42,8 +52,20 @@ export function totalWorkingSets(session: WorkoutSession): number {
   return session.exercises.reduce((total, ex) => total + completedWorkingSets(ex.sets).length, 0);
 }
 
+/** Tonnage for one performed exercise; per-side work counts both sides. */
+export function performedVolumeKg(performed: PerformedExercise): number {
+  const factor = sideFactor(performed);
+  return completedWorkingSets(performed.sets).reduce((total, set) => {
+    // Left and right logged separately: use the real reps of each side.
+    if (hasBothSides(set) && (set.subEfforts?.length ?? 0) === 0) {
+      return total + (set.loadKg ?? 0) * (set.repsLeft + set.repsRight);
+    }
+    return total + volumeLoadKg([set]) * factor;
+  }, 0);
+}
+
 export function sessionVolumeKg(session: WorkoutSession): number {
-  return session.exercises.reduce((total, ex) => total + volumeLoadKg(ex.sets), 0);
+  return session.exercises.reduce((total, ex) => total + performedVolumeKg(ex), 0);
 }
 
 export function setsByMuscle(
@@ -123,7 +145,7 @@ export function detectPersonalRecords(
           });
         }
       }
-      const volume = volumeLoadKg(ex.sets);
+      const volume = performedVolumeKg(ex);
       if (volume > 0 && volume > best(exercise.id, 'max_volume')) {
         newRecords.push({
           id: uuid(),

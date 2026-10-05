@@ -1,0 +1,7 @@
+expo.modules.workoutlive.workout-live-pngs-0 /Users/mi/GymBroFitness/modules/workout-live/android/build/generated/res/pngs/release
+expo.modules.workoutlive.workout-live-resValues-1 /Users/mi/GymBroFitness/modules/workout-live/android/build/generated/res/resValues/release
+expo.modules.workoutlive.workout-live-mergeReleaseResources-2 /Users/mi/GymBroFitness/modules/workout-live/android/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
+expo.modules.workoutlive.workout-live-mergeReleaseResources-3 /Users/mi/GymBroFitness/modules/workout-live/android/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
+expo.modules.workoutlive.workout-live-release-4 /Users/mi/GymBroFitness/modules/workout-live/android/build/intermediates/merged_res/release/mergeReleaseResources
+expo.modules.workoutlive.workout-live-main-5 /Users/mi/GymBroFitness/modules/workout-live/android/src/main/res
+expo.modules.workoutlive.workout-live-release-6 /Users/mi/GymBroFitness/modules/workout-live/android/src/release/res

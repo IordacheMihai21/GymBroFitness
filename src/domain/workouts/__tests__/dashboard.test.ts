@@ -1,7 +1,14 @@
 import type { BodyMeasurementEntry } from '@/domain/body/measurements';
 import type { PerformedSet, WorkoutSession } from '@/types';
 
-import { bodyweightSnapshot, muscleFreshness, weeklyVolumeSeries } from '../dashboard';
+import {
+  bodyweightSnapshot,
+  muscleFreshness,
+  pickTodayPlan,
+  weeklyVolumeSeries,
+} from '../dashboard';
+import { normalizeSessionTiming } from '../history';
+import { hasSessionActivity } from '../session';
 
 function set(patch: Partial<PerformedSet> = {}): PerformedSet {
   return {
@@ -134,5 +141,69 @@ describe('bodyweightSnapshot', () => {
     expect(snapshot?.latestKg).toBe(81.2);
     expect(snapshot?.deltaKg).toBeCloseTo(-0.8);
     expect(snapshot?.series).toEqual([82, 81.2]);
+  });
+});
+
+describe('pickTodayPlan', () => {
+  const days = ['Mon', 'Wed', 'Fri'].map((name, index) => ({
+    id: `d${index}`,
+    name,
+    focus: [],
+    prescriptions: [],
+    estimatedMinutes: 45,
+  })) as unknown as Parameters<typeof pickTodayPlan>[0];
+  const monday = new Date('2026-10-05T09:00:00');
+
+  it("features today's planned session", () => {
+    expect(pickTodayPlan(days, [0, 2, 4], [], monday)).toEqual({
+      dayIndex: 0,
+      status: 'today',
+      daysAway: 0,
+    });
+  });
+
+  it('moves on to the next planned session once today is trained', () => {
+    const done = session('m', '2026-10-05T08:00:00', [set()]);
+    expect(pickTodayPlan(days, [0, 2, 4], [done], monday)).toEqual({
+      dayIndex: 1,
+      status: 'done',
+      daysAway: 2,
+    });
+  });
+
+  it('shows the next session on a rest day', () => {
+    const tuesday = new Date('2026-10-06T09:00:00');
+    expect(pickTodayPlan(days, [0, 2, 4], [], tuesday)).toEqual({
+      dayIndex: 1,
+      status: 'rest',
+      daysAway: 1,
+    });
+  });
+});
+
+describe('session timing', () => {
+  it('dates a workout by its first logged set, not by when the screen opened', () => {
+    const opened = session('a', '2026-10-04T19:00:00.000Z', [
+      set({ completedAt: '2026-10-05T13:10:00.000Z' }),
+      set({ completedAt: '2026-10-05T14:20:00.000Z' }),
+    ]);
+    const normalized = normalizeSessionTiming({
+      ...opened,
+      finishedAt: '2026-10-05T14:30:00.000Z',
+    });
+    expect(normalized.startedAt).toBe('2026-10-05T13:05:00.000Z');
+  });
+
+  it('leaves a normally started workout alone', () => {
+    const normal = session('b', '2026-10-05T13:00:00.000Z', [
+      set({ completedAt: '2026-10-05T13:08:00.000Z' }),
+    ]);
+    expect(normalizeSessionTiming(normal)).toBe(normal);
+  });
+
+  it('treats an untouched session as no activity', () => {
+    const untouched = session('c', '2026-10-05T13:00:00.000Z', [set({ completed: false })]);
+    expect(hasSessionActivity({ ...untouched, status: 'in_progress' })).toBe(false);
+    expect(hasSessionActivity(session('d', '2026-10-05T13:00:00.000Z', [set()]))).toBe(true);
   });
 });

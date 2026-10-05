@@ -8,6 +8,7 @@ import { roundToIncrement, smallestIncrementKg } from '@/utils/units';
 
 import { MAX_WEEKLY_SETS_BY_EXPERIENCE, PROGRESSION_CONSTRAINTS as C } from './constraints';
 import { explain } from './explanations';
+import { findLoadBumps, learnBumpProfile } from './learning';
 import { PROGRESSION_RULE_VERSION } from './rules';
 
 /**
@@ -31,6 +32,7 @@ function effortValue(set: PerformedSet, isTime: boolean): number {
 
 type SessionMetrics = {
   sets: PerformedSet[];
+  efforts: number[];
   topLoad: number;
   avgReps: number;
   minReps: number;
@@ -60,6 +62,7 @@ function measure(
   const last = efforts[efforts.length - 1];
   return {
     sets: working,
+    efforts,
     topLoad: Math.max(...loads),
     avgReps: efforts.reduce((a, b) => a + b, 0) / efforts.length,
     minReps: Math.min(...efforts),
@@ -117,6 +120,21 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
   const confidence: ProgressionDecision['confidence'] =
     comparableHistoryCount >= 2 ? 'high' : comparableHistoryCount === 1 ? 'medium' : 'low';
 
+  // How readily this lifter's load jumps on this exercise have held so far.
+  const bumpProfile = learnBumpProfile(
+    findLoadBumps(
+      [
+        ...previousSessions.map((session) => ({
+          sets: session.sets,
+          minReps: session.prescription.minReps,
+          expectedSets: session.prescription.workingSets,
+        })),
+        { sets: input.performedSets, minReps: p.minReps, expectedSets: p.workingSets },
+      ],
+      isTime,
+    ),
+  );
+
   const supportingMetrics: Record<string, number | string> = m
     ? {
         comparableHistorySessions: comparableHistoryCount,
@@ -130,6 +148,8 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
         targetRange: `${p.minReps}–${p.maxReps}`,
         targetRir: p.targetRir,
         nutritionContext: input.nutritionContext ?? 'unknown',
+        loadJumpsHeld: `${bumpProfile.held}/${bumpProfile.bumps}`,
+        loadJumpMode: bumpProfile.mode,
       }
     : { completedSets: 0, comparableHistorySessions: comparableHistoryCount };
 
@@ -255,18 +275,46 @@ export function runProgression(input: ProgressionInput): ProgressionDecision {
     });
   }
 
-  // 9. Top of range on every set at (or easier than) target RIR → add load.
+  // 9. Top of range at (or easier than) target RIR → add load. When the
+  //    threshold is "reached" depends on how this lifter's past jumps went.
   const rirOk = m.avgRir != null && m.avgRir >= p.targetRir - 0.5;
-  if (m.allAtCeiling && rirOk) {
-    if (isLoadable && m.topLoad > 0) {
-      const increment = smallestIncrementKg(exercise.equipment);
-      const nextLoad = roundToIncrement(m.topLoad + increment, increment);
+  if (isLoadable && m.topLoad > 0 && rirOk) {
+    const increment = smallestIncrementKg(exercise.equipment);
+    const nextLoad = Math.max(
+      roundToIncrement(m.topLoad + increment, increment),
+      m.topLoad + (increment > 0 ? increment : 0.5),
+    );
+    const earlyReady =
+      bumpProfile.mode === 'early' &&
+      !m.allAtCeiling &&
+      m.efforts.every((r) => r >= p.maxReps - 1) &&
+      m.efforts.some((r) => r >= p.maxReps);
+    if (earlyReady) {
       return decide({
         action: 'increase_load',
-        reasonCode: 'TOP_OF_RANGE_ALL_SETS',
-        nextLoad: Math.max(nextLoad, m.topLoad + (increment > 0 ? increment : 0.5)),
+        reasonCode: 'TOP_OF_RANGE_LEARNED_EARLY',
+        nextLoad,
       });
     }
+    if (m.allAtCeiling) {
+      if (bumpProfile.mode === 'patient') {
+        const previous = comparableHistoryMetrics[comparableHistoryMetrics.length - 1]?.metrics;
+        const confirmed =
+          previous != null &&
+          previous.allAtCeiling &&
+          Math.abs(previous.topLoad - m.topLoad) < 0.01;
+        if (!confirmed) {
+          return decide({
+            action: 'maintain',
+            reasonCode: 'CONFIRM_BEFORE_LOAD',
+            nextLoad: m.topLoad,
+          });
+        }
+      }
+      return decide({ action: 'increase_load', reasonCode: 'TOP_OF_RANGE_ALL_SETS', nextLoad });
+    }
+  }
+  if (m.allAtCeiling && rirOk && !(isLoadable && m.topLoad > 0)) {
     // Bodyweight/time: extend the target range instead of loading.
     return decide({
       action: 'increase_reps',

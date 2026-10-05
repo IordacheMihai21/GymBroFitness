@@ -47,11 +47,12 @@ import {
   pickProgressPhotoFromLibrary,
 } from '@/services/media/progressPhotoStorage';
 import { inputTheme, useTheme } from '@/theme';
-import { formatDate } from '@/utils/dates';
+import { formatDate, toDateOnly } from '@/utils/dates';
 import { displayLoad, loadInputToKg, parseDecimalInput, unitLabel } from '@/utils/units';
 
+/** Today in the phone's time zone; a weigh-in at 01:00 belongs to today, not to UTC's yesterday. */
 function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toDateOnly(new Date());
 }
 
 export default function BodyLogScreen() {

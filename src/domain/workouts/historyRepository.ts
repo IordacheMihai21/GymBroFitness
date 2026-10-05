@@ -10,6 +10,8 @@ import { dataRecoveryTable, workoutSessionsTable } from '@/db/schema';
 import type { GymBroDb } from '@/db/types';
 import type { WorkoutSession } from '@/types';
 
+import { normalizeSessionTiming } from './history';
+
 const RESUMABLE_STATUSES = new Set<WorkoutSession['status']>(['in_progress', 'paused']);
 
 export type WorkoutHistoryPage = {
@@ -35,7 +37,7 @@ export function listWorkoutHistorySql(db: GymBroDb, page?: WorkoutHistoryPage): 
 
   return rows.flatMap((row) => {
     const session = decodeWorkoutSessionRow(db, row.id, row.payload);
-    return session ? [session] : [];
+    return session ? [normalizeSessionTiming(session)] : [];
   });
 }
 
@@ -99,7 +101,7 @@ export function discardInProgressWorkoutSessionSql(db: GymBroDb, sessionId: stri
 
 export function saveWorkoutSessionSql(db: GymBroDb, session: WorkoutSession): WorkoutSession {
   const completed: WorkoutSession = {
-    ...session,
+    ...normalizeSessionTiming(session),
     status: 'completed',
     finishedAt: session.finishedAt ?? new Date().toISOString(),
     reviewStartedAt: null,

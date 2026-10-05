@@ -15,16 +15,28 @@ import { displayLoad, unitLabel } from '@/utils/units';
 
 export type AutosaveState = 'idle' | 'restored' | 'saving' | 'saved' | 'error';
 
+/** Working sets only: warm-ups are preparation, not part of the session's set count. */
+export function countPlannedSets(exercises: PerformedExercise[]): number {
+  return exercises.reduce(
+    (sum, exercise) => sum + exercise.sets.filter((set) => set.kind !== 'warmup').length,
+    0,
+  );
+}
+
 export function countCompletedSets(exercises: PerformedExercise[]): number {
   return exercises.reduce(
-    (sum, exercise) => sum + exercise.sets.filter((set) => set.completed && !set.skipped).length,
+    (sum, exercise) =>
+      sum +
+      exercise.sets.filter((set) => set.kind !== 'warmup' && set.completed && !set.skipped).length,
     0,
   );
 }
 
 export function countHandledSets(exercises: PerformedExercise[]): number {
   return exercises.reduce(
-    (sum, exercise) => sum + exercise.sets.filter((set) => set.completed || set.skipped).length,
+    (sum, exercise) =>
+      sum +
+      exercise.sets.filter((set) => set.kind !== 'warmup' && (set.completed || set.skipped)).length,
     0,
   );
 }

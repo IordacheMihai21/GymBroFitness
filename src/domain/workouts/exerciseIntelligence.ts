@@ -3,7 +3,7 @@ import { completedWorkingSets } from '@/domain/progression/engine';
 import type { PerformedSet, Units, WorkoutSession } from '@/types';
 import { formatLoad } from '@/utils/units';
 
-import { estimateOneRepMax, setEfforts, volumeLoadKg } from './analytics';
+import { estimateOneRepMax, performedVolumeKg, setEfforts } from './analytics';
 
 export type ExerciseSetSnapshot = {
   setNumber: number;
@@ -120,7 +120,7 @@ function buildSessionSummary(
       performedAt: session.finishedAt ?? session.startedAt,
       completedSets: workingSets.length,
       volumeKg: performed.reduce(
-        (sum, exercise) => sum + Math.round(volumeLoadKg(exercise.sets)),
+        (sum, exercise) => sum + Math.round(performedVolumeKg(exercise)),
         0,
       ),
       bestSetLabel: bestSetLabel(workingSets, units),

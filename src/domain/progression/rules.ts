@@ -1,6 +1,6 @@
 import type { ProgressionReasonCode } from '@/types';
 
-export const PROGRESSION_RULE_VERSION = 2 as const;
+export const PROGRESSION_RULE_VERSION = 3 as const;
 
 export type ProgressionRule = {
   id: ProgressionReasonCode;
@@ -87,6 +87,18 @@ export const PROGRESSION_RULES: Record<ProgressionReasonCode, ProgressionRule> =
     'Increase load after every prescribed set reaches the ceiling at target effort.',
     ['complete prescription', 'RIR coverage', 'equipment increment'],
     COMMON_LIMIT,
+  ),
+  TOP_OF_RANGE_LEARNED_EARLY: rule(
+    'TOP_OF_RANGE_LEARNED_EARLY',
+    "Increase load one rep before the ceiling when this lift's last two jumps held with reps to spare.",
+    ['complete prescription', 'RIR coverage', 'two earlier load jumps on this exercise'],
+    "Learned from this lifter's own history on this exercise; a single missed jump turns it off.",
+  ),
+  CONFIRM_BEFORE_LOAD: rule(
+    'CONFIRM_BEFORE_LOAD',
+    'Hold once at the ceiling when the last load jump on this lift cost reps.',
+    ['complete prescription', 'RIR coverage', 'an earlier load jump on this exercise'],
+    "Learned from this lifter's own history; it only delays a jump by one session.",
   ),
   BODYWEIGHT_TOP_OF_RANGE: rule(
     'BODYWEIGHT_TOP_OF_RANGE',

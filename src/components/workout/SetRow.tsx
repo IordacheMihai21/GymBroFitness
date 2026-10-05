@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Divider, IconButton, Menu, TextInput } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Pressable, TextInput as RNTextInput, StyleSheet, Text, View } from 'react-native';
+import { Divider, IconButton, Menu } from 'react-native-paper';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -14,7 +15,9 @@ import { durations, easeOutExpo, popSpring } from '@/components/ui/motion';
 
 import { formatPlateBreakdown, plateBreakdown } from '@/domain/workouts/plateMath';
 import { formatRir } from '@/domain/workouts/rir';
-import { fonts, inputTheme, MIN_TOUCH_TARGET, useTheme } from '@/theme';
+import type { SetAutofillSuggestion } from '@/domain/workouts/setAutofill';
+import { sidePatch } from '@/domain/workouts/sides';
+import { MIN_TOUCH_TARGET, useTheme } from '@/theme';
 import type {
   EquipmentType,
   PerformedSet,
@@ -68,12 +71,6 @@ const SET_KIND_LABELS: Record<SetKind, string> = {
   failure: 'To failure',
 };
 
-/** Short badge text for a non-default set kind; omitted entirely for 'working'. */
-const SET_KIND_BADGE: Partial<Record<SetKind, string>> = {
-  warmup: 'Warm-up',
-  failure: 'Failure',
-};
-
 type SetRowProps = {
   set: PerformedSet;
   targetLabel: string;
@@ -95,6 +92,16 @@ type SetRowProps = {
   validationError?: string | null;
   /** Completes this row and advances focus to the next open set. */
   onSubmitEditing?: () => void;
+  /** What an empty field becomes when the set is ticked; shown as greyed hints. */
+  suggestion?: SetAutofillSuggestion | null;
+  /** Load field meaning, e.g. "kg/side", "kg each", "kg total". */
+  loadLabel?: string;
+  /** Reps are per side for one-side-at-a-time work. */
+  perSide?: boolean;
+  /** Removes this (unlogged) set. */
+  onDelete?: () => void;
+  /** Left and right reps get their own fields (one-side-at-a-time work). */
+  splitSides?: boolean;
 };
 
 export type SetRowHandle = {
@@ -120,6 +127,10 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
     units,
     validationError,
     onSubmitEditing,
+    suggestion = null,
+    loadLabel,
+    onDelete,
+    splitSides = false,
   },
   ref,
 ) {
@@ -127,6 +138,7 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
   const [menuVisible, setMenuVisible] = useState(false);
   const loadInputRef = useRef<FocusableInput | null>(null);
   const resultInputRef = useRef<FocusableInput | null>(null);
+  const rightInputRef = useRef<FocusableInput | null>(null);
   const reduceMotion = useReducedMotion();
   // Completion sweep: the row fills with the success tint from left to right
   // while the check pops, so ticking a set feels like racking the bar.
@@ -206,16 +218,34 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
     onCopyPrevious?.();
   }
 
-  const kindLabel = SET_KIND_BADGE[set.kind];
-
   const sweepStyle = useAnimatedStyle(() => ({
     width: `${completion.value * 100}%`,
     opacity: Math.min(1, completion.value * 1.6),
   }));
   const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: checkScale.value }] }));
-  const tags = [kindLabel, technique !== 'standard' ? TECHNIQUE_LABELS[technique] : null].filter(
-    (tag): tag is string => tag != null,
-  );
+
+  const hintLoad =
+    suggestion?.loadKg != null ? String(displayLoad(suggestion.loadKg, units)) : undefined;
+  const hintReps = suggestion?.reps != null ? String(suggestion.reps) : undefined;
+  const hintSeconds =
+    suggestion?.durationSeconds != null ? String(suggestion.durationSeconds) : undefined;
+  const shownRir = set.rir ?? suggestion?.rir ?? null;
+  const previous = previousLabel?.replace(/^Last: /, '').replace(/ @ RIR.*$/, '') ?? '-';
+  const badge = set.kind === 'warmup' ? 'W' : set.kind === 'failure' ? 'F' : String(set.setNumber);
+  const badgeColor =
+    set.kind === 'warmup'
+      ? colors.warning
+      : set.kind === 'failure'
+        ? colors.danger
+        : set.completed
+          ? colors.success
+          : colors.textSecondary;
+  const inputSurface = set.completed ? 'transparent' : colors.surfaceRaised;
+  const inputText = [
+    typography.numeric,
+    styles.cellInput,
+    { color: colors.textPrimary, backgroundColor: inputSurface, borderRadius: radius.md },
+  ];
 
   return (
     <View
@@ -223,10 +253,9 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
         styles.row,
         {
           borderRadius: radius.lg,
-          borderColor: set.completed ? 'transparent' : colors.border,
-          paddingHorizontal: spacing.sm,
-          marginHorizontal: -spacing.sm,
-          opacity: set.skipped ? 0.6 : 1,
+          paddingHorizontal: spacing.xs,
+          marginHorizontal: -spacing.xs,
+          opacity: set.skipped ? 0.55 : 1,
         },
       ]}
     >
@@ -238,240 +267,260 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
           sweepStyle,
         ]}
       />
-      <View style={styles.rowHeader}>
-        <Text
-          style={[
-            typography.numeric,
-            styles.setNumber,
-            { color: set.completed ? colors.success : colors.textMuted },
-          ]}
-        >
-          {set.setNumber}
-        </Text>
-        <View style={styles.setMeta}>
-          <Text style={[typography.caption, { color: colors.textSecondary }]} numberOfLines={1}>
-            {previousLabel ?? 'No previous set'}
-          </Text>
-          {tags.length > 0 ? (
-            <Text
-              style={[
-                typography.captionBold,
-                { color: set.kind === 'failure' ? colors.warning : colors.accent },
-              ]}
-              numberOfLines={1}
+      <View style={styles.cells}>
+        <Menu
+          visible={menuVisible}
+          onDismiss={() => setMenuVisible(false)}
+          anchor={
+            <Pressable
+              onPress={() => setMenuVisible(true)}
+              disabled={menuLocked}
+              accessibilityRole="button"
+              accessibilityLabel={`Set ${set.setNumber} options${set.kind !== 'working' ? `, ${SET_KIND_LABELS[set.kind]}` : ''}`}
+              accessibilityState={{ expanded: menuVisible }}
+              hitSlop={6}
+              style={[styles.badgeCell, { borderRadius: radius.sm }]}
             >
-              {tags.join(', ')}
-            </Text>
+              <Text style={[typography.numeric, { color: badgeColor, fontSize: 15 }]}>{badge}</Text>
+            </Pressable>
+          }
+        >
+          {onCopyPrevious ? (
+            <Menu.Item
+              onPress={copyPrevious}
+              title="Copy previous set"
+              leadingIcon="content-copy"
+            />
           ) : null}
-        </View>
+          {onCopyToRemaining ? (
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                onCopyToRemaining();
+              }}
+              title="Apply to remaining sets"
+              leadingIcon="playlist-edit"
+              disabled={set.skipped}
+            />
+          ) : null}
+          {onToggleSkip ? (
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                onToggleSkip();
+              }}
+              title={set.skipped ? 'Restore set' : 'Skip set'}
+              leadingIcon={set.skipped ? 'backup-restore' : 'skip-next-outline'}
+            />
+          ) : null}
+          {onDelete ? (
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                onDelete();
+              }}
+              title="Delete set"
+              leadingIcon="delete-outline"
+            />
+          ) : null}
+          {hasSetActions || onDelete ? <Divider /> : null}
+          {SET_KINDS.map((item) => (
+            <Menu.Item
+              key={item}
+              onPress={() => selectKind(item)}
+              title={SET_KIND_LABELS[item]}
+              leadingIcon={item === set.kind ? 'check' : undefined}
+              disabled={set.skipped}
+            />
+          ))}
+          {supportsTechniques ? <Divider /> : null}
+          {supportsTechniques
+            ? TECHNIQUES.map((item) => (
+                <Menu.Item
+                  key={item}
+                  onPress={() => selectTechnique(item)}
+                  title={TECHNIQUE_LABELS[item]}
+                  leadingIcon={item === technique ? 'check' : undefined}
+                  disabled={set.skipped}
+                />
+              ))
+            : null}
+        </Menu>
 
-        <View style={styles.actionGroup}>
-          <Menu
-            visible={menuVisible}
-            onDismiss={() => setMenuVisible(false)}
-            anchor={
-              <IconButton
-                icon="dots-horizontal"
-                size={18}
-                iconColor={colors.textMuted}
-                onPress={() => setMenuVisible(true)}
-                disabled={menuLocked}
-                accessibilityLabel={`Set ${set.setNumber} options`}
-                accessibilityState={{ expanded: menuVisible }}
-                style={styles.compactButton}
-              />
+        <Pressable
+          onPress={onCopyPrevious ?? undefined}
+          disabled={!onCopyPrevious || isLocked}
+          style={styles.previousCell}
+          accessibilityLabel={`Last time: ${previous}`}
+        >
+          <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
+            {previous}
+          </Text>
+        </Pressable>
+
+        {supportsLoad ? (
+          <RNTextInput
+            ref={(instance) => {
+              loadInputRef.current = instance;
+            }}
+            value={set.loadKg != null ? String(displayLoad(set.loadKg, units)) : ''}
+            placeholder={hintLoad ?? '-'}
+            placeholderTextColor={colors.textMuted}
+            onChangeText={(text) => onChange({ loadKg: loadInputToKg(text, units) })}
+            keyboardType="decimal-pad"
+            returnKeyType="next"
+            blurOnSubmit={false}
+            onSubmitEditing={() => resultInputRef.current?.focus()}
+            editable={!isLocked}
+            selectTextOnFocus
+            accessibilityLabel={`${loadLabel ?? unitLabel(units)} for set ${set.setNumber}`}
+            style={[inputText, styles.loadCell]}
+          />
+        ) : null}
+
+        {splitSides && supportsReps && set.kind !== 'warmup' ? (
+          <View style={styles.sidesCell}>
+            {(['left', 'right'] as const).map((side) => {
+              const value = side === 'left' ? set.repsLeft : set.repsRight;
+              const hint =
+                (side === 'left' ? suggestion?.repsLeft : suggestion?.repsRight) ??
+                suggestion?.reps;
+              return (
+                <RNTextInput
+                  key={side}
+                  ref={
+                    side === 'left'
+                      ? (instance) => {
+                          resultInputRef.current = instance;
+                        }
+                      : (instance) => {
+                          rightInputRef.current = instance;
+                        }
+                  }
+                  value={value != null ? String(value) : ''}
+                  placeholder={hint != null ? String(hint) : side === 'left' ? 'L' : 'R'}
+                  placeholderTextColor={colors.textMuted}
+                  onChangeText={(text) => onChange(sidePatch(set, side, parseDecimalInput(text)))}
+                  keyboardType="number-pad"
+                  returnKeyType={side === 'left' ? 'next' : 'done'}
+                  blurOnSubmit={side !== 'left'}
+                  onSubmitEditing={
+                    side === 'left' ? () => rightInputRef.current?.focus() : onSubmitEditing
+                  }
+                  editable={!isLocked}
+                  selectTextOnFocus
+                  accessibilityLabel={`${side === 'left' ? 'Left' : 'Right'} reps for set ${set.setNumber}`}
+                  style={[inputText, styles.sideInput]}
+                />
+              );
+            })}
+          </View>
+        ) : (
+          <RNTextInput
+            ref={(instance) => {
+              resultInputRef.current = instance;
+            }}
+            value={
+              supportsReps
+                ? set.reps != null
+                  ? String(set.reps)
+                  : ''
+                : set.durationSeconds != null
+                  ? String(set.durationSeconds)
+                  : ''
             }
-          >
-            {onCopyPrevious ? (
-              <Menu.Item
-                onPress={copyPrevious}
-                title="Copy previous set"
-                leadingIcon="content-copy"
-              />
-            ) : null}
-            {onCopyToRemaining ? (
-              <Menu.Item
-                onPress={() => {
-                  setMenuVisible(false);
-                  onCopyToRemaining();
-                }}
-                title="Apply to remaining sets"
-                leadingIcon="playlist-edit"
-                disabled={set.skipped}
-              />
-            ) : null}
-            {onToggleSkip ? (
-              <Menu.Item
-                onPress={() => {
-                  setMenuVisible(false);
-                  onToggleSkip();
-                }}
-                title={set.skipped ? 'Restore set' : 'Skip set'}
-                leadingIcon={set.skipped ? 'backup-restore' : 'skip-next-outline'}
-              />
-            ) : null}
-            {hasSetActions ? <Divider /> : null}
-            {SET_KINDS.map((item) => (
-              <Menu.Item
-                key={item}
-                onPress={() => selectKind(item)}
-                title={SET_KIND_LABELS[item]}
-                leadingIcon={item === set.kind ? 'check' : undefined}
-                disabled={set.skipped}
-              />
-            ))}
-            {supportsTechniques ? <Divider /> : null}
-            {supportsTechniques
-              ? TECHNIQUES.map((item) => (
-                  <Menu.Item
-                    key={item}
-                    onPress={() => selectTechnique(item)}
-                    title={TECHNIQUE_LABELS[item]}
-                    leadingIcon={item === technique ? 'check' : undefined}
-                    disabled={set.skipped}
-                  />
-                ))
-              : null}
-          </Menu>
+            placeholder={(supportsReps ? hintReps : hintSeconds) ?? '-'}
+            placeholderTextColor={colors.textMuted}
+            onChangeText={(text) =>
+              onChange(
+                supportsReps
+                  ? { reps: parseDecimalInput(text) }
+                  : { durationSeconds: parseDecimalInput(text) },
+              )
+            }
+            keyboardType="number-pad"
+            returnKeyType="done"
+            onSubmitEditing={onSubmitEditing}
+            editable={!isLocked}
+            selectTextOnFocus
+            accessibilityLabel={`${supportsReps ? 'Reps' : 'Seconds'} for set ${set.setNumber}`}
+            style={[inputText, splitSides ? styles.sidesCell : styles.repsCell]}
+          />
+        )}
 
-          <Animated.View style={checkStyle}>
-            <IconButton
-              icon={set.skipped ? 'skip-next-outline' : 'check'}
-              mode={set.completed ? 'contained' : 'contained-tonal'}
-              containerColor={set.completed ? colors.success : colors.surfaceRaised}
-              iconColor={set.completed ? colors.onAccent : colors.textSecondary}
-              size={20}
-              onPress={onToggleComplete}
-              disabled={disabled || set.skipped}
-              accessibilityLabel={
-                set.completed
-                  ? `Mark set ${set.setNumber} incomplete`
-                  : `Mark set ${set.setNumber} complete, target ${targetLabel}`
-              }
-              style={styles.compactButton}
-            />
-          </Animated.View>
-        </View>
-      </View>
-
-      {set.skipped ? (
-        <Text style={[typography.caption, { color: colors.textMuted }]}>
-          Skipped. Not counted in progression or volume.
-        </Text>
-      ) : null}
-
-      {!set.skipped ? (
-        <View style={styles.inputGroup}>
-          {supportsLoad ? (
-            <TextInput
-              theme={inputTheme}
-              ref={(instance: FocusableInput | null) => {
-                loadInputRef.current = instance;
-              }}
-              mode="outlined"
-              dense
-              label={
-                trackingType === 'weighted_bodyweight'
-                  ? `extra ${unitLabel(units)}`
-                  : unitLabel(units)
-              }
-              value={set.loadKg != null ? String(displayLoad(set.loadKg, units)) : ''}
-              onChangeText={(text) => onChange({ loadKg: loadInputToKg(text, units) })}
-              keyboardType="decimal-pad"
-              returnKeyType="next"
-              blurOnSubmit={false}
-              onSubmitEditing={() => resultInputRef.current?.focus()}
-              editable={!isLocked}
-              style={[styles.input, { backgroundColor: colors.background }]}
-              contentStyle={styles.inputContent}
-            />
-          ) : null}
-          {supportsReps ? (
-            <TextInput
-              theme={inputTheme}
-              ref={(instance: FocusableInput | null) => {
-                resultInputRef.current = instance;
-              }}
-              mode="outlined"
-              dense
-              label="reps"
-              value={set.reps != null ? String(set.reps) : ''}
-              onChangeText={(text) => onChange({ reps: parseDecimalInput(text) })}
-              keyboardType="number-pad"
-              returnKeyType="done"
-              onSubmitEditing={onSubmitEditing}
-              editable={!isLocked}
-              style={[styles.input, { backgroundColor: colors.background }]}
-              contentStyle={styles.inputContent}
-            />
-          ) : (
-            <TextInput
-              theme={inputTheme}
-              ref={(instance: FocusableInput | null) => {
-                resultInputRef.current = instance;
-              }}
-              mode="outlined"
-              dense
-              label="seconds"
-              value={set.durationSeconds != null ? String(set.durationSeconds) : ''}
-              onChangeText={(text) => onChange({ durationSeconds: parseDecimalInput(text) })}
-              keyboardType="number-pad"
-              returnKeyType="done"
-              onSubmitEditing={onSubmitEditing}
-              editable={!isLocked}
-              style={[styles.input, { backgroundColor: colors.background }]}
-              contentStyle={styles.inputContent}
-            />
-          )}
-          <Pressable
-            onPress={onOpenRirPicker}
-            disabled={isLocked}
-            accessibilityRole="button"
-            accessibilityLabel={`RIR for set ${set.setNumber}: ${set.rir != null ? formatRir(set.rir) : 'not set'}`}
+        <Pressable
+          onPress={onOpenRirPicker}
+          disabled={isLocked}
+          accessibilityRole="button"
+          accessibilityLabel={`RIR for set ${set.setNumber}: ${shownRir != null ? formatRir(shownRir) : 'not set'}`}
+          style={[styles.rirCell, { backgroundColor: inputSurface, borderRadius: radius.md }]}
+        >
+          <Text
             style={[
-              styles.rirButton,
+              typography.numeric,
+              { fontSize: 15, color: set.rir != null ? colors.textPrimary : colors.textMuted },
+            ]}
+          >
+            {shownRir != null ? formatRir(shownRir) : '-'}
+          </Text>
+        </Pressable>
+
+        <Animated.View style={checkStyle}>
+          <Pressable
+            onPress={onToggleComplete}
+            disabled={disabled || set.skipped}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: set.completed }}
+            accessibilityLabel={
+              set.completed
+                ? `Mark set ${set.setNumber} not done`
+                : `Log set ${set.setNumber}, target ${targetLabel}`
+            }
+            hitSlop={4}
+            style={[
+              styles.checkCell,
               {
-                borderColor: colors.borderStrong,
                 borderRadius: radius.md,
-                backgroundColor: colors.background,
-                opacity: isLocked ? 0.6 : 1,
+                backgroundColor: set.completed ? colors.success : colors.surfacePressed,
               },
             ]}
           >
-            <Text style={[typography.micro, { color: colors.textMuted }]}>RIR</Text>
-            <Text style={[typography.numeric, { color: colors.textPrimary }]}>
-              {set.rir != null ? formatRir(set.rir) : '-'}
-            </Text>
+            <MaterialCommunityIcons
+              name={set.skipped ? 'skip-next' : 'check'}
+              size={22}
+              color={set.completed ? colors.background : colors.textSecondary}
+            />
           </Pressable>
-        </View>
+        </Animated.View>
+      </View>
+
+      {technique !== 'standard' ? (
+        <Text style={[typography.captionBold, { color: colors.accent, marginLeft: 36 }]}>
+          {TECHNIQUE_LABELS[technique]}
+        </Text>
       ) : null}
 
-      {plates ? (
-        <Text style={[typography.caption, { color: colors.textMuted }]}>
+      {plates && !set.completed ? (
+        <Text style={[typography.caption, { color: colors.textMuted, marginLeft: 36 }]}>
           Per side: {formatPlateBreakdown(plates)}
           {!plates.exact ? `, closest is ${plates.achievedWeight} ${unitLabel(units)}` : ''}
         </Text>
       ) : null}
 
       {set.formAnalysis ? (
-        <View style={{ gap: 2 }}>
-          <Text style={[typography.captionBold, { color: colors.success }]}>
-            Form AI {set.formAnalysis.averageScore}/100, ROM {set.formAnalysis.averageRomScore},
-            tempo {set.formAnalysis.averageTempoScore}
-            {set.formAnalysis.velocityLossPct != null
-              ? `, velocity loss ${Math.round(set.formAnalysis.velocityLossPct)}%`
-              : ''}
-          </Text>
-          <Text style={[typography.caption, { color: colors.textSecondary }]} numberOfLines={2}>
-            {set.formAnalysis.mostCommonIssue ??
-              set.formAnalysis.recommendations[0] ??
-              'Clean set. Keep this as your baseline.'}
-          </Text>
-        </View>
+        <Text
+          style={[typography.caption, { color: colors.textSecondary, marginLeft: 36 }]}
+          numberOfLines={2}
+        >
+          Form AI {set.formAnalysis.averageScore}/100.{' '}
+          {set.formAnalysis.mostCommonIssue ??
+            set.formAnalysis.recommendations[0] ??
+            'Clean set. Keep this as your baseline.'}
+        </Text>
       ) : null}
 
       {supportsTechniques && technique !== 'standard' ? (
-        <View style={[styles.subEffortPanel, { borderColor: colors.border }]}>
+        <View style={[styles.subEffortPanel, { marginLeft: 36 }]}>
           {subEfforts.map((effort, index) => (
             <View key={index} style={styles.subEffortRow}>
               <Text
@@ -479,29 +528,25 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
               >
                 {index + 1}
               </Text>
-              <TextInput
-                theme={inputTheme}
-                mode="outlined"
-                dense
-                label={unitLabel(units)}
+              <RNTextInput
                 value={effort.loadKg != null ? String(displayLoad(effort.loadKg, units)) : ''}
+                placeholder={unitLabel(units)}
+                placeholderTextColor={colors.textMuted}
                 onChangeText={(text) =>
                   updateSubEffort(index, { loadKg: loadInputToKg(text, units) })
                 }
                 keyboardType="decimal-pad"
                 editable={!isLocked}
-                style={[styles.subEffortInput, { backgroundColor: colors.background }]}
+                style={[inputText, styles.subEffortInput]}
               />
-              <TextInput
-                theme={inputTheme}
-                mode="outlined"
-                dense
-                label="reps"
+              <RNTextInput
                 value={effort.reps != null ? String(effort.reps) : ''}
+                placeholder="reps"
+                placeholderTextColor={colors.textMuted}
                 onChangeText={(text) => updateSubEffort(index, { reps: parseDecimalInput(text) })}
                 keyboardType="number-pad"
                 editable={!isLocked}
-                style={[styles.subEffortInput, { backgroundColor: colors.background }]}
+                style={[inputText, styles.subEffortInput]}
               />
               <IconButton
                 icon="close"
@@ -519,7 +564,7 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
             accessibilityRole="button"
             style={[
               typography.captionBold,
-              { color: isLocked ? colors.textMuted : colors.accent, paddingVertical: 8 },
+              { color: isLocked ? colors.textMuted : colors.accent, paddingVertical: 6 },
             ]}
           >
             + {TECHNIQUE_ADD_LABEL[technique]}
@@ -527,53 +572,120 @@ export const SetRow = forwardRef<SetRowHandle, SetRowProps>(function SetRow(
         </View>
       ) : null}
       {validationError ? (
-        <Text style={[typography.caption, { color: colors.danger }]}>{validationError}</Text>
+        <Text style={[typography.caption, { color: colors.danger, marginLeft: 36 }]}>
+          {validationError}
+        </Text>
       ) : null}
     </View>
   );
 });
 
+/** Column titles for the set table, aligned with SetRow's cells. */
+export function SetTableHeader({
+  loadLabel,
+  repsLabel,
+  showLoad,
+  splitSides = false,
+}: {
+  loadLabel: string;
+  repsLabel: string;
+  showLoad: boolean;
+  /** Reps column is two fields, left and right. */
+  splitSides?: boolean;
+}) {
+  const { colors, typography } = useTheme();
+  const label = [typography.micro, { color: colors.textMuted }];
+  return (
+    <View style={[styles.cells, styles.header]}>
+      <Text style={[label, styles.badgeCell, styles.headerLabel]}>SET</Text>
+      <Text style={[label, styles.previousCell, styles.headerLabel]}>LAST</Text>
+      {showLoad ? (
+        <Text style={[label, styles.loadCell, styles.center, styles.headerLabel]}>
+          {loadLabel.toUpperCase()}
+        </Text>
+      ) : null}
+      <Text
+        style={[
+          label,
+          splitSides ? styles.sidesCell : styles.repsCell,
+          styles.center,
+          styles.headerLabel,
+        ]}
+      >
+        {splitSides ? 'L / R' : repsLabel.toUpperCase()}
+      </Text>
+      <Text style={[label, styles.rirCell, styles.center, styles.headerLabel]}>RIR</Text>
+      <View style={[styles.checkCell, styles.headerLabel]} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   row: {
-    gap: 10,
+    gap: 4,
     overflow: 'hidden',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 12,
+    paddingVertical: 4,
   },
-  rowHeader: {
+  cells: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 6,
   },
-  setNumber: {
-    width: 20,
+  header: {
+    paddingBottom: 2,
+    alignItems: 'flex-end',
   },
-  setMeta: {
+  // Header labels share one baseline; the 44 pt cell heights are for inputs.
+  headerLabel: {
+    height: undefined,
+    minHeight: 0,
+  },
+  center: {
+    textAlign: 'center',
+  },
+  badgeCell: {
+    width: 30,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlignVertical: 'center',
+  },
+  previousCell: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    justifyContent: 'center',
+    minHeight: 44,
   },
-  actionGroup: {
+  cellInput: {
+    height: 44,
+    textAlign: 'center',
+    fontSize: 16,
+    paddingVertical: 0,
+    paddingHorizontal: 4,
+  },
+  loadCell: {
+    width: 68,
+  },
+  sidesCell: {
+    width: 86,
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 4,
   },
-  inputGroup: {
-    flexDirection: 'row',
+  sideInput: {
+    flex: 1,
+  },
+  repsCell: {
+    width: 54,
+  },
+  rirCell: {
+    width: 42,
+    height: 44,
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
-  input: {
-    flex: 1,
-  },
-  inputContent: {
-    fontFamily: fonts.mono,
-  },
-  rirButton: {
-    flex: 1,
-    height: 48,
-    marginTop: 6,
-    borderWidth: 1,
+  checkCell: {
+    width: 46,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -584,8 +696,6 @@ const styles = StyleSheet.create({
   },
   subEffortPanel: {
     gap: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 8,
   },
   subEffortRow: {
     flexDirection: 'row',

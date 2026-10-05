@@ -15,6 +15,7 @@ import {
   saveInProgressWorkoutSessionSql,
   saveWorkoutSessionSql,
 } from './historyRepository';
+import { hasSessionActivity } from './session';
 
 /** The pre-SQLite key this app used to store history under (see the migration below). */
 const LEGACY_STORAGE_KEY = '@GymBroFitness/workout-history/v1';
@@ -90,7 +91,15 @@ export async function listWorkoutHistory(page?: WorkoutHistoryPage): Promise<Wor
 
 export async function getInProgressWorkoutSession(): Promise<WorkoutSession | null> {
   await ensureMigrated();
-  return getInProgressWorkoutSessionSql(getDb());
+  const draft = getInProgressWorkoutSessionSql(getDb());
+  // Older builds saved a draft the moment the workout screen opened. An
+  // untouched draft is not a workout in progress, so clear it instead of
+  // showing "Resume" for something the lifter never started.
+  if (draft && !hasSessionActivity(draft)) {
+    discardInProgressWorkoutSessionSql(getDb(), draft.id);
+    return null;
+  }
+  return draft;
 }
 
 export async function saveInProgressWorkoutSession(

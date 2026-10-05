@@ -156,7 +156,7 @@ describe('progression targets', () => {
     expect(target.decision).toMatchObject({
       action: 'maintain',
       reasonCode: 'MISSING_RIR_HOLD',
-      ruleVersion: 2,
+      ruleVersion: 3,
     });
     expect(target.decision.supportingMetrics.rirCoverage).toBe('0/3');
   });

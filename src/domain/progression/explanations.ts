@@ -28,6 +28,10 @@ export function explain(decision: ProgressionDecision, exercise: Exercise, m?: M
       return `At least one working set for ${exercise.name} has no RIR. The workout still counts, but effort is unknown, so the app holds the target instead of assuming the load was ready to progress.`;
     case 'TOP_OF_RANGE_ALL_SETS':
       return `You hit the top of the rep range on every working set of ${exercise.name} with reps to spare — that load is officially beaten. Next time: ${load}, aiming for ${range} reps.`;
+    case 'TOP_OF_RANGE_LEARNED_EARLY':
+      return `Every set of ${exercise.name} was within a rep of the top of the range, and your last load jumps on this lift held with reps to spare. So the jump comes a session early: ${load}, aiming for ${range} reps.`;
+    case 'CONFIRM_BEFORE_LOAD':
+      return `You hit the top of the range on ${exercise.name}. Last time the load went up here it cost you reps, so this time hit the top once more at the same load to confirm, then it goes up.`;
     case 'BODYWEIGHT_TOP_OF_RANGE':
       return `Every set of ${exercise.name} topped the target range, so the target moves up to ${range}. When that gets comfortable, switch to a harder variation to keep tension high.`;
     case 'IN_RANGE_PROGRESS_REPS':

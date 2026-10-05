@@ -15,6 +15,7 @@ import type {
   ProgramProgressionSummary,
   ProgramProgressionTarget,
 } from '@/domain/programs/programProgression';
+import { isPerSide, loadMeaning } from '@/domain/workouts/laterality';
 import { formatTargetSummary } from '@/domain/workouts/targetToBeat';
 import { volumeZoneLabel } from '@/domain/workouts/volumeLandmarks';
 import { useTheme } from '@/theme';
@@ -173,7 +174,9 @@ export function ProgramExerciseRow({
   onMoveUp,
   onMoveDown,
   onSwap,
+  lastLabel,
 }: {
+  lastLabel?: string | null;
   prescription: ExercisePrescription;
   index: number;
   saving: boolean;
@@ -187,11 +190,17 @@ export function ProgramExerciseRow({
   const [editing, setEditing] = useState(false);
   const exercise = requireExercise(prescription.exerciseId);
   const primary = exercise.primaryMuscles.map((muscle) => MUSCLE_LABELS[muscle]).join(', ');
+  const perSide = isPerSide({ exerciseId: prescription.exerciseId, prescription });
+  // A barbell is never pressed one side at a time.
+  const canGoPerSide =
+    (exercise.trackingType === 'weight_reps' || exercise.trackingType === 'weighted_bodyweight') &&
+    (loadMeaning(exercise, false) !== 'total' || perSide);
   const tags = [
     prescription.setTechnique && prescription.setTechnique !== 'standard'
       ? formatTechnique(prescription.setTechnique)
       : null,
     prescription.supersetWithNext ? 'Superset with next' : null,
+    perSide ? 'One side at a time' : null,
   ].filter((tag): tag is string => tag != null);
 
   return (
@@ -212,6 +221,11 @@ export function ProgramExerciseRow({
           <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
             {primary}
           </Text>
+          {lastLabel ? (
+            <Text style={[typography.captionBold, { color: colors.accent }]} numberOfLines={1}>
+              {lastLabel}
+            </Text>
+          ) : null}
           {tags.length > 0 ? (
             <Text style={[typography.captionBold, { color: colors.accent }]}>
               {tags.join(', ')}
@@ -287,6 +301,21 @@ export function ProgramExerciseRow({
               onPlus={() => onPatch({ restSeconds: clamp(prescription.restSeconds + 30, 45, 300) })}
             />
           </View>
+          {canGoPerSide ? (
+            <Button
+              compact
+              mode="text"
+              icon={perSide ? 'checkbox-marked-outline' : 'checkbox-blank-outline'}
+              textColor={perSide ? colors.accent : colors.textSecondary}
+              disabled={saving}
+              onPress={() => onPatch({ perSide: !perSide })}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: perSide }}
+              style={styles.perSideToggle}
+            >
+              One side at a time
+            </Button>
+          ) : null}
           <View style={styles.editActions}>
             <Button
               compact
@@ -450,6 +479,10 @@ export function VolumeRow({ item }: { item: ProgramMuscleLoad }) {
 }
 
 const styles = StyleSheet.create({
+  perSideToggle: {
+    alignSelf: 'flex-start',
+    marginLeft: -8,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',

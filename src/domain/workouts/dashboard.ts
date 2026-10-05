@@ -2,7 +2,13 @@ import { getExercise } from '@/domain/exercises/catalog';
 import { completedWorkingSets } from '@/domain/progression/engine';
 import type { BodyMeasurementEntry } from '@/domain/body/measurements';
 import { dayOfWeek } from '@/utils/dates';
-import { MUSCLE_GROUPS, type MuscleGroup, type WorkoutSession } from '@/types';
+import {
+  MUSCLE_GROUPS,
+  type DayOfWeek,
+  type MuscleGroup,
+  type ProgramDay,
+  type WorkoutSession,
+} from '@/types';
 
 import { sessionVolumeKg } from './analytics';
 
@@ -120,4 +126,55 @@ function isoDate(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+export type TodayPlan = {
+  /** Index into program.days to feature on Today. */
+  dayIndex: number;
+  /** today: a planned day not trained yet; done: trained today; rest: no session planned today. */
+  status: 'today' | 'done' | 'rest';
+  /** Days until the featured session when it is not today (1 = tomorrow). */
+  daysAway: number;
+};
+
+/**
+ * Which planned day Today should feature. Plan days are assigned to the
+ * lifter's preferred weekdays in order (see buildPlannedWeek), so today's
+ * weekday decides the session; once it is trained, or on a rest day, the
+ * next planned weekday's session is shown instead.
+ */
+export function pickTodayPlan(
+  days: ProgramDay[],
+  preferredDays: DayOfWeek[],
+  history: WorkoutSession[],
+  now = new Date(),
+): TodayPlan {
+  if (days.length === 0 || preferredDays.length === 0) {
+    return { dayIndex: 0, status: 'today', daysAway: 0 };
+  }
+  const todayDow = dayOfWeek(now);
+  const trainedToday = history.some((session) => {
+    if (session.status !== 'completed') return false;
+    const at = new Date(session.finishedAt ?? session.startedAt);
+    return (
+      at.getFullYear() === now.getFullYear() &&
+      at.getMonth() === now.getMonth() &&
+      at.getDate() === now.getDate()
+    );
+  });
+  const todaySlot = preferredDays.indexOf(todayDow);
+  if (todaySlot >= 0 && !trainedToday) {
+    return { dayIndex: todaySlot % days.length, status: 'today', daysAway: 0 };
+  }
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const slot = preferredDays.indexOf(((todayDow + offset) % 7) as DayOfWeek);
+    if (slot >= 0) {
+      return {
+        dayIndex: slot % days.length,
+        status: trainedToday ? 'done' : 'rest',
+        daysAway: offset,
+      };
+    }
+  }
+  return { dayIndex: 0, status: trainedToday ? 'done' : 'rest', daysAway: 0 };
 }

@@ -190,6 +190,7 @@ function HistorySessionCard({
         <Text style={[typography.caption, { color: colors.textSecondary }]}>
           {summary.durationMinutes} min, {summary.completedSets} sets,{' '}
           {formatVolumeLoad(summary.volumeKg, units)}
+          {summary.averageHeartRate != null ? `, ${summary.averageHeartRate} bpm avg` : ''}
         </Text>
       </View>
 

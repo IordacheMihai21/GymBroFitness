@@ -18,6 +18,38 @@ export function ReadinessCheckInCard({ onSave, onSkip }: ReadinessCheckInCardPro
   const [sleepQuality, setSleepQuality] = useState<Rating>(3);
   const [recovery, setRecovery] = useState<Rating>(3);
   const [hasPain, setHasPain] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  // Collapsed by default: the check-in is optional, the first set is not.
+  if (!expanded) {
+    return (
+      <View
+        style={[
+          styles.panel,
+          styles.collapsed,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: radius.lg,
+            paddingLeft: spacing.md,
+          },
+        ]}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>How do you feel?</Text>
+          <Text style={[typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
+            Optional. Adjusts today if sleep or recovery is low.
+          </Text>
+        </View>
+        <Button compact mode="text" textColor={colors.textSecondary} onPress={onSkip}>
+          Skip
+        </Button>
+        <Button compact mode="contained-tonal" onPress={() => setExpanded(true)}>
+          Rate
+        </Button>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -127,6 +159,13 @@ function RatingRow({
 const styles = StyleSheet.create({
   panel: {
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  collapsed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingRight: 8,
   },
   ratingRow: {
     flexDirection: 'row',

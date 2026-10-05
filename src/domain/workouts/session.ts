@@ -92,3 +92,18 @@ export function resumeWorkoutSession(session: WorkoutSession, now = new Date()):
     totalPausedSeconds: session.totalPausedSeconds + addedSeconds,
   };
 }
+
+/**
+ * True once the lifter has actually done something in this session: logged or
+ * skipped a set, answered the readiness check-in, or paused. A freshly opened
+ * workout screen is not a workout, so it must never become a saved draft.
+ */
+export function hasSessionActivity(session: WorkoutSession): boolean {
+  return (
+    session.readiness != null ||
+    session.status === 'paused' ||
+    session.exercises.some((exercise) =>
+      exercise.sets.some((set) => set.completed || set.skipped),
+    )
+  );
+}

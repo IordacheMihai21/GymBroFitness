@@ -15,6 +15,11 @@ export type ReplacementContext = {
   >;
   /** Exercise ids already used in the current session. */
   usedExerciseIds: string[];
+  /**
+   * Candidates to rank. Defaults to the curated catalog; a lifter swapping by
+   * hand mid-workout may also pick from the extended library.
+   */
+  pool?: Exercise[];
 };
 
 export type RankedReplacement = {
@@ -35,7 +40,7 @@ export function rankReplacements(ctx: ReplacementContext): RankedReplacement[] {
   const used = new Set(ctx.usedExerciseIds);
   const blocked = new Set([...prefs.excludedExerciseSlugs, ...prefs.discomfortExerciseSlugs]);
 
-  const candidates = EXERCISE_CATALOG.filter(
+  const candidates = (ctx.pool ?? EXERCISE_CATALOG).filter(
     (e) =>
       e.id !== original.id &&
       !blocked.has(e.slug) &&

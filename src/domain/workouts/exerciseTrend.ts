@@ -2,7 +2,7 @@ import { sameExerciseIdentity } from '@/domain/exercises/catalog';
 import { completedWorkingSets } from '@/domain/progression/engine';
 import type { WorkoutSession } from '@/types';
 
-import { estimateOneRepMax, volumeLoadKg } from './analytics';
+import { estimateOneRepMax, performedVolumeKg } from './analytics';
 
 export type ExerciseTrendPoint = {
   sessionId: string;
@@ -40,7 +40,7 @@ export function buildExerciseTrend(
       sessionId: session.id,
       date: session.startedAt,
       e1rmKg: e1rms.length > 0 ? Math.max(...e1rms) : null,
-      volumeKg: volumeLoadKg(performed.sets),
+      volumeKg: performedVolumeKg(performed),
       completedSets: completed.length,
     });
   }

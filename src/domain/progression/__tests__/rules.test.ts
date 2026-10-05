@@ -4,7 +4,7 @@ describe('progression rule registry', () => {
   it('keeps every reason code versioned with inputs and a limitation', () => {
     const rules = Object.values(PROGRESSION_RULES);
 
-    expect(rules).toHaveLength(15);
+    expect(rules).toHaveLength(17);
     for (const rule of rules) {
       expect(rule.id).toBeTruthy();
       expect(rule.version).toBe(PROGRESSION_RULE_VERSION);
@@ -16,7 +16,7 @@ describe('progression rule registry', () => {
   it('resolves a stable rule by the decision reason code', () => {
     expect(progressionRule('MISSING_RIR_HOLD')).toMatchObject({
       id: 'MISSING_RIR_HOLD',
-      version: 2,
+      version: 3,
     });
   });
 });

@@ -15,6 +15,7 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { ListRow } from '@/components/ui/ListRow';
 import { Tile } from '@/components/ui/Tile';
 import { listBodyMeasurements } from '@/domain/body/bodyTrackingStore';
+import { syncWeightFromHealthConnect } from '@/services/healthConnect';
 import type { BodyMeasurementEntry } from '@/domain/body/measurements';
 import { bodyweightSnapshot } from '@/domain/workouts/dashboard';
 import { ProgressLine } from '@/components/ui/ProgressLine';
@@ -67,7 +68,7 @@ export default function BodyScreen() {
   const [history, setHistory] = useState<WorkoutSession[]>([]);
   const [measurements, setMeasurements] = useState<BodyMeasurementEntry[]>([]);
   const bodyweight = useMemo(() => bodyweightSnapshot(measurements), [measurements]);
-  const { program, preferences } = useActiveProgram();
+  const { user, program, preferences } = useActiveProgram();
   const bodyScale = useMemo(
     () => Math.min(1.1, Math.max(0.9, (width - spacing.x4l * 2) / 240)),
     [spacing.x4l, width],
@@ -79,15 +80,21 @@ export default function BodyScreen() {
       listWorkoutHistory().then((next) => {
         if (mounted) setHistory(next);
       });
-      listBodyMeasurements()
-        .then((next) => {
-          if (mounted) setMeasurements(next);
-        })
-        .catch(() => undefined);
+      const loadMeasurements = () =>
+        listBodyMeasurements()
+          .then((next) => {
+            if (mounted) setMeasurements(next);
+          })
+          .catch(() => undefined);
+      void loadMeasurements();
+      // New weigh-ins from a scale or health app (throttled; no-op unless connected).
+      void syncWeightFromHealthConnect(user.id).then((added) => {
+        if (added > 0) void loadMeasurements();
+      });
       return () => {
         mounted = false;
       };
-    }, []),
+    }, [user.id]),
   );
 
   const intelligence = useMemo(

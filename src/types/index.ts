@@ -205,6 +205,8 @@ export type ExercisePrescription = {
   note?: string;
   /** Optional default intensification technique applied to new workout sets. */
   setTechnique?: SetTechnique;
+  /** Plan default for one-side-at-a-time logging; falls back to the exercise's laterality. */
+  perSide?: boolean;
   /**
    * Chains this exercise to the very next one in the day/session as a
    * superset — logging a set on either advances straight to the other with
@@ -294,7 +296,11 @@ export type PerformedSet = {
   kind: SetKind;
   /** External load in kg. 0 for pure bodyweight sets. */
   loadKg: number | null;
+  /** For split-sided sets this is the weaker side; see domain/workouts/sides. */
   reps: number | null;
+  /** Left and right reps when the exercise logs each side; see domain/workouts/sides. */
+  repsLeft?: number | null;
+  repsRight?: number | null;
   /** Duration for time-tracked exercises, seconds. */
   durationSeconds: number | null;
   rir: number | null;
@@ -316,6 +322,12 @@ export type PerformedExercise = {
   order: number;
   prescription: ExercisePrescription;
   sets: PerformedSet[];
+  /** This session's one-side-at-a-time choice; see domain/workouts/laterality. */
+  perSide?: boolean;
+  /** Sets added (+) or removed (-) versus the plan by muscle feedback; carries to next time. */
+  setOffset?: number;
+  /** Left and right reps are logged separately (one-side-at-a-time work only). */
+  splitSides?: boolean;
   /** Set when the user swapped this exercise in. */
   replacedExerciseId?: string;
   replacementReason?: ReplacementReason;
@@ -351,6 +363,40 @@ export type WorkoutSession = {
   /** Persisted countdown state; absent on sessions created before timer persistence. */
   restTimer?: RestTimerSnapshot | null;
   note?: string;
+  /** Per-muscle stimulus and recovery ratings; see domain/workouts/muscleFeedback. */
+  muscleFeedback?: MuscleFeedback[];
+  /** Set-count changes this session opened with, and why. */
+  volumeAdjustments?: VolumeAdjustment[];
+  /** Heart rate during the workout, read from Health Connect when connected. */
+  heartRate?: { averageBpm: number; maxBpm: number; sampleCount: number };
+};
+
+/** How the muscle recovered since it was last trained (asked at its first exercise). */
+export type SorenessRecovery = 'never_sore' | 'recovered_early' | 'recovered_on_time' | 'still_sore';
+/** How much pump the muscle got today. */
+export type PumpRating = 'low' | 'moderate' | 'great';
+/** How hard today's sets felt overall for the muscle. */
+export type WorkloadRating = 'easy' | 'just_right' | 'hard' | 'too_much';
+/** Joint discomfort during the muscle's exercises. */
+export type JointRating = 'none' | 'some' | 'a_lot';
+
+export type MuscleFeedback = {
+  muscle: MuscleGroup;
+  soreness?: SorenessRecovery;
+  pump?: PumpRating;
+  workload?: WorkloadRating;
+  joints?: JointRating;
+  /** The lifter dismissed the questions for this muscle today. */
+  skipped?: boolean;
+  recordedAt: string;
+};
+
+export type VolumeAdjustment = {
+  muscle: MuscleGroup;
+  exerciseId: string;
+  /** Sets added (+) or removed (-) versus the base for this exercise. */
+  delta: number;
+  reason: string;
 };
 
 export type ReadinessCheckIn = {
@@ -409,6 +455,8 @@ export type ProgressionReasonCode =
   | 'REPEATED_BELOW_MIN'
   | 'ONE_OFF_MISS'
   | 'TOP_OF_RANGE_ALL_SETS'
+  | 'TOP_OF_RANGE_LEARNED_EARLY'
+  | 'CONFIRM_BEFORE_LOAD'
   | 'BODYWEIGHT_TOP_OF_RANGE'
   | 'PRIORITY_VOLUME_HEADROOM'
   | 'IN_RANGE_PROGRESS_REPS'

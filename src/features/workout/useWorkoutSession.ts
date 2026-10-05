@@ -8,17 +8,37 @@ import { getExercise, requireExercise } from '@/domain/exercises/catalog';
 import { saveTemplate } from '@/domain/programs/templateStore';
 import { buildTemplateFromSession, defaultTemplateName } from '@/domain/programs/templates';
 import { detectPersonalRecords, sessionVolumeKg } from '@/domain/workouts/analytics';
+import { normalizeSessionTiming } from '@/domain/workouts/history';
 import { getInProgressWorkoutSession, listWorkoutHistory } from '@/domain/workouts/historyStore';
 import { findLastPerformedExercise } from '@/domain/workouts/lastPerformance';
 import { buildAllPersonalRecordsFromHistory } from '@/domain/workouts/historyInsights';
-import { buildSetAutofillSuggestion, setAutofillPatch } from '@/domain/workouts/setAutofill';
+import { isPerSide, loadMeaning } from '@/domain/workouts/laterality';
+import {
+  buildSetAutofillSuggestion,
+  setAutofillPatch,
+  type SetAutofillSuggestion,
+} from '@/domain/workouts/setAutofill';
+import {
+  addSet,
+  completeOpenSetsWithSuggestions,
+  inheritPerSide,
+  kindForRir,
+  prepareSetForCompletion,
+  removeSet,
+  setExercisePerSide,
+  setExerciseSplitSides,
+  swapSessionExercise,
+} from '@/domain/workouts/setFlow';
 import {
   beginWorkoutReview,
   continueWorkoutFromReview,
+  hasSessionActivity,
   pauseWorkoutSession,
   resumeWorkoutSession,
   startWorkoutSession,
 } from '@/domain/workouts/session';
+import { buildLiveNotification } from '@/domain/workouts/liveNotification';
+import { extendRestTimer } from '@/domain/workouts/restTimer';
 import {
   completeOpenSetsForExercise,
   patchWorkoutSet,
@@ -29,8 +49,19 @@ import {
 } from '@/domain/workouts/sessionEditing';
 import { formatTrackingTarget } from '@/domain/workouts/setTracking';
 import { buildProgramProgressionTargets } from '@/domain/workouts/targetToBeat';
+import {
+  applyFeedbackVolume,
+  feedbackComplete,
+  feedbackFor,
+  muscleToAskSorenessAt,
+  pendingFeedbackMuscles,
+  recordMuscleFeedback,
+  setDeltaFromFeedback,
+} from '@/domain/workouts/muscleFeedback';
+import { buildWarmupSets, insertWarmupSets, isFirstForMuscle } from '@/domain/workouts/warmup';
 import { getVisionConfigForMovementPattern } from '@/domain/vision/exerciseVisionConfigs';
 import type {
+  MuscleGroup,
   PerformedExercise,
   PerformedSet,
   ProgramDay,
@@ -41,6 +72,7 @@ import type {
 
 import {
   countCompletedSets,
+  countPlannedSets,
   countHandledSets,
   firstOpenSetIndex,
   isExerciseDone,
@@ -48,6 +80,8 @@ import {
 } from './workout.helpers';
 import { useFormAnalysisAttachment } from './useFormAnalysisAttachment';
 import { useRestTimerNotification } from './useRestTimerNotification';
+import { useWorkoutLiveNotification } from './useWorkoutLiveNotification';
+import { exportWorkoutToHealthConnect, readWorkoutHeartRate } from '@/services/healthConnect';
 import { useWorkoutAutosave } from './useWorkoutAutosave';
 
 /**
@@ -59,12 +93,27 @@ import { useWorkoutAutosave } from './useWorkoutAutosave';
  * unchanged, under the same name, so this refactor changes where the logic
  * lives, not what it does.
  */
+/** Resolves to null if `promise` takes longer than `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise.catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+/** The app accent, for the notification's tint. */
+const LIVE_ACCENT = '#4D96FF';
+
 export function useWorkoutSession(
   day: ProgramDay,
   userId: string,
   preferences: TrainingPreferences,
+  /** The whole plan, so feedback-driven set increases respect each muscle's weekly ceiling. */
+  programDays: ProgramDay[] = [],
 ) {
   const router = useRouter();
+  // Read once when the session opens; set counts are decided at the start only.
+  const planDaysAtStart = useRef(programDays);
 
   const [session, setSession] = useState(() => startWorkoutSession(day, userId));
   const [activeExerciseIndex, setActiveExerciseIndex] = useState(0);
@@ -80,6 +129,10 @@ export function useWorkoutSession(
   const rirSheetRef = useRef<ElementRef<typeof BottomSheetModal>>(null);
   const [templateSaved, setTemplateSaved] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [feedbackResult, setFeedbackResult] = useState<{
+    muscle: MuscleGroup;
+    text: string;
+  } | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [isHydratingDraft, setIsHydratingDraft] = useState(true);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
@@ -115,6 +168,14 @@ export function useWorkoutSession(
           );
           setActiveExerciseIndex(firstOpenExercise === -1 ? 0 : firstOpenExercise);
         } else {
+          setSession((current) =>
+            applyFeedbackVolume(
+              inheritPerSide(current, nextHistory),
+              nextHistory,
+              getExercise,
+              planDaysAtStart.current,
+            ),
+          );
           setAutosaveState('idle');
         }
       })
@@ -131,7 +192,7 @@ export function useWorkoutSession(
   const activeExerciseMeta = requireExercise(activeExercise.exerciseId);
   const activeVisionConfig = getVisionConfigForMovementPattern(activeExerciseMeta.movementPattern);
   const activePrescription = activeExercise.prescription;
-  const plannedSets = session.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
+  const plannedSets = countPlannedSets(session.exercises);
   const completedSets = countCompletedSets(session.exercises);
   const handledSets = countHandledSets(session.exercises);
   const remainingSets = plannedSets - handledSets;
@@ -164,6 +225,84 @@ export function useWorkoutSession(
           preferences.units,
           activeExerciseMeta.trackingType,
         );
+  /** What an empty field in each open set of an exercise would be filled with. */
+  function suggestionFor(
+    target: WorkoutSession,
+    exerciseIndex: number,
+    setIndex: number,
+  ): SetAutofillSuggestion | null {
+    const performed = target.exercises[exerciseIndex];
+    if (!performed) return null;
+    return buildSetAutofillSuggestion(
+      performed,
+      findLastPerformedExercise(history, performed.exerciseId),
+      setIndex,
+      preferences.units,
+      requireExercise(performed.exerciseId).trackingType,
+    );
+  }
+  /** Warm-up ramp for an exercise, sized off its first working set's typed or suggested load. */
+  function warmupsFor(target: WorkoutSession, exerciseIndex: number) {
+    const performed = target.exercises[exerciseIndex];
+    if (!performed || performed.sets.some((set) => set.kind === 'warmup')) return [];
+    const meta = requireExercise(performed.exerciseId);
+    if (meta.trackingType !== 'weight_reps' && meta.trackingType !== 'weighted_bodyweight') {
+      return [];
+    }
+    const firstWorkingIndex = performed.sets.findIndex((set) => set.kind !== 'warmup');
+    const firstWorking = performed.sets[firstWorkingIndex];
+    if (!firstWorking || firstWorking.completed) return [];
+    const load =
+      firstWorking.loadKg ?? suggestionFor(target, exerciseIndex, firstWorkingIndex)?.loadKg;
+    if (load == null) return [];
+    return buildWarmupSets(load, meta, isFirstForMuscle(target, exerciseIndex, getExercise));
+  }
+
+  const activeSuggestions = activeExercise.sets.map((set, index) =>
+    set.completed || set.skipped ? null : suggestionFor(session, activeExerciseIndex, index),
+  );
+  const activeWarmups = warmupsFor(session, activeExerciseIndex);
+  // Lock-screen notification: next set, rest countdown, Log set / +30 s / Skip rest.
+  const liveModel =
+    !finished && !isHydratingDraft && hasSessionActivity(session)
+      ? buildLiveNotification(
+          session,
+          activeExerciseIndex,
+          (exerciseIndex, setIndex) => suggestionFor(session, exerciseIndex, setIndex),
+          getExercise,
+          preferences.units,
+        )
+      : null;
+  useWorkoutLiveNotification(liveModel, LIVE_ACCENT, (action, model) => {
+    if (action === 'log_set' && model.target) {
+      toggleComplete(model.target.exerciseIndex, model.target.setIndex);
+    } else if (action === 'extend_rest') {
+      setSession((prev) => ({
+        ...prev,
+        restTimer: prev.restTimer ? extendRestTimer(prev.restTimer, 30) : null,
+      }));
+    } else if (action === 'skip_rest') {
+      setSession((prev) => ({ ...prev, restTimer: null }));
+    }
+  });
+
+  const pendingFeedback = pendingFeedbackMuscles(session, getExercise);
+  const sorenessCandidate = muscleToAskSorenessAt(
+    session,
+    activeExerciseIndex,
+    history,
+    getExercise,
+  );
+  const sorenessMuscle =
+    sorenessCandidate &&
+    feedbackFor(session, sorenessCandidate)?.soreness == null &&
+    !feedbackFor(session, sorenessCandidate)?.skipped &&
+    activeExercise.sets.some((set) => !set.completed && !set.skipped)
+      ? sorenessCandidate
+      : null;
+  const activePerSide = isPerSide(activeExercise);
+  const activeLoadMeaning = loadMeaning(activeExerciseMeta, activePerSide);
+
   const progressionTargets = useMemo(
     () =>
       buildProgramProgressionTargets({
@@ -203,7 +342,11 @@ export function useWorkoutSession(
   function confirmRir(value: number) {
     if (isPaused) return;
     if (rirTarget != null) {
-      updateSet(rirTarget.exerciseIndex, rirTarget.setIndex, { rir: value });
+      const target = session.exercises[rirTarget.exerciseIndex]?.sets[rirTarget.setIndex];
+      updateSet(rirTarget.exerciseIndex, rirTarget.setIndex, {
+        rir: value,
+        ...(target ? { kind: kindForRir(target, value) } : {}),
+      });
       Haptics.selectionAsync();
     }
     rirSheetRef.current?.dismiss();
@@ -324,8 +467,23 @@ export function useWorkoutSession(
     const exercise = session.exercises[exerciseIndex];
     if (!exercise) return null;
     const trackingType = requireExercise(exercise.exerciseId).trackingType;
+    const target = exercise.sets[setIndex];
+    const prepared =
+      target && !target.completed
+        ? patchWorkoutSet(
+            session,
+            exerciseIndex,
+            setIndex,
+            prepareSetForCompletion(
+              target,
+              suggestionFor(session, exerciseIndex, setIndex),
+              exercise.prescription.targetRir,
+              exercise.splitSides === true,
+            ),
+          )
+        : session;
     const result = toggleWorkoutSetCompletion(
-      session,
+      prepared,
       exerciseIndex,
       setIndex,
       trackingType,
@@ -381,6 +539,93 @@ export function useWorkoutSession(
       Object.fromEntries(Object.entries(current).filter(([setId]) => !completedIds.has(setId))),
     );
     setSession(result.session);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  /**
+   * "Next exercise" also logs what is on screen: every open set with typed or
+   * suggested numbers is ticked, so finishing an exercise takes one tap.
+   */
+  function goToNextExercise() {
+    if (isPaused || isSaving) return;
+    const performed = session.exercises[activeExerciseIndex];
+    if (!performed) return;
+    const result = completeOpenSetsWithSuggestions(
+      session,
+      activeExerciseIndex,
+      performed.sets.map((_, index) => suggestionFor(session, activeExerciseIndex, index)),
+      requireExercise(performed.exerciseId).trackingType,
+    );
+    const isLast = activeExerciseIndex >= session.exercises.length - 1;
+    if (result.completedCount > 0) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    if (isLast) {
+      // On the last exercise the same button finishes the workout.
+      setSession(beginWorkoutReview(result.session));
+      setSaveError(null);
+      setAutosaveState('saving');
+      return;
+    }
+    setSession(result.session);
+    setActiveExerciseIndex(activeExerciseIndex + 1);
+  }
+
+  /** Records ratings for a muscle; once the after-exercise trio is in, says what changes next time. */
+  function rateMuscle(muscle: MuscleGroup, patch: Parameters<typeof recordMuscleFeedback>[2]) {
+    const next = recordMuscleFeedback(session, muscle, patch);
+    setSession((prev) => recordMuscleFeedback(prev, muscle, patch));
+    void Haptics.selectionAsync();
+    const feedback = feedbackFor(next, muscle);
+    if (!patch.skipped && feedbackComplete(feedback) && feedback) {
+      const decision = setDeltaFromFeedback(feedback);
+      const verdict =
+        decision.delta > 0
+          ? 'One more set next time.'
+          : decision.delta < 0
+            ? 'One set less next time.'
+            : 'Same sets next time.';
+      setFeedbackResult({ muscle, text: `${verdict} ${decision.reason}` });
+      setTimeout(
+        () => setFeedbackResult((current) => (current?.muscle === muscle ? null : current)),
+        8000,
+      );
+    }
+  }
+
+  function addWarmups(exerciseIndex: number) {
+    const warmups = warmupsFor(session, exerciseIndex);
+    if (warmups.length === 0) return;
+    setSession((prev) => insertWarmupSets(prev, exerciseIndex, warmups));
+    void Haptics.selectionAsync();
+  }
+
+  function addSetToExercise(exerciseIndex: number) {
+    setSession((prev) => addSet(prev, exerciseIndex));
+    void Haptics.selectionAsync();
+  }
+
+  function removeSetFromExercise(exerciseIndex: number, setIndex: number) {
+    setSession((prev) => removeSet(prev, exerciseIndex, setIndex));
+    void Haptics.selectionAsync();
+  }
+
+  function toggleSplitSides(exerciseIndex: number) {
+    const performed = session.exercises[exerciseIndex];
+    if (!performed) return;
+    setSession((prev) => setExerciseSplitSides(prev, exerciseIndex, !performed.splitSides));
+    void Haptics.selectionAsync();
+  }
+
+  function togglePerSide(exerciseIndex: number) {
+    const performed = session.exercises[exerciseIndex];
+    if (!performed) return;
+    setSession((prev) => setExercisePerSide(prev, exerciseIndex, !isPerSide(performed)));
+    void Haptics.selectionAsync();
+  }
+
+  function swapExercise(exerciseIndex: number, nextExerciseId: string) {
+    setSession((prev) => swapSessionExercise(prev, exerciseIndex, nextExerciseId));
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
@@ -457,17 +702,25 @@ export function useWorkoutSession(
     setAutosaveState('saving');
     setSession(candidate);
 
+    const finishedAt = candidate.reviewStartedAt ?? new Date().toISOString();
+    // Heart rate from a watch, if Health Connect is connected. Never waits long.
+    const heartRate = await withTimeout(
+      readWorkoutHeartRate(normalizeSessionTiming(candidate).startedAt, finishedAt),
+      3000,
+    );
     const completedSession: WorkoutSession = {
       ...candidate,
       status: 'completed',
-      finishedAt: candidate.reviewStartedAt ?? new Date().toISOString(),
+      finishedAt,
       reviewStartedAt: null,
       pausedAt: null,
       restTimer: null,
+      ...(heartRate ? { heartRate } : {}),
     };
 
     try {
       const saved = await persistence.finish(completedSession);
+      void exportWorkoutToHealthConnect(saved);
       const existingRecords = buildAllPersonalRecordsFromHistory(
         history.filter((item) => item.id !== saved.id),
       );
@@ -567,6 +820,23 @@ export function useWorkoutSession(
     formTargetSet,
     openSetCount,
     activeAutofillSuggestion,
+    activeSuggestions,
+    activePerSide,
+    activeLoadMeaning,
+    goToNextExercise,
+    addSetToExercise,
+    addWarmups,
+    activeWarmups,
+    pendingFeedback,
+    sorenessMuscle,
+    rateMuscle,
+    feedbackResult,
+    setFeedbackResult,
+    removeSetFromExercise,
+    togglePerSide,
+    toggleSplitSides,
+    activeSplitSides: activePerSide && activeExercise.splitSides === true,
+    swapExercise,
     progressionTargets,
     activeProgressionTarget,
     updateSet,

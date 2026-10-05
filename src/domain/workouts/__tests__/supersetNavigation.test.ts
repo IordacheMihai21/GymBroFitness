@@ -1,5 +1,10 @@
-import { navigateAfterSetCompletion, supersetChainBounds } from '../supersetNavigation';
-import type { PerformedExercise, PerformedSet } from '@/types';
+import { toggleWorkoutSetCompletion } from '../sessionEditing';
+import {
+  navigateAfterSetCompletion,
+  supersetChainBounds,
+  supersetRound,
+} from '../supersetNavigation';
+import type { PerformedExercise, PerformedSet, WorkoutSession } from '@/types';
 
 function makeSet(patch: Partial<PerformedSet> = {}): PerformedSet {
   return {
@@ -70,12 +75,18 @@ describe('supersetChainBounds', () => {
 describe('navigateAfterSetCompletion', () => {
   it('outside a chain, stays put until the exercise itself is fully done', () => {
     const exercises = [makeExercise('a', 3, { completedCount: 1 }), makeExercise('b', 3)];
-    expect(navigateAfterSetCompletion(exercises, 0)).toEqual({ nextExerciseIndex: null, skipRest: false });
+    expect(navigateAfterSetCompletion(exercises, 0)).toEqual({
+      nextExerciseIndex: null,
+      skipRest: false,
+    });
   });
 
   it('outside a chain, advances to the next open exercise once done, with rest', () => {
     const exercises = [makeExercise('a', 1, { completedCount: 1 }), makeExercise('b', 3)];
-    expect(navigateAfterSetCompletion(exercises, 0)).toEqual({ nextExerciseIndex: 1, skipRest: false });
+    expect(navigateAfterSetCompletion(exercises, 0)).toEqual({
+      nextExerciseIndex: 1,
+      skipRest: false,
+    });
   });
 
   it('inside a chain, jumps to the paired exercise after any set with no rest', () => {
@@ -83,16 +94,22 @@ describe('navigateAfterSetCompletion', () => {
       makeExercise('a', 3, { supersetWithNext: true, completedCount: 1 }),
       makeExercise('b', 3, { supersetWithNext: false }),
     ];
-    expect(navigateAfterSetCompletion(exercises, 0)).toEqual({ nextExerciseIndex: 1, skipRest: true });
+    expect(navigateAfterSetCompletion(exercises, 0)).toEqual({
+      nextExerciseIndex: 1,
+      skipRest: true,
+    });
   });
 
-  it('cycles back to the first exercise once the paired one catches up', () => {
+  it('cycles back to the first exercise once the paired one catches up, resting after the round', () => {
     const exercises = [
       makeExercise('a', 3, { supersetWithNext: true, completedCount: 1 }),
       makeExercise('b', 3, { completedCount: 1 }),
     ];
-    // Just completed a set on b (index 1); a still has open sets.
-    expect(navigateAfterSetCompletion(exercises, 1)).toEqual({ nextExerciseIndex: 0, skipRest: true });
+    // Just completed a set on b (index 1); a still has open sets. Round done: rest.
+    expect(navigateAfterSetCompletion(exercises, 1)).toEqual({
+      nextExerciseIndex: 0,
+      skipRest: false,
+    });
   });
 
   it('once the whole chain is done, moves on to the next exercise with real rest', () => {
@@ -101,7 +118,10 @@ describe('navigateAfterSetCompletion', () => {
       makeExercise('b', 3, { completedCount: 3 }),
       makeExercise('c', 3),
     ];
-    expect(navigateAfterSetCompletion(exercises, 1)).toEqual({ nextExerciseIndex: 2, skipRest: false });
+    expect(navigateAfterSetCompletion(exercises, 1)).toEqual({
+      nextExerciseIndex: 2,
+      skipRest: false,
+    });
   });
 
   it('handles a three-exercise chain', () => {
@@ -111,6 +131,38 @@ describe('navigateAfterSetCompletion', () => {
       makeExercise('c', 2, { completedCount: 0 }),
     ];
     // a is fully done, b just had a set completed but has one open set left before c.
-    expect(navigateAfterSetCompletion(exercises, 1)).toEqual({ nextExerciseIndex: 2, skipRest: true });
+    expect(navigateAfterSetCompletion(exercises, 1)).toEqual({
+      nextExerciseIndex: 2,
+      skipRest: true,
+    });
+  });
+
+  it('labels the round an exercise is on', () => {
+    const exercises = [
+      makeExercise('a', 3, { supersetWithNext: true, completedCount: 1 }),
+      makeExercise('b', 3, { completedCount: 1 }),
+      makeExercise('c', 3),
+    ];
+    expect(supersetRound(exercises, 1)).toEqual({ partnerIndexes: [0], round: 2, rounds: 3 });
+    expect(supersetRound(exercises, 2)).toBeNull();
+  });
+
+  it('does not jump to the partner after a warm-up set', () => {
+    const a = makeExercise('a', 2, { supersetWithNext: true });
+    a.sets = [makeSet({ id: 'w', kind: 'warmup', loadKg: 40, reps: 8 }), ...a.sets];
+    const session: WorkoutSession = {
+      id: 's',
+      userId: 'u',
+      programId: null,
+      programDayId: null,
+      dayName: 'Arms',
+      status: 'in_progress',
+      startedAt: '2026-10-05T12:00:00.000Z',
+      finishedAt: null,
+      totalPausedSeconds: 0,
+      exercises: [a, makeExercise('b', 2)],
+    };
+    const result = toggleWorkoutSetCompletion(session, 0, 0, 'weight_reps');
+    expect(result.ok && result.navigation.nextExerciseIndex).toBeNull();
   });
 });

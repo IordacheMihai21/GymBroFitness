@@ -26,6 +26,7 @@ import { dailyQuote } from '@/domain/motivation/dailyQuote';
 import {
   bodyweightSnapshot,
   muscleFreshness,
+  pickTodayPlan,
   weeklyVolumeSeries,
 } from '@/domain/workouts/dashboard';
 import type { WeekLogEntry } from '@/domain/workouts/demoHistory';
@@ -51,9 +52,14 @@ export default function HomeScreen() {
   const [history, setHistory] = useState<WorkoutSession[]>([]);
   const [activeDraft, setActiveDraft] = useState<WorkoutSession | null>(null);
   const [measurements, setMeasurements] = useState<BodyMeasurementEntry[]>([]);
-  const [dayIndex, setDayIndex] = useState(0);
+  const [dayOverride, setDayOverride] = useState<number | null>(null);
   const [activeSheet, setActiveSheet] = useState<HomeSheet | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<BarDatum | null>(null);
+  const todayPlan = useMemo(
+    () => pickTodayPlan(program.days, preferences.preferredDays, history),
+    [history, preferences.preferredDays, program.days],
+  );
+  const dayIndex = Math.min(dayOverride ?? todayPlan.dayIndex, program.days.length - 1);
   const day = program.days[dayIndex];
   const swapIndex = (dayIndex + 1) % program.days.length;
   const quote = useMemo(() => dailyQuote(), []);
@@ -184,7 +190,7 @@ export default function HomeScreen() {
   }
 
   function confirmSwap() {
-    setDayIndex(swapIndex);
+    setDayOverride(swapIndex);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     actionSheetRef.current?.dismiss();
   }
@@ -238,10 +244,20 @@ export default function HomeScreen() {
               <Text
                 style={[
                   typography.captionBold,
-                  { color: activeDraft ? colors.accent : colors.textSecondary },
+                  {
+                    color: activeDraft
+                      ? colors.accent
+                      : todayPlan.status === 'done' && dayOverride == null
+                        ? colors.success
+                        : colors.textSecondary,
+                  },
                 ]}
               >
-                {activeDraft ? 'In progress' : `Today, ${user.displayName}`}
+                {activeDraft
+                  ? 'In progress'
+                  : todayPlan.status === 'today' || dayOverride != null
+                    ? `Today, ${user.displayName}`
+                    : `${todayPlan.status === 'done' ? 'Done for today' : 'Rest day'}. Next ${nextLabel(todayPlan.daysAway)}`}
               </Text>
               <Text style={[typography.display, { color: colors.textPrimary }]} numberOfLines={2}>
                 {activeDraft?.dayName ?? day.name}
@@ -572,6 +588,13 @@ export default function HomeScreen() {
       />
     </View>
   );
+}
+
+function nextLabel(daysAway: number): string {
+  if (daysAway <= 1) return 'tomorrow';
+  const date = new Date();
+  date.setDate(date.getDate() + daysAway);
+  return `on ${date.toLocaleDateString(undefined, { weekday: 'long' })}`;
 }
 
 function sessionProgress(session: WorkoutSession) {

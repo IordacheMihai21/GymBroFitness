@@ -7,6 +7,7 @@ import {
   saveWorkoutSession,
 } from '@/domain/workouts/historyStore';
 import { createWorkoutPersistenceController } from '@/domain/workouts/sessionPersistenceController';
+import { hasSessionActivity } from '@/domain/workouts/session';
 import type { WorkoutSession } from '@/types';
 
 import { isResumableSession, type AutosaveState } from './workout.helpers';
@@ -28,6 +29,9 @@ export function useWorkoutAutosave(
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
   const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Android pauses JS timers in the background, so a set logged from the
+  // lock-screen notification must be saved without waiting for the debounce.
+  const appStateRef = useRef(AppState.currentState);
   const persistence = useMemo(
     () =>
       createWorkoutPersistenceController({
@@ -43,10 +47,19 @@ export function useWorkoutAutosave(
   }, []);
 
   useEffect(() => {
-    if (isHydratingDraft || finished || !isResumableSession(session)) return;
+    // Opening the workout screen is not starting a workout: wait for the first
+    // logged set, check-in or pause before a draft exists at all.
+    if (
+      isHydratingDraft ||
+      finished ||
+      !isResumableSession(session) ||
+      !hasSessionActivity(session)
+    ) {
+      return;
+    }
     cancelPendingAutosave();
 
-    autosaveTimerRef.current = setTimeout(() => {
+    const save = () => {
       setAutosaveState('saving');
       persistence
         .saveDraft(session)
@@ -57,14 +70,26 @@ export function useWorkoutAutosave(
         .catch(() => {
           setAutosaveState('error');
         });
-    }, 500);
+    };
+    if (appStateRef.current !== 'active') {
+      save();
+      return;
+    }
+    autosaveTimerRef.current = setTimeout(save, 500);
 
     return cancelPendingAutosave;
   }, [cancelPendingAutosave, finished, isHydratingDraft, persistence, session]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' || isHydratingDraft || finished || !isResumableSession(session)) {
+      appStateRef.current = nextState;
+      if (
+        nextState === 'active' ||
+        isHydratingDraft ||
+        finished ||
+        !isResumableSession(session) ||
+        !hasSessionActivity(session)
+      ) {
         return;
       }
 

@@ -1,6 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
+import { useKeepAwake } from 'expo-keep-awake';
+import type { BottomSheetModal } from '@gorhom/bottom-sheet';
+import { type ElementRef, useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActivityIndicator, Button, Dialog, IconButton, Portal } from 'react-native-paper';
@@ -17,8 +19,10 @@ import { ElapsedClock } from '@/components/workout/ElapsedClock';
 import { PrCelebration } from '@/components/workout/PrCelebration';
 import { ReadinessCheckInCard } from '@/components/workout/ReadinessCheckInCard';
 import { RestTimer } from '@/components/workout/RestTimer';
+import { ExerciseSwapSheet } from '@/components/workout/ExerciseSwapSheet';
+import { MuscleFeedbackCard, SorenessPrompt } from '@/components/workout/MuscleFeedbackCard';
 import { RirPickerSheet } from '@/components/workout/RirPickerSheet';
-import { SetRow } from '@/components/workout/SetRow';
+import { SetRow, SetTableHeader } from '@/components/workout/SetRow';
 import {
   FinishMetric,
   FormQualityBlock,
@@ -29,6 +33,7 @@ import {
   TopExerciseRow,
 } from '@/components/workout/WorkoutReviewBlocks';
 import { requireExercise } from '@/domain/exercises/catalog';
+import { normalizeSessionTiming } from '@/domain/workouts/history';
 import { exerciseThumbnailUrl } from '@/domain/exercises/library';
 import { listTemplates } from '@/domain/programs/templateStore';
 import {
@@ -36,10 +41,14 @@ import {
   previousSetAtIndex,
   formatPreviousSet,
 } from '@/domain/workouts/lastPerformance';
+import { isPerSide, loadFieldLabel, loadHint } from '@/domain/workouts/laterality';
+import { feedbackFor } from '@/domain/workouts/muscleFeedback';
 import { painMessage } from '@/domain/workouts/readiness';
 import { extendRestTimer } from '@/domain/workouts/restTimer';
 import { startWorkoutSession } from '@/domain/workouts/session';
 import { formatTrackingTarget } from '@/domain/workouts/setTracking';
+import { supersetRound } from '@/domain/workouts/supersetNavigation';
+import { workingIndexOf } from '@/domain/workouts/warmup';
 import { buildWorkoutSessionReview } from '@/domain/workouts/workoutReview';
 import { useActiveProgram } from '@/hooks/useActiveProgram';
 import { useTheme } from '@/theme';
@@ -50,11 +59,9 @@ import {
   autosaveLabel,
   buildCustomWorkoutDay,
   cameraAngleLabel,
-  compactSuggestionValue,
   formatRest,
   isExerciseDone,
   shortExerciseName,
-  sourceLabel,
   techniqueLabel,
 } from '@/features/workout/workout.helpers';
 import { useWorkoutSession } from '@/features/workout/useWorkoutSession';
@@ -111,6 +118,7 @@ export default function WorkoutScreen() {
     <WorkoutSessionView
       key={`${user.id}-${day.id}`}
       programName={program.name}
+      programDays={program.days}
       day={day}
       userId={user.id}
       preferences={preferences}
@@ -120,11 +128,13 @@ export default function WorkoutScreen() {
 
 function WorkoutSessionView({
   programName,
+  programDays,
   day,
   userId,
   preferences,
 }: {
   programName: string;
+  programDays: ProgramDay[];
   day: ProgramDay;
   userId: string;
   preferences: TrainingPreferences;
@@ -184,12 +194,12 @@ function WorkoutSessionView({
     volume,
     targetLabel,
     previousPerformance,
-    nextOpenSetIndex,
     formTargetSetIndex,
     formTargetSet,
-    openSetCount,
-    activeAutofillSuggestion,
     activeProgressionTarget,
+    activeSuggestions,
+    activePerSide,
+    activeLoadMeaning,
     updateSet,
     openRirPicker,
     saveReadiness,
@@ -198,14 +208,25 @@ function WorkoutSessionView({
     copyPreviousSet,
     copySetToRemaining,
     toggleSetSkipped,
-    fillNextSet,
     fillOpenSetsForExercise,
     fillAllOpenSets,
-    fillOpenSets,
     toggleComplete,
     completeAndFocusNext,
     completeExerciseOpenSets,
     toggleSupersetWithNext,
+    goToNextExercise,
+    addSetToExercise,
+    addWarmups,
+    activeWarmups,
+    pendingFeedback,
+    sorenessMuscle,
+    rateMuscle,
+    feedbackResult,
+    removeSetFromExercise,
+    togglePerSide,
+    toggleSplitSides,
+    activeSplitSides,
+    swapExercise,
     pauseSession,
     resumeSession,
     endLiveWorkout,
@@ -214,8 +235,10 @@ function WorkoutSessionView({
     saveCompletedSession,
     saveIncompleteSession,
     saveAsTemplate,
-  } = useWorkoutSession(day, userId, preferences);
+  } = useWorkoutSession(day, userId, preferences, programDays);
   const [demoExercise, setDemoExercise] = useState<Exercise | null>(null);
+  const [swapOriginal, setSwapOriginal] = useState<Exercise | null>(null);
+  const swapSheetRef = useRef<ElementRef<typeof BottomSheetModal>>(null);
 
   if (isHydratingDraft) {
     return (
@@ -273,6 +296,21 @@ function WorkoutSessionView({
             ) : null}
           </View>
 
+          {pendingFeedback[0] ? (
+            <MuscleFeedbackCard
+              key={pendingFeedback[0]}
+              muscle={pendingFeedback[0]}
+              feedback={feedbackFor(session, pendingFeedback[0])}
+              onRate={(patch) => rateMuscle(pendingFeedback[0], patch)}
+              onSkip={() => rateMuscle(pendingFeedback[0], { skipped: true })}
+            />
+          ) : null}
+          {feedbackResult ? (
+            <Text style={[typography.caption, { color: colors.accent }]}>
+              {feedbackResult.text}
+            </Text>
+          ) : null}
+
           {session.exercises.map((performed, exerciseIndex) => {
             const exercise = requireExercise(performed.exerciseId);
             const exerciseTarget = formatTrackingTarget(
@@ -314,15 +352,20 @@ function WorkoutSessionView({
                   <SetRow
                     key={set.id}
                     set={set}
+                    splitSides={performed.splitSides === true && isPerSide(performed)}
                     targetLabel={exerciseTarget}
                     equipment={exercise.equipment}
                     trackingType={exercise.trackingType}
                     units={preferences.units}
                     validationError={setValidationErrors[set.id]}
-                    previousLabel={formatPreviousSet(
-                      previousSetAtIndex(previous, setIndex),
-                      preferences.units,
-                    )}
+                    previousLabel={
+                      set.kind === 'warmup'
+                        ? null
+                        : formatPreviousSet(
+                            previousSetAtIndex(previous, workingIndexOf(performed.sets, setIndex)),
+                            preferences.units,
+                          )
+                    }
                     onChange={(patch) => updateSet(exerciseIndex, setIndex, patch)}
                     onToggleComplete={() => toggleComplete(exerciseIndex, setIndex)}
                     onSubmitEditing={() => completeAndFocusNext(exerciseIndex, setIndex)}
@@ -473,6 +516,12 @@ function WorkoutSessionView({
                 label={newRecordCount === 1 ? 'new record' : 'new records'}
                 value={String(newRecordCount)}
               />
+              {session.heartRate ? (
+                <FinishMetric
+                  label={`avg bpm, max ${session.heartRate.maxBpm}`}
+                  value={String(session.heartRate.averageBpm)}
+                />
+              ) : null}
             </View>
           </Reveal>
 
@@ -586,11 +635,19 @@ function WorkoutSessionView({
     );
   }
 
-  const nextSuggestion =
-    activeAutofillSuggestion && nextOpenSetIndex != null
-      ? `Set ${nextOpenSetIndex + 1}: ${compactSuggestionValue(activeAutofillSuggestion, preferences.units)}, from ${sourceLabel(activeAutofillSuggestion.source)}`
-      : null;
   const nextExercise = session.exercises[activeExerciseIndex + 1];
+  const superset = supersetRound(session.exercises, activeExerciseIndex);
+  const activeAdjustment = session.volumeAdjustments?.find(
+    (item) => item.exerciseId === activeExercise.exerciseId,
+  );
+  const activeHasLoggedSet = activeExercise.sets.some((set) => set.completed);
+  const supportsLoad =
+    activeExerciseMeta.trackingType === 'weight_reps' ||
+    activeExerciseMeta.trackingType === 'weighted_bodyweight';
+  const loadLabel = loadFieldLabel(activeLoadMeaning, preferences.units);
+  // A barbell is never pressed one side at a time; everything else can be.
+  const canGoPerSide = supportsLoad && (activeLoadMeaning !== 'total' || activePerSide);
+  const isLastExercise = activeExerciseIndex === session.exercises.length - 1;
   const technique =
     activePrescription.setTechnique && activePrescription.setTechnique !== 'standard'
       ? techniqueLabel(activePrescription.setTechnique)
@@ -616,7 +673,7 @@ function WorkoutSessionView({
               </Text>
               <View style={styles.clockRow}>
                 <ElapsedClock
-                  startedAt={session.startedAt}
+                  startedAt={normalizeSessionTiming(session).startedAt}
                   totalPausedSeconds={session.totalPausedSeconds}
                   pausedAt={session.pausedAt}
                   style={[
@@ -739,6 +796,19 @@ function WorkoutSessionView({
           </View>
         ) : null}
 
+        {pendingFeedback[0] ? (
+          <MuscleFeedbackCard
+            key={pendingFeedback[0]}
+            muscle={pendingFeedback[0]}
+            feedback={feedbackFor(session, pendingFeedback[0])}
+            onRate={(patch) => rateMuscle(pendingFeedback[0], patch)}
+            onSkip={() => rateMuscle(pendingFeedback[0], { skipped: true })}
+          />
+        ) : null}
+        {feedbackResult ? (
+          <Text style={[typography.caption, { color: colors.accent }]}>{feedbackResult.text}</Text>
+        ) : null}
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -822,8 +892,33 @@ function WorkoutSessionView({
               <Text style={[typography.caption, { color: colors.textSecondary }]}>
                 {targetLabel}, rest {formatRest(activePrescription.restSeconds)}
               </Text>
+              {superset ? (
+                <Text style={[typography.captionBold, { color: colors.accent }]} numberOfLines={1}>
+                  Superset, round {superset.round} of {superset.rounds}, with{' '}
+                  {superset.partnerIndexes
+                    .map((index) =>
+                      shortExerciseName(requireExercise(session.exercises[index].exerciseId).name),
+                    )
+                    .join(' + ')}
+                </Text>
+              ) : null}
             </View>
           </View>
+
+          {activeAdjustment ? (
+            <Text style={[typography.caption, { color: colors.accent }]}>
+              {activeAdjustment.delta > 0 ? 'One more set today. ' : 'One set less today. '}
+              {activeAdjustment.reason}
+            </Text>
+          ) : null}
+
+          {sorenessMuscle ? (
+            <SorenessPrompt
+              key={sorenessMuscle}
+              muscle={sorenessMuscle}
+              onRate={(soreness) => rateMuscle(sorenessMuscle, { soreness })}
+            />
+          ) : null}
 
           {activePrescription.note ? (
             <Text
@@ -841,52 +936,122 @@ function WorkoutSessionView({
             <ProgressionTargetPanel target={activeProgressionTarget} units={preferences.units} />
           ) : null}
 
-          {nextExercise || activeVisionConfig ? (
-            <View style={styles.toolRow}>
-              {nextExercise ? (
-                <Button
-                  compact
-                  mode="text"
-                  icon="link-variant"
-                  textColor={
-                    activePrescription.supersetWithNext ? colors.accent : colors.textSecondary
-                  }
-                  onPress={() => toggleSupersetWithNext(activeExerciseIndex)}
-                  disabled={isPaused}
-                >
-                  {activePrescription.supersetWithNext
-                    ? `Paired with ${shortExerciseName(requireExercise(nextExercise.exerciseId).name)}`
-                    : 'Pair with next'}
-                </Button>
-              ) : null}
-              {activeVisionConfig ? (
-                <Button
-                  compact
-                  mode="text"
-                  icon="camera-outline"
-                  textColor={colors.textSecondary}
-                  disabled={isPaused}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/form-check/[exerciseId]',
-                      params: {
-                        exerciseId: activeExercise.exerciseId,
-                        sessionId: session.id,
-                        exerciseIndex: String(activeExerciseIndex),
-                        setIndex: String(formTargetSetIndex),
-                      },
-                    })
-                  }
-                >
-                  {formTargetSet?.formAnalysis
-                    ? `Form ${formTargetSet.formAnalysis.averageScore}/100`
-                    : `Form check, ${cameraAngleLabel(activeVisionConfig.recommendedCameraAngle).toLowerCase()}`}
-                </Button>
-              ) : null}
-            </View>
-          ) : null}
+          <View style={styles.toolRow}>
+            <Button
+              compact
+              mode="text"
+              icon="swap-horizontal"
+              textColor={colors.textSecondary}
+              disabled={isPaused || activeHasLoggedSet}
+              onPress={() => {
+                setSwapOriginal(activeExerciseMeta);
+                swapSheetRef.current?.present();
+              }}
+            >
+              Swap
+            </Button>
+            {activeWarmups.length > 0 ? (
+              <Button
+                compact
+                mode="text"
+                icon="fire"
+                textColor={colors.textSecondary}
+                disabled={isPaused}
+                onPress={() => addWarmups(activeExerciseIndex)}
+                accessibilityHint={`Adds ${activeWarmups.length} warm-up sets ramping to your working weight`}
+              >
+                {`Warm up (${activeWarmups.length})`}
+              </Button>
+            ) : null}
+            {canGoPerSide ? (
+              <Button
+                compact
+                mode="text"
+                icon={activePerSide ? 'hand-back-left' : 'hand-back-left-outline'}
+                textColor={activePerSide ? colors.accent : colors.textSecondary}
+                disabled={isPaused}
+                onPress={() => togglePerSide(activeExerciseIndex)}
+                accessibilityState={{ selected: activePerSide }}
+              >
+                {activePerSide ? 'One side at a time' : 'Both sides'}
+              </Button>
+            ) : null}
+            {activePerSide && supportsLoad ? (
+              <Button
+                compact
+                mode="text"
+                icon="arrow-split-vertical"
+                textColor={activeSplitSides ? colors.accent : colors.textSecondary}
+                disabled={isPaused}
+                onPress={() => toggleSplitSides(activeExerciseIndex)}
+                accessibilityState={{ selected: activeSplitSides }}
+                accessibilityHint="Log left and right reps separately to track imbalances"
+              >
+                {activeSplitSides ? 'Each side: on' : 'Log each side'}
+              </Button>
+            ) : null}
+            {nextExercise ? (
+              <Button
+                compact
+                mode="text"
+                icon="link-variant"
+                textColor={
+                  activePrescription.supersetWithNext ? colors.accent : colors.textSecondary
+                }
+                onPress={() => toggleSupersetWithNext(activeExerciseIndex)}
+                disabled={isPaused}
+              >
+                {activePrescription.supersetWithNext
+                  ? `Paired with ${shortExerciseName(requireExercise(nextExercise.exerciseId).name)}`
+                  : 'Pair with next'}
+              </Button>
+            ) : null}
+            {activeVisionConfig ? (
+              <Button
+                compact
+                mode="text"
+                icon="camera-outline"
+                textColor={colors.textSecondary}
+                disabled={isPaused}
+                onPress={() =>
+                  router.push({
+                    pathname: '/form-check/[exerciseId]',
+                    params: {
+                      exerciseId: activeExercise.exerciseId,
+                      sessionId: session.id,
+                      exerciseIndex: String(activeExerciseIndex),
+                      setIndex: String(formTargetSetIndex),
+                    },
+                  })
+                }
+              >
+                {formTargetSet?.formAnalysis
+                  ? `Form ${formTargetSet.formAnalysis.averageScore}/100`
+                  : `Form check, ${cameraAngleLabel(activeVisionConfig.recommendedCameraAngle).toLowerCase()}`}
+              </Button>
+            ) : null}
+          </View>
 
           <View>
+            {supportsLoad && activeLoadMeaning !== 'stack' ? (
+              <Text
+                style={[typography.caption, { color: colors.textMuted, marginBottom: spacing.xs }]}
+              >
+                {loadHint(activeLoadMeaning)}
+              </Text>
+            ) : null}
+            <SetTableHeader
+              loadLabel={loadLabel}
+              repsLabel={
+                activeExerciseMeta.trackingType === 'time'
+                  ? 'sec'
+                  : activePerSide
+                    ? 'reps/side'
+                    : 'reps'
+              }
+              showLoad={supportsLoad}
+              splitSides={activeSplitSides}
+            />
             {activeExercise.sets.map((set, setIndex) => (
               <SetRow
                 key={set.id}
@@ -899,10 +1064,17 @@ function WorkoutSessionView({
                 trackingType={activeExerciseMeta.trackingType}
                 units={preferences.units}
                 validationError={setValidationErrors[set.id]}
-                previousLabel={formatPreviousSet(
-                  previousSetAtIndex(previousPerformance, setIndex),
-                  preferences.units,
-                )}
+                previousLabel={
+                  set.kind === 'warmup'
+                    ? null
+                    : formatPreviousSet(
+                        previousSetAtIndex(
+                          previousPerformance,
+                          workingIndexOf(activeExercise.sets, setIndex),
+                        ),
+                        preferences.units,
+                      )
+                }
                 onChange={(patch) => updateSet(activeExerciseIndex, setIndex, patch)}
                 onToggleComplete={() => toggleComplete(activeExerciseIndex, setIndex)}
                 onSubmitEditing={() => completeAndFocusNext(activeExerciseIndex, setIndex)}
@@ -912,33 +1084,26 @@ function WorkoutSessionView({
                 onCopyToRemaining={() => copySetToRemaining(activeExerciseIndex, setIndex)}
                 onToggleSkip={() => toggleSetSkipped(activeExerciseIndex, setIndex)}
                 onOpenRirPicker={() => openRirPicker(activeExerciseIndex, setIndex)}
+                suggestion={activeSuggestions[setIndex]}
+                loadLabel={loadLabel}
+                perSide={activePerSide}
+                splitSides={activeSplitSides}
+                onDelete={
+                  activeExercise.sets.length > 1 && !set.completed
+                    ? () => removeSetFromExercise(activeExerciseIndex, setIndex)
+                    : undefined
+                }
                 disabled={isPaused}
               />
             ))}
-          </View>
-
-          <View style={styles.assistantRow}>
-            <Text
-              style={[typography.caption, { color: colors.textSecondary, flex: 1 }]}
-              numberOfLines={2}
-            >
-              {nextSuggestion ?? 'Every set is logged.'}
-            </Text>
             <Button
-              compact
               mode="text"
-              onPress={fillNextSet}
-              disabled={isPaused || activeAutofillSuggestion == null}
+              icon="plus"
+              onPress={() => addSetToExercise(activeExerciseIndex)}
+              disabled={isPaused}
+              style={styles.addSet}
             >
-              Fill next
-            </Button>
-            <Button
-              compact
-              mode="text"
-              onPress={fillOpenSets}
-              disabled={isPaused || openSetCount === 0}
-            >
-              Fill all
+              Add set
             </Button>
           </View>
 
@@ -954,20 +1119,20 @@ function WorkoutSessionView({
             </Button>
             <Button
               mode="contained"
-              onPress={() =>
-                setActiveExerciseIndex(
-                  Math.min(session.exercises.length - 1, activeExerciseIndex + 1),
-                )
-              }
-              disabled={!nextExercise}
-              style={styles.navButton}
+              icon={isLastExercise ? 'flag-checkered' : 'check-all'}
+              onPress={goToNextExercise}
+              disabled={isPaused || isSaving}
+              style={styles.navButtonPrimary}
               contentStyle={styles.navContent}
+              accessibilityHint="Logs the open sets with the numbers shown, then moves on"
             >
-              Next exercise
+              {isLastExercise ? 'Finish workout' : 'Next exercise'}
             </Button>
           </View>
         </Animated.View>
       </ScrollView>
+
+      {isPaused ? null : <KeepScreenOn />}
 
       <ExerciseDemoModal
         key={demoExercise?.id ?? 'closed'}
@@ -1005,6 +1170,18 @@ function WorkoutSessionView({
         onDismiss={() => setRirTarget(null)}
       />
 
+      <ExerciseSwapSheet
+        modalRef={swapSheetRef}
+        original={swapOriginal}
+        preferences={preferences}
+        usedExerciseIds={session.exercises.map((performed) => performed.exerciseId)}
+        onSelect={(exercise) => {
+          swapExercise(activeExerciseIndex, exercise.id);
+          swapSheetRef.current?.dismiss();
+        }}
+        onDismiss={() => setSwapOriginal(null)}
+      />
+
       <Portal>
         <Dialog visible={showDiscardDialog} onDismiss={() => setShowDiscardDialog(false)}>
           <Dialog.Title>Discard workout?</Dialog.Title>
@@ -1030,6 +1207,12 @@ function WorkoutSessionView({
       </Portal>
     </View>
   );
+}
+
+/** Keeps the phone from locking between sets while a workout is live. */
+function KeepScreenOn() {
+  useKeepAwake();
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -1058,10 +1241,9 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     paddingLeft: 12,
   },
-  assistantRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  addSet: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
   },
   navContent: {
     minHeight: 52,
@@ -1145,6 +1327,9 @@ const styles = StyleSheet.create({
   },
   navButton: {
     flex: 1,
+  },
+  navButtonPrimary: {
+    flex: 2,
   },
   reviewEditorSection: {
     borderTopWidth: StyleSheet.hairlineWidth,

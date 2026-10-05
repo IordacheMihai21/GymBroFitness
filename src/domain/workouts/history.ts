@@ -3,7 +3,40 @@ import { completedWorkingSets } from '@/domain/progression/engine';
 import type { Units, WorkoutSession } from '@/types';
 import { displayLoad, unitLabel } from '@/utils/units';
 
-import { estimateOneRepMax, sessionVolumeKg, setEfforts, volumeLoadKg } from './analytics';
+import { estimateOneRepMax, performedVolumeKg, sessionVolumeKg, setEfforts } from './analytics';
+
+/** How long before the first logged set a session is assumed to have started (warm-up, setup). */
+const FIRST_SET_LEAD_MS = 5 * 60_000;
+/** Gaps shorter than this between opening a workout and the first set are left as they are. */
+const IDLE_DRAFT_THRESHOLD_MS = 30 * 60_000;
+
+/**
+ * A workout can be opened hours (or a day) before the first set is logged.
+ * Dating it by when the screen opened puts it on the wrong day and in the
+ * wrong week, so every per-week view misses it. When the first logged set is
+ * far after `startedAt`, start the session just before that set instead, and
+ * drop pause time that can no longer fall inside the shorter window.
+ */
+export function normalizeSessionTiming(session: WorkoutSession): WorkoutSession {
+  const stamps = session.exercises
+    .flatMap((exercise) => exercise.sets)
+    .map((set) => (set.completedAt ? Date.parse(set.completedAt) : Number.NaN))
+    .filter(Number.isFinite);
+  const opened = Date.parse(session.startedAt);
+  if (stamps.length === 0 || !Number.isFinite(opened)) return session;
+
+  const firstSet = Math.min(...stamps);
+  if (firstSet - opened <= IDLE_DRAFT_THRESHOLD_MS) return session;
+
+  const start = firstSet - FIRST_SET_LEAD_MS;
+  const end = session.finishedAt ? Date.parse(session.finishedAt) : Math.max(...stamps);
+  const window = Math.max(0, (end - start) / 1000);
+  return {
+    ...session,
+    startedAt: new Date(start).toISOString(),
+    totalPausedSeconds: Math.min(session.totalPausedSeconds, Math.floor(window / 2)),
+  };
+}
 
 export type WorkoutExerciseSummary = {
   exerciseId: string;
@@ -27,6 +60,8 @@ export type WorkoutHistorySummary = {
   analyzedSetCount: number;
   averageFormScore: number | null;
   exerciseSummaries: WorkoutExerciseSummary[];
+  /** From Health Connect, when a watch recorded the workout. */
+  averageHeartRate: number | null;
 };
 
 export function summarizeWorkoutSession(
@@ -40,7 +75,7 @@ export function summarizeWorkoutSession(
       exerciseId: exercise.exerciseId,
       name: meta.name,
       completedSets: completed.length,
-      volumeKg: volumeLoadKg(exercise.sets),
+      volumeKg: performedVolumeKg(exercise),
       bestSetLabel: bestSetLabel(completed, units),
       bestE1rmKg: bestEstimatedOneRepMax(completed),
     };
@@ -55,6 +90,7 @@ export function summarizeWorkoutSession(
     startedAt: session.startedAt,
     finishedAt: session.finishedAt,
     durationMinutes: sessionDurationMinutes(session),
+    averageHeartRate: session.heartRate?.averageBpm ?? null,
     completedSets: exerciseSummaries.reduce((total, item) => total + item.completedSets, 0),
     exerciseCount: exerciseSummaries.filter((item) => item.completedSets > 0).length,
     volumeKg: sessionVolumeKg(session),

@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 import Body from 'react-native-body-highlighter';
 
@@ -7,6 +8,8 @@ import { useTheme } from '@/theme';
 import type { ProgramDay } from '@/types';
 
 type DayCardProps = {
+  /** Trained at least once this week. */
+  done?: boolean;
   day: ProgramDay;
   index: number;
   selected: boolean;
@@ -17,7 +20,7 @@ type DayCardProps = {
  * One training day in the week rail: a small silhouette lit where the day
  * works, so the split reads at a glance before any text.
  */
-export function DayCard({ day, index, selected, onPress }: DayCardProps) {
+export function DayCard({ day, index, selected, onPress, done = false }: DayCardProps) {
   const { colors, radius, typography } = useTheme();
   const backHeavy = day.focus.some((muscle) =>
     ['back', 'hamstrings', 'glutes', 'lower_back'].includes(muscle),
@@ -35,7 +38,7 @@ export function DayCard({ day, index, selected, onPress }: DayCardProps) {
       pressedScale={0.96}
       accessibilityRole="tab"
       accessibilityState={{ selected }}
-      accessibilityLabel={`Day ${index + 1}, ${day.name}, ${day.prescriptions.length} exercises`}
+      accessibilityLabel={`Day ${index + 1}, ${day.name}, ${day.prescriptions.length} exercises${done ? ', done this week' : ''}`}
       style={[
         styles.card,
         {
@@ -46,9 +49,19 @@ export function DayCard({ day, index, selected, onPress }: DayCardProps) {
       ]}
     >
       <View style={styles.top}>
-        <Text style={[typography.micro, { color: selected ? colors.accent : colors.textMuted }]}>
+        <Text
+          style={[
+            typography.micro,
+            { color: selected ? colors.accent : colors.textMuted, flex: 1 },
+          ]}
+        >
           Day {index + 1}
         </Text>
+        {done ? (
+          <View style={[styles.doneBadge, { backgroundColor: colors.success }]}>
+            <MaterialCommunityIcons name="check" size={12} color={colors.background} />
+          </View>
+        ) : null}
       </View>
       <View style={styles.body} importantForAccessibility="no-hide-descendants">
         <Body
@@ -81,6 +94,15 @@ const styles = StyleSheet.create({
   },
   top: {
     flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 18,
+  },
+  doneBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   body: {
     height: 104,

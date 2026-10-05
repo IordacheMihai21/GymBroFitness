@@ -4,6 +4,8 @@ import { startRestTimer } from './restTimer';
 import { normalizeSetForTracking, validateSetForTracking } from './setTracking';
 import { navigateAfterSetCompletion, type SetCompletionNavigation } from './supersetNavigation';
 
+const WARMUP_REST_SECONDS = 60;
+
 export type SetCompletionResult =
   | {
       ok: true;
@@ -100,9 +102,12 @@ export function toggleWorkoutSetCompletion(
     completed,
     completedAt: completed ? now.toISOString() : null,
   });
-  const navigation = completed
-    ? navigateAfterSetCompletion(next.exercises, exerciseIndex)
-    : { nextExerciseIndex: null, skipRest: false };
+  // Warm-ups are done in a row before the working sets, so they never jump
+  // to a superset partner.
+  const navigation =
+    completed && normalized.kind !== 'warmup'
+      ? navigateAfterSetCompletion(next.exercises, exerciseIndex)
+      : { nextExerciseIndex: null, skipRest: false };
 
   return {
     ok: true,
@@ -112,7 +117,13 @@ export function toggleWorkoutSetCompletion(
       ...next,
       restTimer:
         completed && !navigation.skipRest && options.startRestTimer !== false
-          ? startRestTimer(exercise.prescription.restSeconds, now.getTime())
+          ? startRestTimer(
+              // A warm-up only needs a short breather before the next ramp step.
+              normalized.kind === 'warmup'
+                ? Math.min(WARMUP_REST_SECONDS, exercise.prescription.restSeconds)
+                : exercise.prescription.restSeconds,
+              now.getTime(),
+            )
           : next.restTimer,
     },
   };

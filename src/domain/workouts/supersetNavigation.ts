@@ -34,9 +34,10 @@ function nextOpenExerciseIndex(exercises: PerformedExercise[], fromIndex: number
  * Decide where to go after a set is marked complete. Outside a superset
  * chain, behavior matches the plain sequential flow: only move once the
  * exercise itself is fully done. Inside a chain, every completed set
- * advances to the next incomplete exercise in the chain (cycling back to an
- * earlier one if needed) with no rest — the whole point of a superset —
- * until the chain itself is done, at which point normal rest resumes.
+ * advances to the next incomplete exercise in the chain with no rest between
+ * them (the whole point of a superset), then rests once the round is done
+ * before cycling back: A1, B1, rest, A2, B2, rest. When the whole chain is
+ * done, it moves on to the next exercise as usual.
  */
 export function navigateAfterSetCompletion(
   exercises: PerformedExercise[],
@@ -47,15 +48,43 @@ export function navigateAfterSetCompletion(
 
   if (chainLength <= 1) {
     const done = isExerciseDone(exercises[currentIndex]);
-    return { nextExerciseIndex: done ? nextOpenExerciseIndex(exercises, currentIndex) : null, skipRest: false };
+    return {
+      nextExerciseIndex: done ? nextOpenExerciseIndex(exercises, currentIndex) : null,
+      skipRest: false,
+    };
   }
 
   for (let offset = 1; offset < chainLength; offset += 1) {
     const idx = start + ((currentIndex - start + offset) % chainLength);
     if (!isExerciseDone(exercises[idx])) {
-      return { nextExerciseIndex: idx, skipRest: true };
+      // Moving on within the round is back-to-back; wrapping to the start of
+      // the chain means the round is over, and the round is what you rest after.
+      return { nextExerciseIndex: idx, skipRest: idx > currentIndex };
     }
   }
 
   return { nextExerciseIndex: nextOpenExerciseIndex(exercises, end), skipRest: false };
+}
+
+/**
+ * "Superset with Lat Pulldown, round 2 of 3" for an exercise in a chain, or
+ * null outside one. The round is the next working set of this exercise.
+ */
+export function supersetRound(
+  exercises: PerformedExercise[],
+  index: number,
+): { partnerIndexes: number[]; round: number; rounds: number } | null {
+  const [start, end] = supersetChainBounds(exercises, index);
+  if (end === start) return null;
+  const chain = exercises.slice(start, end + 1);
+  const workingCount = (exercise: PerformedExercise) =>
+    exercise.sets.filter((set) => set.kind !== 'warmup' && !set.skipped).length;
+  const doneCount = (exercise: PerformedExercise) =>
+    exercise.sets.filter((set) => set.kind !== 'warmup' && set.completed && !set.skipped).length;
+  const rounds = Math.max(...chain.map(workingCount));
+  const round = Math.min(rounds, doneCount(exercises[index]) + 1);
+  const partnerIndexes = chain
+    .map((_, offset) => start + offset)
+    .filter((candidate) => candidate !== index);
+  return { partnerIndexes, round, rounds };
 }

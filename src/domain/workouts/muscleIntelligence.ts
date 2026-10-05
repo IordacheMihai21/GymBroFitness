@@ -10,7 +10,7 @@ import {
 } from '@/types';
 import { formatLoad } from '@/utils/units';
 
-import { estimateOneRepMax, setEfforts, volumeLoadKg } from './analytics';
+import { estimateOneRepMax, performedVolumeKg, setEfforts } from './analytics';
 import { muscleSetContributions } from './muscleContributions';
 import {
   classifyWeeklyVolume,
@@ -227,7 +227,7 @@ export function buildExerciseRecordsForMuscle(
       record.totalSets += workingSets.length;
       record.bestSessionVolumeKg = Math.max(
         record.bestSessionVolumeKg,
-        Math.round(volumeLoadKg(performed.sets)),
+        Math.round(performedVolumeKg(performed)),
       );
 
       for (const effort of workingSets.flatMap(setEfforts)) {
@@ -315,7 +315,7 @@ function buildRecentSessionsForMuscle(
             exerciseId: exercise.id,
             name: exercise.name,
             sets: working.length,
-            volumeKg: Math.round(volumeLoadKg(performed.sets)),
+            volumeKg: Math.round(performedVolumeKg(performed)),
             bestSetLabel: bestSetLabel(working, units),
             averageFormScore: averageFormScore(working),
           },

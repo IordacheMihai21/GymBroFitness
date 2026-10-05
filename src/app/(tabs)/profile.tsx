@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { HealthConnectCard } from '@/components/profile/HealthConnectCard';
 import { ListRow } from '@/components/ui/ListRow';
 import { formatGoal } from '@/features/program/program.helpers';
 import { ProgressLine } from '@/components/ui/ProgressLine';
@@ -122,6 +123,10 @@ export default function ProfileScreen() {
       </Reveal>
 
       <Reveal index={3}>
+        <HealthConnectCard userId={user.id} />
+      </Reveal>
+
+      <Reveal index={4}>
         <Tile style={{ paddingVertical: spacing.xs }}>
           <ListRow
             title="Workout history"

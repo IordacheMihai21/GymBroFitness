@@ -13,6 +13,7 @@ import { DayCard } from '@/components/program/DayCard';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Tile } from '@/components/ui/Tile';
 import { requireExercise } from '@/domain/exercises/catalog';
+import { lastPerformanceLabel } from '@/domain/workouts/lastPerformance';
 import { MUSCLE_LABELS } from '@/constants/muscleLabels';
 import {
   DetailCard,
@@ -68,7 +69,14 @@ export default function ProgramScreen() {
     replacePrescription,
     resetGeneratedProgram,
     saveSelectedDayAsTemplate,
+    history,
   } = useProgramScreen();
+  const weekStart = startOfCurrentWeek();
+  const doneThisWeek = new Set(
+    history
+      .filter((session) => Date.parse(session.finishedAt ?? session.startedAt) >= weekStart)
+      .flatMap((session) => [session.programDayId, session.dayName]),
+  );
 
   async function saveRename() {
     if (!renameTarget?.name.trim()) return;
@@ -231,6 +239,7 @@ export default function ProgramScreen() {
               day={day}
               index={index}
               selected={selectedDayIndex === index}
+              done={doneThisWeek.has(day.id) || doneThisWeek.has(day.name)}
               onPress={() => setSelectedDayIndex(index)}
             />
           ))}
@@ -314,6 +323,11 @@ export default function ProgramScreen() {
               >
                 <ProgramExerciseRow
                   prescription={prescription}
+                  lastLabel={lastPerformanceLabel(
+                    history,
+                    prescription.exerciseId,
+                    preferences.units,
+                  )}
                   index={index}
                   saving={saving}
                   swapOpen={
@@ -445,6 +459,14 @@ export default function ProgramScreen() {
       </Reveal>
     </ScrollView>
   );
+}
+
+/** Local midnight of this week's Monday, in ms. */
+function startOfCurrentWeek(): number {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return date.getTime();
 }
 
 function PlanStat({ value, label }: { value: string; label: string }) {
